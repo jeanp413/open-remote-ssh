@@ -1,0 +1,13 @@
+.github/**
+.vscode/**
+node_modules/**
+src/**
+build/**
+.gitignore
+tsconfig.json
+yarn.lock
+.eslintignore
+.eslintrc.json
+.gitpod.yml
+webpack.config.js
+package.insiders.json

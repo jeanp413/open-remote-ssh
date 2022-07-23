@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+
+      - name: Install dependencies
+        run: |
+          yarn install --frozen-lockfile
+
+      - name: Package extension
+        id: package_vsix
+        run: |
+          yarn package
+          echo ::set-output name=vsix_path::$(ls *.vsix)
+
+          version=$(jq --raw-output '.version' package.json)
+          echo ::set-output name=version::$version
+
+      - name: Ensure new version
+        run: |
+          latest_tag=$(curl --silent -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/gitpod-io/gitpod-vscode-desktop/releases/latest | jq --raw-output '.tag_name')
+          if [ "$latest_tag" = *${{ steps.package_vsix.outputs.version }} ]; then
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.package_vsix.outputs.version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ steps.package_vsix.outputs.vsix_path }}
+
+      # - name: Publish to MS Marketplace
+      #   run: |
+      #     npx vsce publish --packagePath ${{ steps.package_vsix.outputs.vsix_path }}
+      #   env:
+      #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX Registry
+        run: |
+          npx ovsx publish --packagePath ${{ steps.package_vsix.outputs.vsix_path }}
+        env:
+          OVSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
