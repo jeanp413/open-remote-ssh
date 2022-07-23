@@ -28,7 +28,6 @@
 	],
 	"api": "none",
 	"activationEvents": [
-		"onCommand:openremotessh.test",
 		"onCommand:openremotessh.openEmptyWindow",
 		"onCommand:openremotessh.openEmptyWindowInCurrentWindow",
 		"onCommand:openremotessh.openConfigFile",
@@ -142,11 +141,6 @@
 				"command": "openremotessh.explorer.add",
 				"title": "Add New",
 				"icon": "$(plus)"
-			},
-			{
-				"command": "openremotessh.test",
-				"title": "Test openremotessh",
-				"category": "Remote-SSH"
 			}
 		],
 		"resourceLabelFormatters": [
