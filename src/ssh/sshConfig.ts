@@ -44,12 +44,11 @@ export default class SSHConfiguration {
         this.sshConfig
             .filter(isHostSection)
             .forEach(hostSection => {
-                const values = Array.isArray(hostSection.value as string[] | string) ? hostSection.value : [hostSection.value];
-                for (const v of values) {
-                    // Ignore if the value is a pattern
-                    if (!/^!/.test(v) && !/[?*]/.test(v)) {
-                        hosts.add(v);
-                    }
+                const value = Array.isArray(hostSection.value as string[] | string) ? hostSection.value[0] : hostSection.value;
+                const hasHostName = hostSection.config.find(line => line.type === SSHConfig.DIRECTIVE && line.param === 'HostName' && !!line.value);
+                const isPattern = /^!/.test(value) || /[?*]/.test(value);
+                if (hasHostName && !isPattern) {
+                    hosts.add(value);
                 }
             });
 
@@ -58,5 +57,13 @@ export default class SSHConfiguration {
 
     getHostConfiguration(host: string): Record<string, string> {
         return this.sshConfig.compute(host);
+    }
+
+    getHostNameAlias(hostname: string): string | undefined {
+        const found = this.sshConfig
+            .filter(isHostSection)
+            .find(hostSection => hostSection.config.find(line => line.type === SSHConfig.DIRECTIVE && line.param === 'HostName' && line.value === hostname));
+
+        return found?.value;
     }
 }

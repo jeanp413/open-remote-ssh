@@ -77,6 +77,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             cancellable: false
         }, async () => {
             try {
+                const sshconfig = await SSHConfiguration.loadFromFS();
+                const host = sshconfig.getHostNameAlias(this.sshDest.hostname) || '*';
+                this.sshHostConfig = sshconfig.getHostConfiguration(host);
+
                 this.identityFiles = await this.gatherIdentityFiles();
 
                 this.sshConnection = new SSHConnection({
@@ -117,7 +121,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         label: '${path}',
                         separator: '/',
                         tildify: true,
-                        workspaceSuffix: `SSH: ${this.sshDest.hostname}`
+                        workspaceSuffix: `SSH: ${this.sshHostConfig['Host'] || this.sshDest.hostname}`
                     }
                 });
 
@@ -210,8 +214,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
     private async gatherIdentityFiles() {
         const identityFiles = new Set<string>();
-        const sshconfig = await SSHConfiguration.loadFromFS();
-        this.sshHostConfig = sshconfig.getHostConfiguration(this.sshDest.hostname);
         for (const i of ((this.sshHostConfig['IdentityFile'] as any as string[]) || [])) {
             if (await fileExists(i)) {
                 identityFiles.add(untildify(i));
