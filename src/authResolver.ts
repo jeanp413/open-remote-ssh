@@ -47,6 +47,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
     private passwordRetryCount: number = PASSWORD_RETRY_COUNT;
 
+    private labelFormatterDisposable : vscode.Disposable| undefined;
+
     constructor(readonly logger: Log) {
     }
 
@@ -106,6 +108,18 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 // Enable ports view
                 vscode.commands.executeCommand('setContext', 'forwardedPortsViewEnabled', true);
+
+                this.labelFormatterDisposable?.dispose();
+                this.labelFormatterDisposable = vscode.workspace.registerResourceLabelFormatter({
+                    scheme: 'vscode-remote',
+                    authority: `${REMOTE_SSH_AUTHORITY}+*`,
+                    formatting: {
+                        label: '${path}',
+                        separator: '/',
+                        tildify: true,
+                        workspaceSuffix: `SSH: ${this.sshDest.hostname}`
+                    }
+                });
 
                 return new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
             } catch (e: unknown) {
@@ -288,5 +302,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     dispose() {
         disposeAll(this.tunnels);
         this.sshConnection?.close();
+        this.labelFormatterDisposable?.dispose();
     }
 }
