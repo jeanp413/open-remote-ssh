@@ -11,3 +11,5 @@ yarn.lock
 .gitpod.yml
 webpack.config.js
 package.insiders.json
+vscode.d.ts
+vscode.proposed.*.d.ts

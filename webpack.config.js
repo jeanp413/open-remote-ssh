@@ -43,4 +43,10 @@ const config = {
 	]
 }
 
-module.exports = config;
+module.exports = (_env, argv) => {
+	if (argv.mode === 'production') {
+		config.devtool = false;
+	}
+
+	return config;
+};
