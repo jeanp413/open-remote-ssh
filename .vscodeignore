@@ -3,6 +3,7 @@
 node_modules/**
 src/**
 build/**
+docs/**
 .gitignore
 tsconfig.json
 yarn.lock
