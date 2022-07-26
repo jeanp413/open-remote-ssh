@@ -78,8 +78,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         }, async () => {
             try {
                 const sshconfig = await SSHConfiguration.loadFromFS();
-                const host = sshconfig.getHostNameAlias(this.sshDest.hostname) || '*';
-                this.sshHostConfig = sshconfig.getHostConfiguration(host);
+                const host = sshconfig.getHostNameAlias(this.sshDest.hostname);
+                this.sshHostConfig = sshconfig.getHostConfiguration(host || '');
 
                 this.identityFiles = await this.gatherIdentityFiles();
 
@@ -121,7 +121,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         label: '${path}',
                         separator: '/',
                         tildify: true,
-                        workspaceSuffix: `SSH: ${this.sshHostConfig['Host'] || this.sshDest.hostname}`
+                        workspaceSuffix: `SSH: ${host || this.sshDest.hostname}`
                     }
                 });
 
