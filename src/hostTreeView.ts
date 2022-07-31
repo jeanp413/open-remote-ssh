@@ -75,10 +75,7 @@ export class HostTreeDataProvider extends Disposable implements vscode.TreeDataP
         if (!element) {
             const sshConfigFile = await SSHConfiguration.loadFromFS();
             const hosts = sshConfigFile.getAllConfiguredHosts();
-            return hosts.map(hostname => {
-                const hostConfig = sshConfigFile.getHostConfiguration(hostname);
-                return new HostItem(hostname, this.locationHistory.getHistory(hostConfig['HostName']));
-            });
+            return hosts.map(hostname => new HostItem(hostname, this.locationHistory.getHistory(hostname)));
         }
         if (element instanceof HostItem) {
             return element.locations.map(location => new HostLocationItem(location, element.hostname));
@@ -96,16 +93,12 @@ export class HostTreeDataProvider extends Disposable implements vscode.TreeDataP
     }
 
     private async openRemoteSSHWindow(element: HostItem, reuseWindow: boolean) {
-        const sshConfigFile = await SSHConfiguration.loadFromFS();
-        const hostConfig = sshConfigFile.getHostConfiguration(element.hostname);
-        const sshDest = new SSHDestination(hostConfig['HostName'], hostConfig['User'], hostConfig['Port'] ? parseInt(hostConfig['Port'], 10) : undefined);
+        const sshDest = new SSHDestination(element.hostname);
         openRemoteSSHWindow(sshDest.toString(), reuseWindow);
     }
 
     private async openRemoteSSHLocationWindow(element: HostLocationItem, reuseWindow: boolean) {
-        const sshConfigFile = await SSHConfiguration.loadFromFS();
-        const hostConfig = sshConfigFile.getHostConfiguration(element.hostname);
-        const sshDest = new SSHDestination(hostConfig['HostName'], hostConfig['User'], hostConfig['Port'] ? parseInt(hostConfig['Port'], 10) : undefined);
+        const sshDest = new SSHDestination(element.hostname);
         openRemoteSSHLocationWindow(sshDest.toString(), element.path, reuseWindow);
     }
 }

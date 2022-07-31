@@ -58,12 +58,4 @@ export default class SSHConfiguration {
     getHostConfiguration(host: string): Record<string, string> {
         return this.sshConfig.compute(host);
     }
-
-    getHostNameAlias(hostname: string): string | undefined {
-        const found = this.sshConfig
-            .filter(isHostSection)
-            .find(hostSection => hostSection.config.find(line => line.type === SSHConfig.DIRECTIVE && line.param === 'HostName' && line.value === hostname));
-
-        return found?.value;
-    }
 }
