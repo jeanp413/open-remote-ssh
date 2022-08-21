@@ -13,7 +13,7 @@ import { DEFAULT_IDENTITY_FILES } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer } from './serverSetup';
+import { installCodeServer, ServerInstallError } from './serverSetup';
 import { isWindows } from './common/platform';
 
 const PASSWORD_RETRY_COUNT = 3;
@@ -112,9 +112,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 await this.sshConnection.connect();
 
                 const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, remoteServerListenOnSocket, this.logger);
-                if (installResult.exitCode !== 0) {
-                    throw new Error(`Couldn't install vscode server on remote server, install script returned non-zero exit status`);
-                }
 
                 if (enableDynamicForwarding) {
                     const socksPort = await findRandomPort();
@@ -165,7 +162,11 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 }
 
-                throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
+                if (e instanceof ServerInstallError) {
+                    throw vscode.RemoteAuthorityResolverError.NotAvailable(e.message);
+                } else {
+                    throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
+                }
             }
         });
     }

@@ -27,6 +27,12 @@ export interface ServerInstallResult {
     tmpDir: string;
 }
 
+export class ServerInstallError extends Error {
+    constructor(message: string) {
+        super(message);
+    }
+}
+
 export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[] | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
     const scriptId = crypto.randomBytes(12).toString('hex');
 
@@ -48,16 +54,19 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
     const commandOutput = await conn.exec(`bash << 'EOF'\n${installServerScript}\nEOF`);
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
-        throw new Error(`Failed installing code server`);
     }
-
     logger.trace('Server install command stdout:', commandOutput.stdout);
+
     const resultMap = parseServerInstallOutput(commandOutput.stdout, scriptId);
     if (!resultMap) {
-        throw new Error(`Failed parsing install script output`);
+        throw new ServerInstallError(`Failed parsing install script output`);
     }
 
     const exitCode = parseInt(resultMap.exitCode, 10);
+    if (exitCode !== 0) {
+        throw new ServerInstallError(`Couldn't install vscode server on remote server, install script returned non-zero exit status`);
+    }
+
     const listeningOn = resultMap.listeningOn.match(/^\d+$/)
         ? parseInt(resultMap.listeningOn, 10)
         : resultMap.listeningOn;
@@ -197,7 +206,7 @@ SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
-    pushd $SERVER_DIR
+    pushd $SERVER_DIR > /dev/null
 
     wget --tries=3 --timeout=10 --quiet -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
     if (( $? > 0 )); then
@@ -218,7 +227,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     rm -f vscode-server.tar.gz
 
-    popd
+    popd > /dev/null
 else
     echo "Server script already installed in $SERVER_SCRIPT"
 fi
@@ -232,9 +241,12 @@ else
 fi
 
 if [[ -z $SERVER_RUNNING_PROCESS ]]; then
-    rm $SERVER_PIDFILE
-    rm $SERVER_LOGFILE
-    rm $SERVER_TOKENFILE
+    if [[ -f $SERVER_LOGFILE ]]; then
+        rm $SERVER_LOGFILE
+    fi
+    if [[ -f $SERVER_TOKENFILE ]]; then
+        rm $SERVER_TOKENFILE
+    fi
 
     touch $SERVER_TOKENFILE
     chmod 600 $SERVER_TOKENFILE
