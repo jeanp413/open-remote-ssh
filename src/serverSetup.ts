@@ -8,6 +8,7 @@ export interface ServerInstallOptions {
     quality: string;
     commit: string;
     version: string;
+    release?: string; // vscodium specific
     extensionIds?: string[];
     useSocketPath: boolean;
     serverApplicationName: string;
@@ -35,6 +36,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         version: vscodeServerConfig.version,
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
+        release: vscodeServerConfig.release,
         useSocketPath,
         extensionIds,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
@@ -98,7 +100,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateServerInstallScript({ id, quality, version, commit, extensionIds, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generateServerInstallScript({ id, quality, version, commit, release, extensionIds, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
     const extensions = extensionIds ? extensionIds.map(id => '--install-extension ' + id).join(' ') : '';
     return `
 # Server installation script
@@ -108,6 +110,7 @@ TMP_DIR="\${XDG_RUNTIME_DIR:-"/tmp"}"
 DISTRO_VERSION="${version}"
 DISTRO_COMMIT="${commit}"
 DISTRO_QUALITY="${quality}"
+DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
 
 SERVER_APP_NAME="${serverApplicationName}"
 SERVER_INITIAL_EXTENSIONS="${extensions}"
@@ -190,7 +193,7 @@ if [[ ! -d $SERVER_DIR ]]; then
     fi
 fi
 
-SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${arch}/$SERVER_ARCH/g")"
+SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
