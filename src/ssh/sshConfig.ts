@@ -24,12 +24,12 @@ export default class SSHConfiguration {
         const sshConfigPath = getSSHConfigPath();
         let content = '';
         if (await fileExists(sshConfigPath)) {
-            content = await fs.promises.readFile(sshConfigPath, 'utf8');
+            content = (await fs.promises.readFile(sshConfigPath, 'utf8')).trim();
         }
         const config = SSHConfig.parse(content);
 
         if (await fileExists(systemSSHConfig)) {
-            content = await fs.promises.readFile(systemSSHConfig, 'utf8');
+            content = (await fs.promises.readFile(systemSSHConfig, 'utf8')).trim();
             config.push(...SSHConfig.parse(content));
         }
 
