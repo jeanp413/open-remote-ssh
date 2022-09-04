@@ -27,8 +27,8 @@ jobs:
 
       - name: Ensure new version
         run: |
-          latest_tag=$(curl --silent -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/gitpod-io/gitpod-vscode-desktop/releases/latest | jq --raw-output '.tag_name')
-          if [ "$latest_tag" = *${{ steps.package_vsix.outputs.version }} ]; then
+          latest_tag=$(curl --silent -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/jeanp413/open-remote-ssh/releases/latest | jq --raw-output '.tag_name')
+          if [ "$latest_tag" = "v${{ steps.package_vsix.outputs.version }}" ]; then
             exit 1
           fi
 
