@@ -3,7 +3,7 @@ import * as path from 'path';
 import SSHConfiguration, { getSSHConfigPath } from './ssh/sshConfig';
 import { RemoteLocationHistory } from './remoteLocationHistory';
 import { Disposable } from './common/disposable';
-import { openRemoteSSHLocationWindow, openRemoteSSHWindow, openSSHConfigFile } from './commands';
+import { addNewHost, openRemoteSSHLocationWindow, openRemoteSSHWindow, openSSHConfigFile } from './commands';
 import SSHDestination from './ssh/sshDestination';
 
 class HostItem {
@@ -34,6 +34,7 @@ export class HostTreeDataProvider extends Disposable implements vscode.TreeDataP
     ) {
         super();
 
+        this._register(vscode.commands.registerCommand('openremotessh.explorer.add', () => addNewHost()));
         this._register(vscode.commands.registerCommand('openremotessh.explorer.configure', () => openSSHConfigFile()));
         this._register(vscode.commands.registerCommand('openremotessh.explorer.refresh', () => this.refresh()));
         this._register(vscode.commands.registerCommand('openremotessh.explorer.emptyWindowInNewWindow', e => this.openRemoteSSHWindow(e, false)));
