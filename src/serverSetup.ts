@@ -130,6 +130,7 @@ SERVER_SCRIPT="$SERVER_DIR/bin/$SERVER_APP_NAME"
 SERVER_LOGFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.log"
 SERVER_PIDFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.pid"
 SERVER_TOKENFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.token"
+SERVER_OS=
 SERVER_ARCH=
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
@@ -157,8 +158,11 @@ print_install_results_and_exit() {
 # Check if platform is supported
 PLATFORM="$(uname -s)"
 case $PLATFORM in
+    Darwin)
+        SERVER_OS="darwin"
+        ;;
     Linux)
-        # Only linux for now
+        SERVER_OS="linux"
         ;;
     *)
         echo "Error platform not supported: $PLATFORM"
@@ -202,13 +206,21 @@ if [[ ! -d $SERVER_DIR ]]; then
     fi
 fi
 
-SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
+SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${os}/$SERVER_OS/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
     pushd $SERVER_DIR > /dev/null
 
-    wget --tries=3 --timeout=10 --quiet -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    if [[ ! -z $(which wget) ]]; then
+        wget --tries=3 --timeout=10 --quiet -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    elif [[ ! -z $(which curl) ]]; then
+        curl --retry 3 --connect-timeout 10 --location --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    else
+        echo "Error no tool to download server binary"
+        print_install_results_and_exit 1
+    fi
+
     if (( $? > 0 )); then
         echo "Error downloading server from $SERVER_DOWNLOAD_URL"
         print_install_results_and_exit 1
@@ -235,9 +247,9 @@ fi
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
     SERVER_PID="$(cat $SERVER_PIDFILE)"
-    SERVER_RUNNING_PROCESS="$(ps -o pid,cmd -p $SERVER_PID | grep $SERVER_SCRIPT)"
+    SERVER_RUNNING_PROCESS="$(ps -o pid,command -p $SERVER_PID | grep $SERVER_SCRIPT)"
 else
-    SERVER_RUNNING_PROCESS="$(ps -o pid,cmd -A | grep $SERVER_SCRIPT | grep -v grep)"
+    SERVER_RUNNING_PROCESS="$(ps -o pid,command -A | grep $SERVER_SCRIPT | grep -v grep)"
 fi
 
 if [[ -z $SERVER_RUNNING_PROCESS ]]; then

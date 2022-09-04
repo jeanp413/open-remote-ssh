@@ -80,7 +80,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         // so let's hardcode the default values here
         const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
-        const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-linux-${arch}-${version}.${release}.tar.gz')!;
+        const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz')!;
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
 

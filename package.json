@@ -64,7 +64,7 @@
 					"type": "string",
 					"description": "The URL from where the vscode server will be downloaded. You can use the following variables and they will be replaced dynamically:\n- ${quality}: vscode server quality, e.g. stable or insiders\n- ${version}: vscode server version, e.g. 1.69.0\n- ${commit}: vscode server release commit\n- ${arch}: vscode server arch, e.g. x64, armhf, arm64\n- ${release}: release number, vscodium only https://github.com/VSCodium/vscodium/pull/1192",
 					"scope": "application",
-					"default": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-linux-${arch}-${version}.${release}.tar.gz"
+					"default": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz"
 				},
 				"remote.SSH.remoteServerListenOnSocket": {
 					"type": "boolean",
