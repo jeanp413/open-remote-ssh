@@ -11,6 +11,7 @@
 	"bugs": {
 		"url": "https://github.com/jeanp413/open-remote-ssh/issues"
 	},
+	"icon": "resources/icon.png",
 	"engines": {
 		"vscode": "^1.70.2"
 	},
