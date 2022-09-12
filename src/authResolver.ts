@@ -59,6 +59,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     private tunnels: TunnelInfo[] = [];
 
     private passwordRetryCount: number = PASSWORD_RETRY_COUNT;
+    private keyboardRetryCount: number = PASSWORD_RETRY_COUNT;
 
     private labelFormatterDisposable: vscode.Disposable | undefined;
 
@@ -75,6 +76,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
         const sshDest = SSHDestination.parse(dest);
         this.passwordRetryCount = PASSWORD_RETRY_COUNT;
+        this.keyboardRetryCount = PASSWORD_RETRY_COUNT;
 
         // It looks like default values are not loaded yet when resolving a remote,
         // so let's hardcode the default values here
@@ -144,10 +146,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             } catch (e: unknown) {
                 this.logger.error(`Error resolving authority`, e);
 
-                if (!(e instanceof Error)) {
-                    throw e;
-                }
-
                 // Initial connection
                 if (context.resolveAttempt === 1) {
                     this.logger.show();
@@ -162,8 +160,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 }
 
-                if (e instanceof ServerInstallError) {
-                    throw vscode.RemoteAuthorityResolverError.NotAvailable(e.message);
+                if (e instanceof ServerInstallError || !(e instanceof Error)) {
+                    throw vscode.RemoteAuthorityResolverError.NotAvailable(e instanceof Error ? e.message : String(e));
                 } else {
                     throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
                 }
@@ -396,6 +394,33 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     password
                 }
                 : false);
+        }
+        if (methodsLeft.includes('keyboard-interactive') && this.keyboardRetryCount > 0) {
+            if (this.keyboardRetryCount === PASSWORD_RETRY_COUNT) {
+                this.logger.info(`Trying keyboard-interactive authentication`);
+            }
+
+            return callback({
+                type: 'keyboard-interactive',
+                username: this.sshUser || '',
+                prompt: async (_name, _instructions, _instructionsLang, prompts, finish) => {
+                    const responses: string[] = [];
+                    for (const prompt of prompts) {
+                        const response = await vscode.window.showInputBox({
+                            title: `(${this.sshUser}@${this.sshHostName}) ${prompt.prompt}`,
+                            password: !prompt.echo,
+                            ignoreFocusOut: true
+                        });
+                        if (response === undefined) {
+                            this.keyboardRetryCount = 0;
+                            break;
+                        }
+                        responses.push(response);
+                    }
+                    this.keyboardRetryCount--;
+                    finish(responses);
+                }
+            });
         }
 
         callback(false);
