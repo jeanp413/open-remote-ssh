@@ -9,7 +9,8 @@ export interface ServerInstallOptions {
     commit: string;
     version: string;
     release?: string; // vscodium specific
-    extensionIds?: string[];
+    extensionIds: string[];
+    envVariables: string[];
     useSocketPath: boolean;
     serverApplicationName: string;
     serverDataFolderName: string;
@@ -25,6 +26,7 @@ export interface ServerInstallResult {
     arch: string;
     platform: string;
     tmpDir: string;
+    [key: string]: any;
 }
 
 export class ServerInstallError extends Error {
@@ -33,7 +35,7 @@ export class ServerInstallError extends Error {
     }
 }
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[] | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[], envVariables: string[], useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
     const scriptId = crypto.randomBytes(12).toString('hex');
 
     const vscodeServerConfig = await getVSCodeServerConfig();
@@ -43,8 +45,9 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
         release: vscodeServerConfig.release,
-        useSocketPath,
         extensionIds,
+        envVariables,
+        useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
         serverDownloadUrlTemplate,
@@ -71,6 +74,8 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         ? parseInt(resultMap.listeningOn, 10)
         : resultMap.listeningOn;
 
+    const remoteEnvVars = Object.fromEntries(Object.entries(resultMap).filter(([key,]) => envVariables.includes(key)));
+
     return {
         exitCode,
         listeningOn,
@@ -79,7 +84,8 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         osReleaseId: resultMap.osReleaseId,
         arch: resultMap.arch,
         platform: resultMap.platform,
-        tmpDir: resultMap.tmpDir
+        tmpDir: resultMap.tmpDir,
+        ...remoteEnvVars
     };
 }
 
@@ -109,8 +115,8 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateServerInstallScript({ id, quality, version, commit, release, extensionIds, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
-    const extensions = extensionIds ? extensionIds.map(id => '--install-extension ' + id).join(' ') : '';
+function generateServerInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+    const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     return `
 # Server installation script
 
@@ -151,6 +157,7 @@ print_install_results_and_exit() {
     echo "arch==$ARCH=="
     echo "platform==$PLATFORM=="
     echo "tmpDir==$TMP_DIR=="
+    ${envVariables.map(envVar => `echo "${envVar}==$${envVar}=="`).join('\n')}
     echo "${id}: end"
     exit 0
 }

@@ -63,7 +63,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
     private labelFormatterDisposable: vscode.Disposable | undefined;
 
-    constructor(readonly logger: Log) {
+    constructor(
+        readonly context: vscode.ExtensionContext,
+        readonly logger: Log
+    ) {
     }
 
     resolve(authority: string, context: vscode.RemoteAuthorityResolverContext): Thenable<vscode.ResolverResult> {
@@ -82,6 +85,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         // so let's hardcode the default values here
         const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
+        const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz')!;
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
@@ -99,6 +103,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 this.sshAgentSock = isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : (this.sshHostConfig['IdentityAgent'] || process.env['SSH_AUTH_SOCK']);
                 this.sshAgentSock = this.sshAgentSock ? untildify(this.sshAgentSock) : undefined;
                 const sshPort = this.sshHostConfig['Port'] ? parseInt(this.sshHostConfig['Port'], 10) : undefined;
+                const agentForward = enableAgentForwarding && (this.sshHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
+                const agent = agentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
 
                 this.identityKeys = await this.gatherIdentityFiles();
 
@@ -108,12 +114,27 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     port: sshPort,
                     readyTimeout: 90000,
                     strictVendor: false,
+                    agentForward,
+                    agent,
                     authHandler: (arg0, arg1, arg2) => (this.sshAuthHandler(arg0, arg1, arg2), undefined)
                 });
 
                 await this.sshConnection.connect();
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, remoteServerListenOnSocket, this.logger);
+                const envVariables = [];
+                if (agentForward) {
+                    envVariables.push('SSH_AUTH_SOCK');
+                }
+
+                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, envVariables, remoteServerListenOnSocket, this.logger);
+
+                // Update terminal env variables
+                this.context.environmentVariableCollection.persistent = false;
+                for (const envVar of envVariables) {
+                    if (installResult[envVar] !== undefined) {
+                        this.context.environmentVariableCollection.replace(envVar, installResult[envVar]);
+                    }
+                }
 
                 if (enableDynamicForwarding) {
                     const socksPort = await findRandomPort();
@@ -288,7 +309,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             };
         });
 
-        const identitiesOnly = (this.sshHostConfig['IdentitiesOnly'] || '').toLowerCase() === 'yes';
+        const identitiesOnly = (this.sshHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
         const agentKeys: SSHKey[] = [];
         const preferredIdentityKeys: SSHKey[] = [];
         for (const agentKey of sshAgentKeys) {

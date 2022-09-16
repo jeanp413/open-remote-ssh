@@ -61,6 +61,12 @@
 					"scope": "application",
 					"default": true
 				},
+				"remote.SSH.enableAgentForwarding": {
+					"type": "boolean",
+					"markdownDescription": "Enable fixing the remote environment so that the SSH config option `ForwardAgent` will take effect as expected from VS Code's remote extension host.",
+					"scope": "application",
+					"default": true
+				},
 				"remote.SSH.serverDownloadUrlTemplate": {
 					"type": "string",
 					"description": "The URL from where the vscode server will be downloaded. You can use the following variables and they will be replaced dynamically:\n- ${quality}: vscode server quality, e.g. stable or insiders\n- ${version}: vscode server version, e.g. 1.69.0\n- ${commit}: vscode server release commit\n- ${arch}: vscode server arch, e.g. x64, armhf, arm64\n- ${release}: release number, vscodium only https://github.com/VSCodium/vscodium/pull/1192",
