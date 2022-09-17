@@ -252,7 +252,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
     // From https://github.com/openssh/openssh-portable/blob/acb2059febaddd71ee06c2ebf63dcf211d9ab9f2/sshconnect2.c#L1689-L1690
     private async gatherIdentityFiles() {
-        const identityFiles: string[] = ((this.sshHostConfig['IdentityFile'] as unknown as string[]) || []).map(untildify);
+        const identityFiles: string[] = ((this.sshHostConfig['IdentityFile'] as unknown as string[]) || []).map(untildify).map(i => i.replace(/\.pub$/, ''));
         if (identityFiles.length === 0) {
             identityFiles.push(...DEFAULT_IDENTITY_FILES);
         }
