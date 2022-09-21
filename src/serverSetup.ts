@@ -53,8 +53,11 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         serverDownloadUrlTemplate,
     });
 
+    const installDir = `$HOME/${vscodeServerConfig.serverDataFolderName}/install`;
+    const installScript = `${installDir}/${vscodeServerConfig.commit}.sh`
+
     logger.trace('Server install command:', installServerScript);
-    const commandOutput = await conn.exec(`bash << 'EOF'\n${installServerScript}\nEOF`);
+    const commandOutput = await conn.exec(`mkdir -p ${installDir} && echo '\n${installServerScript.replace(/'/g, '\'"\'"\'')}\n' >${installScript} && bash ${installScript}`);
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
     }
