@@ -1499,10 +1499,9 @@ ssh-config@^4.0.4:
   resolved "https://registry.yarnpkg.com/ssh-config/-/ssh-config-4.1.5.tgz#22d2fada21dec09fae232c9c5de587ee103dfa68"
   integrity sha512-MaSVk+OtHWsfgXGUDhHg+Lph40+yyxywT6vP/lhmVgT/9knQK7SRaOhlptrZViRTkr0RysXE5H15d4E+7hRqxg==
 
-ssh2@^1.10.0:
+"ssh2@git+https://github.com/jeanp413/ssh2#master":
   version "1.11.0"
-  resolved "https://registry.yarnpkg.com/ssh2/-/ssh2-1.11.0.tgz#ce60186216971e12f6deb553dcf82322498fe2e4"
-  integrity sha512-nfg0wZWGSsfUe/IBJkXVll3PEZ//YH2guww+mP88gTpuSU4FtZN7zu9JoeTGOyCNx2dTDtT9fOpWwlzyj4uOOw==
+  resolved "git+https://github.com/jeanp413/ssh2#0c3652b7235be765579c032a9372c1ae49f2ceb3"
   dependencies:
     asn1 "^0.2.4"
     bcrypt-pbkdf "^1.0.2"
