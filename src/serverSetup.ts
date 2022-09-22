@@ -53,11 +53,10 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         serverDownloadUrlTemplate,
     });
 
-    const installDir = `$HOME/${vscodeServerConfig.serverDataFolderName}/install`;
-    const installScript = `${installDir}/${vscodeServerConfig.commit}.sh`
-
     logger.trace('Server install command:', installServerScript);
-    const commandOutput = await conn.exec(`mkdir -p ${installDir} && echo '\n${installServerScript.replace(/'/g, '\'"\'"\'')}\n' >${installScript} && bash ${installScript}`);
+    // Fish shell does not support heredoc so let's workaround it using -c option,
+    // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
+    const commandOutput = await conn.exec(`bash -c '${installServerScript.replace(/'/g, `'\\''`)}'`);
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
     }
