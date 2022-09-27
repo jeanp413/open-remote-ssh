@@ -256,9 +256,9 @@ fi
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
     SERVER_PID="$(cat $SERVER_PIDFILE)"
-    SERVER_RUNNING_PROCESS="$(ps -o pid,command -p $SERVER_PID | grep $SERVER_SCRIPT)"
+    SERVER_RUNNING_PROCESS="$(ps -o pid,args -p $SERVER_PID | grep $SERVER_SCRIPT)"
 else
-    SERVER_RUNNING_PROCESS="$(ps -o pid,command -A | grep $SERVER_SCRIPT | grep -v grep)"
+    SERVER_RUNNING_PROCESS="$(ps -o pid,args -A | grep $SERVER_SCRIPT | grep -v grep)"
 fi
 
 if [[ -z $SERVER_RUNNING_PROCESS ]]; then
