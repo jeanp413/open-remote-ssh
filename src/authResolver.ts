@@ -4,12 +4,11 @@ import { SocksClient, SocksClientOptions } from 'socks';
 import * as vscode from 'vscode';
 import * as ssh2 from 'ssh2';
 import { ParsedKey } from 'ssh2-streams';
-import * as crypto from 'crypto';
 import Log from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import SSHConfiguration from './ssh/sshConfig';
-import { DEFAULT_IDENTITY_FILES } from './ssh/identityFiles';
+import { gatherIdentityFiles } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
@@ -101,7 +100,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 const identityFiles: string[] = (sshHostConfig['IdentityFile'] as unknown as string[]) || [];
                 const identitiesOnly = (sshHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
-                const identityKeys = await this.gatherIdentityFiles(identityFiles, identitiesOnly);
+                const identityKeys = await gatherIdentityFiles(identityFiles, this.sshAgentSock, identitiesOnly, this.logger);
 
                 // Create proxy jump connections if any
                 let proxyStream: ssh2.ClientChannel | undefined;
@@ -122,7 +121,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                     const proxyIdentityFiles: string[] = (proxyHostConfig['IdentityFile'] as unknown as string[]) || [];
                     const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
-                    const proxyIdentityKeys = await this.gatherIdentityFiles(proxyIdentityFiles, proxyIdentitiesOnly);
+                    const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
                     const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyhHostName, proxyIdentityKeys);
                     const proxyConnection = new SSHConnection({
@@ -286,84 +285,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         }
 
         return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);
-    }
-
-    // From https://github.com/openssh/openssh-portable/blob/acb2059febaddd71ee06c2ebf63dcf211d9ab9f2/sshconnect2.c#L1689-L1690
-    private async gatherIdentityFiles(identityFiles: string[], identitiesOnly: boolean) {
-        identityFiles = identityFiles.map(untildify).map(i => i.replace(/\.pub$/, ''));
-        if (identityFiles.length === 0) {
-            identityFiles.push(...DEFAULT_IDENTITY_FILES);
-        }
-
-        const identityFileContentsResult = await Promise.allSettled(identityFiles.map(async path => fs.promises.readFile(path + '.pub')));
-        const fileKeys: SSHKey[] = identityFileContentsResult.map((result, i) => {
-            if (result.status === 'rejected') {
-                return undefined;
-            }
-
-            const parsedResult = ssh2.utils.parseKey(result.value);
-            if (parsedResult instanceof Error || !parsedResult) {
-                this.logger.error(`Error while parsing SSH public key ${identityFiles[i] + '.pub'}:`, parsedResult);
-                return undefined;
-            }
-
-            const parsedKey = Array.isArray(parsedResult) ? parsedResult[0] : parsedResult;
-            const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
-
-            return {
-                filename: identityFiles[i],
-                parsedKey,
-                fingerprint
-            };
-        }).filter(<T>(v: T | undefined): v is T => !!v);
-
-        let sshAgentParsedKeys: ParsedKey[] = [];
-        try {
-            if (!this.sshAgentSock) {
-                throw new Error(`SSH_AUTH_SOCK environment variable not defined`);
-            }
-
-            sshAgentParsedKeys = await new Promise<ParsedKey[]>((resolve, reject) => {
-                const sshAgent = new ssh2.OpenSSHAgent(this.sshAgentSock!);
-                sshAgent.getIdentities((err, publicKeys) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve(publicKeys || []);
-                    }
-                });
-            });
-        } catch (e) {
-            this.logger.error(`Couldn't get identities from OpenSSH agent`, e);
-        }
-
-        const sshAgentKeys: SSHKey[] = sshAgentParsedKeys.map(parsedKey => {
-            const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
-            return {
-                filename: parsedKey.comment,
-                parsedKey,
-                fingerprint,
-                agentSupport: true
-            };
-        });
-
-        const agentKeys: SSHKey[] = [];
-        const preferredIdentityKeys: SSHKey[] = [];
-        for (const agentKey of sshAgentKeys) {
-            const foundIdx = fileKeys.findIndex(k => agentKey.parsedKey.type === k.parsedKey.type && agentKey.fingerprint === k.fingerprint);
-            if (foundIdx >= 0) {
-                preferredIdentityKeys.push({ ...fileKeys[foundIdx], agentSupport: true });
-                fileKeys.splice(foundIdx, 1);
-            } else if (!identitiesOnly) {
-                agentKeys.push(agentKey);
-            }
-        }
-        preferredIdentityKeys.push(...agentKeys);
-        preferredIdentityKeys.push(...fileKeys);
-
-        this.logger.trace(`Identity keys:`, preferredIdentityKeys.length ? preferredIdentityKeys.map(k => `${k.filename} ${k.parsedKey.type} SHA256:${k.fingerprint}`).join('\n') : 'None');
-
-        return preferredIdentityKeys;
     }
 
     private getSSHAuthHandler(sshUser: string, sshHostName: string, identityKeys: SSHKey[]) {
