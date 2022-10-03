@@ -90,7 +90,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             try {
                 const sshconfig = await SSHConfiguration.loadFromFS();
                 const sshHostConfig = sshconfig.getHostConfiguration(sshDest.hostname);
-                const sshHostName = sshHostConfig['HostName'] || sshDest.hostname;
+                const sshHostName = sshHostConfig['HostName'] ? sshHostConfig['HostName'].replace('%h', sshDest.hostname) : sshDest.hostname;
                 const sshUser = sshHostConfig['User'] || sshDest.user || '';
                 const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : 22;
 
