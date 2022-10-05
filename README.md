@@ -28,3 +28,11 @@ Enable the extension in your `argv.json`
 ```
 which you can open by running the `Preferences: Configure Runtime Arguments` command.
 The file is located in `~/.vscode-oss/argv.json`.
+
+**alpine linux**
+
+When running on alpine linux, the packages `gcompat`, `libstdc++, and  `procps` are necessary and can be installed via
+running
+```bash
+sudo apk add gcompat libstdc++ procps
+```
