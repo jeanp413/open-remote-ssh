@@ -45,9 +45,8 @@ export default class SSHConfiguration {
             .filter(isHostSection)
             .forEach(hostSection => {
                 const value = Array.isArray(hostSection.value as string[] | string) ? hostSection.value[0] : hostSection.value;
-                const hasHostName = hostSection.config.find(line => line.type === SSHConfig.DIRECTIVE && line.param === 'HostName' && !!line.value);
                 const isPattern = /^!/.test(value) || /[?*]/.test(value);
-                if (hasHostName && !isPattern) {
+                if (!isPattern) {
                     hosts.add(value);
                 }
             });
