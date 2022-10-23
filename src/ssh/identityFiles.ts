@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { ParsedKey } from 'ssh2-streams';
 import * as ssh2 from 'ssh2';
-import { untildify } from '../common/files';
+import { untildify, exists as fileExists } from '../common/files';
 import Log from '../common/logger';
 
 const homeDir = os.homedir();
@@ -41,7 +41,10 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
         identityFiles.push(...DEFAULT_IDENTITY_FILES);
     }
 
-    const identityFileContentsResult = await Promise.allSettled(identityFiles.map(async path => fs.promises.readFile(path + '.pub')));
+    const identityFileContentsResult = await Promise.allSettled(identityFiles.map(async keyPath => {
+        keyPath = await fileExists(keyPath + '.pub') ? keyPath + '.pub' : keyPath;
+        return fs.promises.readFile(keyPath);
+    }));
     const fileKeys: SSHKey[] = identityFileContentsResult.map((result, i) => {
         if (result.status === 'rejected') {
             return undefined;
@@ -49,7 +52,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
 
         const parsedResult = ssh2.utils.parseKey(result.value);
         if (parsedResult instanceof Error || !parsedResult) {
-            logger.error(`Error while parsing SSH public key ${identityFiles[i] + '.pub'}:`, parsedResult);
+            logger.error(`Error while parsing SSH public key ${identityFiles[i]}:`, parsedResult);
             return undefined;
         }
 
