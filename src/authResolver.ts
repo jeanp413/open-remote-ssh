@@ -1,5 +1,7 @@
+import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
+import * as stream from 'stream';
 import { SocksClient, SocksClientOptions } from 'socks';
 import * as vscode from 'vscode';
 import * as ssh2 from 'ssh2';
@@ -103,7 +105,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const identityKeys = await gatherIdentityFiles(identityFiles, this.sshAgentSock, identitiesOnly, this.logger);
 
                 // Create proxy jump connections if any
-                let proxyStream: ssh2.ClientChannel | undefined;
+                let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
                 const proxyJumps = (sshHostConfig['ProxyJump'] || '').split(',').filter(i => !!i.trim())
                     .map(i => {
                         const proxy = SSHDestination.parse(i);
@@ -145,6 +147,35 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 // Create final shh connection
                 const sshAuthHandler = this.getSSHAuthHandler(sshUser, sshHostName, identityKeys);
+
+                if (sshHostConfig['ProxyCommand']) {
+                    let proxyArgs: Array<string> = (sshHostConfig['ProxyCommand'] as unknown as Array<string>)
+                        .map((arg) => arg.replace(/%h/, sshHostName).replace(/%p/, sshPort.toString()));
+                    let proxyCommand: string = proxyArgs.shift() as string;
+
+                    let child: ChildProcess = spawn(proxyCommand, proxyArgs);
+                    proxyStream = new stream.Duplex({
+                      read: (size) => {
+                        size = Math.min(size, child?.stdout?.readableLength || 0);
+                        const result = child?.stdout?.read(size);
+                        return result;
+                      },
+                      write: (chunk, encoding, callback) => {
+                        const result = child?.stdin?.write(chunk, encoding);
+                        callback(null);
+                        return result;
+                      }
+                    });
+
+                    child?.stdout
+                        ?.on('readable', (...args) => {
+                            proxyStream?.emit('readable', ...args);
+                            if (child?.stdout?.readableLength && child.stdout.readableLength > 0) {
+                                proxyStream?.emit('data', child.stdout.read());
+                            }
+                        })
+                }
+
                 this.sshConnection = new SSHConnection({
                     host: !proxyStream ? sshHostName : undefined,
                     port: !proxyStream ? sshPort : undefined,
