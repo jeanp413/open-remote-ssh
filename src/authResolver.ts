@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as stream from 'stream';
@@ -52,6 +52,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     private proxyConnections: SSHConnection[] = [];
     private sshConnection: SSHConnection | undefined;
     private sshAgentSock: string | undefined;
+    private proxyCommandProcess: cp.ChildProcessWithoutNullStreams | undefined;
 
     private socksTunnel: SSHTunnelConfig | undefined;
     private tunnels: TunnelInfo[] = [];
@@ -106,75 +107,93 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 // Create proxy jump connections if any
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
-                const proxyJumps = (sshHostConfig['ProxyJump'] || '').split(',').filter(i => !!i.trim())
-                    .map(i => {
-                        const proxy = SSHDestination.parse(i);
-                        const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
-                        return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
-                    });
-                for (let i = 0; i < proxyJumps.length; i++) {
-                    const [proxy, proxyHostConfig] = proxyJumps[i];
-                    const proxyhHostName = proxyHostConfig['HostName'] || proxy.hostname;
-                    const proxyUser = proxyHostConfig['User'] || sshUser;
-                    const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : sshPort;
+                if (sshHostConfig['ProxyJump']) {
+                    const proxyJumps = sshHostConfig['ProxyJump'].split(',').filter(i => !!i.trim())
+                        .map(i => {
+                            const proxy = SSHDestination.parse(i);
+                            const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
+                            return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
+                        });
+                    for (let i = 0; i < proxyJumps.length; i++) {
+                        const [proxy, proxyHostConfig] = proxyJumps[i];
+                        const proxyhHostName = proxyHostConfig['HostName'] || proxy.hostname;
+                        const proxyUser = proxyHostConfig['User'] || sshUser;
+                        const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : sshPort;
 
-                    const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
-                    const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
+                        const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
+                        const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
 
-                    const proxyIdentityFiles: string[] = (proxyHostConfig['IdentityFile'] as unknown as string[]) || [];
-                    const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
-                    const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
+                        const proxyIdentityFiles: string[] = (proxyHostConfig['IdentityFile'] as unknown as string[]) || [];
+                        const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
+                        const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
-                    const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyhHostName, proxyIdentityKeys);
-                    const proxyConnection = new SSHConnection({
-                        host: !proxyStream ? proxyhHostName : undefined,
-                        port: !proxyStream ? proxyPort : undefined,
-                        sock: proxyStream,
-                        username: proxyUser,
-                        readyTimeout: 90000,
-                        strictVendor: false,
-                        agentForward: proxyAgentForward,
-                        agent: proxyAgent,
-                        authHandler: (arg0, arg1, arg2) => (proxyAuthHandler(arg0, arg1, arg2), undefined)
-                    });
-                    this.proxyConnections.push(proxyConnection);
+                        const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyhHostName, proxyIdentityKeys);
+                        const proxyConnection = new SSHConnection({
+                            host: !proxyStream ? proxyhHostName : undefined,
+                            port: !proxyStream ? proxyPort : undefined,
+                            sock: proxyStream,
+                            username: proxyUser,
+                            readyTimeout: 90000,
+                            strictVendor: false,
+                            agentForward: proxyAgentForward,
+                            agent: proxyAgent,
+                            authHandler: (arg0, arg1, arg2) => (proxyAuthHandler(arg0, arg1, arg2), undefined)
+                        });
+                        this.proxyConnections.push(proxyConnection);
 
-                    const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
-                    const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
-                    const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(proxyHostConfig['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
-                    proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
+                        const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
+                        const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
+                        const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(proxyHostConfig['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
+                        proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
+                    }
+                } else if (sshHostConfig['ProxyCommand']) {
+                    const proxyArgs = (sshHostConfig['ProxyCommand'] as unknown as string[])
+                        .map((arg) => arg.replace('%h', sshHostName).replace('%p', sshPort.toString()));
+                    const proxyCommand = proxyArgs.shift()!;
+
+                    this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
+
+                    const child = cp.spawn(proxyCommand, proxyArgs);
+                    // ref: https://gist.github.com/FranckFreiburger/9af693b0432d7ee85d4e360e524551dc
+                    proxyStream = new class extends stream.Duplex {
+                        constructor(private _writable: stream.Writable, private _readable: stream.Readable) {
+                            super({
+                                readableObjectMode: _readable.readableObjectMode,
+                                writableObjectMode: _writable.writableObjectMode,
+                                readableHighWaterMark: _readable.readableHighWaterMark,
+                                writableHighWaterMark: _writable.writableHighWaterMark,
+                            });
+
+                            _readable.pause();
+
+                            _writable.on('finish', () => void this.end());
+                            _writable.on('end', () => void this.push(null));
+
+                            _writable.on('error', err => void this.emit('error', err));
+                            _readable.on('error', err => void this.emit('error', err));
+                        }
+
+                        override _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
+                            const ok: boolean = this._writable.write(chunk, encoding, () => ok && callback());
+                            if (!ok) {
+                                this._writable.once('drain', callback);
+                            }
+                        }
+
+                        override _read(size?:number) {
+                            const chunk = this._readable.read(size);
+                            if (chunk !== null){
+                                this.push(chunk);
+                            } else {
+                                this._readable.once('readable', () => void this._read());
+                            }
+                        }
+                    }(child.stdin, child.stdout);
+                    this.proxyCommandProcess = child;
                 }
 
                 // Create final shh connection
                 const sshAuthHandler = this.getSSHAuthHandler(sshUser, sshHostName, identityKeys);
-
-                if (sshHostConfig['ProxyCommand']) {
-                    let proxyArgs: Array<string> = (sshHostConfig['ProxyCommand'] as unknown as Array<string>)
-                        .map((arg) => arg.replace(/%h/, sshHostName).replace(/%p/, sshPort.toString()));
-                    let proxyCommand: string = proxyArgs.shift() as string;
-
-                    let child: ChildProcess = spawn(proxyCommand, proxyArgs);
-                    proxyStream = new stream.Duplex({
-                      read: (size) => {
-                        size = Math.min(size, child?.stdout?.readableLength || 0);
-                        const result = child?.stdout?.read(size);
-                        return result;
-                      },
-                      write: (chunk, encoding, callback) => {
-                        const result = child?.stdin?.write(chunk, encoding);
-                        callback(null);
-                        return result;
-                      }
-                    });
-
-                    child?.stdout
-                        ?.on('readable', (...args) => {
-                            proxyStream?.emit('readable', ...args);
-                            if (child?.stdout?.readableLength && child.stdout.readableLength > 0) {
-                                proxyStream?.emit('data', child.stdout.read());
-                            }
-                        })
-                }
 
                 this.sshConnection = new SSHConnection({
                     host: !proxyStream ? sshHostName : undefined,
@@ -449,6 +468,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         } else {
             this.sshConnection?.close();
         }
+        this.proxyCommandProcess?.kill();
         this.labelFormatterDisposable?.dispose();
     }
 }
