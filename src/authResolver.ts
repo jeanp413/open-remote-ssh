@@ -154,41 +154,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
 
                     const child = cp.spawn(proxyCommand, proxyArgs);
-                    // ref: https://gist.github.com/FranckFreiburger/9af693b0432d7ee85d4e360e524551dc
-                    proxyStream = new class extends stream.Duplex {
-                        constructor(private _writable: stream.Writable, private _readable: stream.Readable) {
-                            super({
-                                readableObjectMode: _readable.readableObjectMode,
-                                writableObjectMode: _writable.writableObjectMode,
-                                readableHighWaterMark: _readable.readableHighWaterMark,
-                                writableHighWaterMark: _writable.writableHighWaterMark,
-                            });
-
-                            _readable.pause();
-
-                            _writable.on('finish', () => void this.end());
-                            _writable.on('end', () => void this.push(null));
-
-                            _writable.on('error', err => void this.emit('error', err));
-                            _readable.on('error', err => void this.emit('error', err));
-                        }
-
-                        override _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
-                            const ok: boolean = this._writable.write(chunk, encoding, () => ok && callback());
-                            if (!ok) {
-                                this._writable.once('drain', callback);
-                            }
-                        }
-
-                        override _read(size?:number) {
-                            const chunk = this._readable.read(size);
-                            if (chunk !== null){
-                                this.push(chunk);
-                            } else {
-                                this._readable.once('readable', () => void this._read());
-                            }
-                        }
-                    }(child.stdin, child.stdout);
+                    proxyStream = stream.Duplex.from({ readable: child.stdout, writable: child.stdin });
                     this.proxyCommandProcess = child;
                 }
 
