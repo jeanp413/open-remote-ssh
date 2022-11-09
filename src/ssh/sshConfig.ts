@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import SSHConfig, { Line, Section } from 'ssh-config';
+import SSHConfig, { Directive, Line, Section } from 'ssh-config';
 import * as vscode from 'vscode';
 import { exists as fileExists } from '../common/files';
 import { isWindows } from '../common/platform';
@@ -14,8 +14,40 @@ export function getSSHConfigPath() {
     return remoteSSHconfig.get<string>('configFile') || defaultSSHConfigPath;
 }
 
+function isDirective(line: Line): line is Directive {
+    return line.type === SSHConfig.DIRECTIVE
+}
+
 function isHostSection(line: Line): line is Section {
     return line.type === SSHConfig.DIRECTIVE && line.param === 'Host' && !!line.value && !!(line as Section).config;
+}
+
+const SSH_CONFIG_PROPERTIES = new Map([
+    ['host', 'Host'],
+    ['hostname', 'HostName'],
+    ['user', 'User'],
+    ['port', 'Port'],
+    ['identityagent', 'IdentityAgent'],
+    ['identitiesonly', 'IdentitiesOnly'],
+    ['identityfile', 'IdentityFile'],
+    ['forwardagent', 'ForwardAgent'],
+    ['proxyjump', 'ProxyJump'],
+    ['proxycommand', 'ProxyCommand'],
+]);
+
+function normalizeProp(prop: Directive) {
+    prop.param = SSH_CONFIG_PROPERTIES.get(prop.param.toLowerCase()) || prop.param;
+}
+
+function normalizeSSHConfig(config: SSHConfig) {
+    for (const line of config) {
+        if (isDirective(line)) {
+            normalizeProp(line);
+        }
+        if (isHostSection(line)) {
+            normalizeSSHConfig(line.config);
+        }
+    }
 }
 
 export default class SSHConfiguration {
@@ -37,19 +69,21 @@ export default class SSHConfiguration {
     }
 
     constructor(private sshConfig: SSHConfig) {
+        // Normalize config property names
+        normalizeSSHConfig(sshConfig);
     }
 
     getAllConfiguredHosts(): string[] {
         const hosts = new Set<string>();
-        this.sshConfig
-            .filter(isHostSection)
-            .forEach(hostSection => {
-                const value = Array.isArray(hostSection.value as string[] | string) ? hostSection.value[0] : hostSection.value;
+        for (const line of this.sshConfig) {
+            if (isHostSection(line)) {
+                const value = Array.isArray(line.value as string[] | string) ? line.value[0] : line.value;
                 const isPattern = /^!/.test(value) || /[?*]/.test(value);
                 if (!isPattern) {
                     hosts.add(value);
                 }
-            });
+            }
+        }
 
         return [...hosts.keys()];
     }
