@@ -73,6 +73,20 @@
 					"scope": "application",
 					"default": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz"
 				},
+				"remote.SSH.remotePlatform": {
+					"type": "object",
+					"description": "A map of the remote hostname to the platform for that remote. Valid values: linux, macos, windows.",
+					"scope": "application",
+					"default": {},
+					"additionalProperties": {
+						"type": "string",
+						"enum": [
+							"linux",
+							"macos",
+							"windows"
+						]
+					}
+				},
 				"remote.SSH.remoteServerListenOnSocket": {
 					"type": "boolean",
 					"description": "When true, the remote vscode server will listen on a socket path instead of opening a port. Only valid for Linux and macOS remotes. Requires `AllowStreamLocalForwarding` to be enabled for the SSH server.",

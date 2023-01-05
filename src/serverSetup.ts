@@ -35,28 +35,69 @@ export class ServerInstallError extends Error {
     }
 }
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[], envVariables: string[], useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+    if (!platform) {
+        const detectedPlatform = await conn.exec('uname -s');
+        if (detectedPlatform.stdout.includes('MINGW64')) {
+            platform = 'windows'
+        } else if (detectedPlatform.stdout.includes('windows32')) {
+            platform = 'windows'
+        }
+        
+        if (platform) {
+            logger.trace(`Detected platform: ${platform}`);
+        }
+    }
+
     const scriptId = crypto.randomBytes(12).toString('hex');
 
     const vscodeServerConfig = await getVSCodeServerConfig();
-    const installServerScript = generateServerInstallScript({
-        id: scriptId,
-        version: vscodeServerConfig.version,
-        commit: vscodeServerConfig.commit,
-        quality: vscodeServerConfig.quality,
-        release: vscodeServerConfig.release,
-        extensionIds,
-        envVariables,
-        useSocketPath,
-        serverApplicationName: vscodeServerConfig.serverApplicationName,
-        serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-        serverDownloadUrlTemplate,
-    });
+    
+    let commandOutput: { stdout: string; stderr: string };
+    if (platform == 'windows') {
+         const installServerScript = generatePowerShellInstallScript({
+            id: scriptId,
+            version: vscodeServerConfig.version,
+            commit: vscodeServerConfig.commit,
+            quality: vscodeServerConfig.quality,
+            release: vscodeServerConfig.release,
+            extensionIds,
+            envVariables,
+            useSocketPath,
+            serverApplicationName: vscodeServerConfig.serverApplicationName,
+            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
+            serverDownloadUrlTemplate,
+        });
+        
+        logger.trace('Server install command:', installServerScript);
 
-    logger.trace('Server install command:', installServerScript);
-    // Fish shell does not support heredoc so let's workaround it using -c option,
-    // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
-    const commandOutput = await conn.exec(`bash -c '${installServerScript.replace(/'/g, `'\\''`)}'`);
+        const installDir = `$HOME\\${vscodeServerConfig.serverDataFolderName}\\install`;
+        const installScript = `${installDir}\\${vscodeServerConfig.commit}.ps1`;
+        const endRegex = new RegExp(`${scriptId}: end`);
+        const command = `md -Force "$HOME\\.vscodium-server\\install"; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
+        
+        commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
+    } else {
+        const installServerScript = generateBashInstallScript({
+            id: scriptId,
+            version: vscodeServerConfig.version,
+            commit: vscodeServerConfig.commit,
+            quality: vscodeServerConfig.quality,
+            release: vscodeServerConfig.release,
+            extensionIds,
+            envVariables,
+            useSocketPath,
+            serverApplicationName: vscodeServerConfig.serverApplicationName,
+            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
+            serverDownloadUrlTemplate,
+        });
+        
+        logger.trace('Server install command:', installServerScript);
+        // Fish shell does not support heredoc so let's workaround it using -c option,
+        // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
+        commandOutput = await conn.exec(`bash -c '${installServerScript.replace(/'/g, `'\\''`)}'`);
+    }
+   
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
     }
@@ -117,7 +158,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateServerInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     return `
 # Server installation script
@@ -307,5 +348,205 @@ fi
 
 # Finish server setup
 print_install_results_and_exit 0
+`;
+}
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+    const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
+    const downloadUrl = serverDownloadUrlTemplate
+        .replace(/\$\{quality\}/g, quality)
+        .replace(/\$\{version\}/g, version)
+        .replace(/\$\{commit\}/g, commit)
+        .replace(/\$\{os\}/g, 'win32')
+        .replace(/\$\{arch\}/g,  'x64')
+        .replace(/\$\{release\}/g, release ?? '')
+
+    return `
+# Server installation script
+
+$TMP_DIR="$env:TEMP\\$([System.IO.Path]::GetRandomFileName())"
+
+$DISTRO_VERSION="${version}"
+$DISTRO_COMMIT="${commit}"
+$DISTRO_QUALITY="${quality}"
+$DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
+
+$SERVER_APP_NAME="${serverApplicationName}"
+$SERVER_INITIAL_EXTENSIONS="${extensions}"
+$SERVER_LISTEN_FLAG="${useSocketPath ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"` : '--port=0'}"
+$SERVER_DATA_DIR="$(Resolve-Path ~)\\${serverDataFolderName}"
+$SERVER_DIR="$SERVER_DATA_DIR\\bin\\$DISTRO_COMMIT"
+$SERVER_SCRIPT="$SERVER_DIR\\bin\\$SERVER_APP_NAME.cmd"
+$SERVER_LOGFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.log"
+$SERVER_PIDFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.pid"
+$SERVER_TOKENFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.token"
+$SERVER_OS="win32"
+$SERVER_ARCH=
+$SERVER_CONNECTION_TOKEN=
+$SERVER_DOWNLOAD_URL=
+
+$LISTENING_ON=
+$OS_RELEASE_ID=
+$ARCH=
+$PLATFORM=
+
+function printInstallResults($code) {
+    "${id}: start"
+    "exitCode==$code=="
+    "listeningOn==$LISTENING_ON=="
+    "connectionToken==$SERVER_CONNECTION_TOKEN=="
+    "logFile==$SERVER_LOGFILE=="
+    "osReleaseId==$OS_RELEASE_ID=="
+    "arch==$ARCH=="
+    "platform==$PLATFORM=="
+    "tmpDir==$TMP_DIR=="
+    ${envVariables.map(envVar => `"${envVar}==$${envVar}=="`).join('\n')}
+    "${id}: end"
+}
+
+# Check if platform is supported
+$PLATFORM="$(uname -s)"
+
+# Check machine architecture
+$ARCH="$(uname -m)"
+if(($ARCH -eq "x86_64") -or ($ARCH -eq "i686-pc")) {
+    $SERVER_ARCH="x64"
+}
+else {
+    "Error architecture not supported: $ARCH"
+    printInstallResults 1
+    exit 0
+}
+
+# Create installation folder
+if(!(Test-Path $SERVER_DIR)) {
+    try {
+        ni -it d $SERVER_DIR -f -ea si
+    } catch {
+        "Error creating server install directory - $($_.ToString())"
+        exit 1
+    }
+
+    if(!(Test-Path $SERVER_DIR)) {
+        "Error creating server install directory"
+        exit 1
+    }
+}
+
+cd $SERVER_DIR
+
+# Check if server script is already installed
+if(!(Test-Path $SERVER_SCRIPT)) {
+    del vscode-server.tar.gz
+
+    $REQUEST_ARGUMENTS = @{
+		Uri="${downloadUrl}"
+		TimeoutSec=20
+		OutFile="vscode-server.tar.gz"
+		UseBasicParsing=$True
+	}
+
+	[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    
+    Invoke-RestMethod @REQUEST_ARGUMENTS
+    
+    if(Test-Path "vscode-server.tar.gz") {
+        tar -xf vscode-server.tar.gz --strip-components 1
+        
+        del vscode-server.tar.gz
+    }
+    
+    if(!(Test-Path $SERVER_SCRIPT)) {
+        "Error while installing the server binary"
+        exit 1
+    }
+}
+else {
+    "Server script already installed in $SERVER_SCRIPT"
+}
+
+# Try to find if server is already running
+if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SERVER_DIR\\*") {
+    echo "Server script is already running $SERVER_SCRIPT"
+}
+else {
+    if(Test-Path $SERVER_LOGFILE) {
+        del $SERVER_LOGFILE
+    }
+    if(Test-Path $SERVER_PIDFILE) {
+        del $SERVER_PIDFILE
+    }
+    if(Test-Path $SERVER_TOKENFILE) {
+        del $SERVER_TOKENFILE
+    }
+    
+    $SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
+    [System.IO.File]::WriteAllLines($SERVER_TOKENFILE, $SERVER_CONNECTION_TOKEN)
+    
+    $SCRIPT_ARGUMENTS="--start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms *> '$SERVER_LOGFILE'"
+    
+    $START_ARGUMENTS = @{
+        FilePath = "powershell.exe"
+        WindowStyle = "hidden"
+        ArgumentList = @(
+            "-ExecutionPolicy", "Unrestricted", "-NoLogo", "-NoProfile", "-NonInteractive", "-c", "$SERVER_SCRIPT $SCRIPT_ARGUMENTS"
+        )
+        PassThru = $True
+    }
+    
+    $SERVER_ID = (start @START_ARGUMENTS).ID
+    
+    if($SERVER_ID) {
+        [System.IO.File]::WriteAllLines($SERVER_PIDFILE, $SERVER_ID)
+    }
+}
+
+if(Test-Path $SERVER_TOKENFILE) {
+    $SERVER_CONNECTION_TOKEN="$(cat $SERVER_TOKENFILE)"
+}
+else {
+    "Error server token file not found $SERVER_TOKENFILE"
+    printInstallResults 1
+    exit 0
+}
+
+sleep -Milliseconds 500
+
+$SELECT_ARGUMENTS = @{
+    Path = $SERVER_LOGFILE
+    Pattern = "Extension host agent listening on (\\d+)"
+}
+
+for($I = 1; $I -le 5; $I++) {
+    if(Test-Path $SERVER_LOGFILE) {
+        $GROUPS = (Select-String @SELECT_ARGUMENTS).Matches.Groups
+        
+        if($GROUPS) {
+            $LISTENING_ON = $GROUPS[1].Value
+            break
+        }
+    }
+    
+    sleep -Milliseconds 500
+}
+
+if(!(Test-Path $SERVER_LOGFILE)) {
+    "Error server log file not found $SERVER_LOGFILE"
+    printInstallResults 1
+    exit 0
+}
+
+# Finish server setup
+printInstallResults 0
+
+if($SERVER_ID) {
+    while($True) {
+        if(!(gps -Id $SERVER_ID)) {
+            "server died, exit"
+            exit 0
+        }
+        
+        sleep 30
+    }
+}
 `;
 }

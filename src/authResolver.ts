@@ -82,6 +82,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz')!;
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
+        const remotePlatform = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {})[dest];
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
 
         return vscode.window.withProgress({
@@ -179,7 +180,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     envVariables.push('SSH_AUTH_SOCK');
                 }
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, envVariables, remoteServerListenOnSocket, this.logger);
+                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, envVariables, remotePlatform, remoteServerListenOnSocket, this.logger);
 
                 // Update terminal env variables
                 this.context.environmentVariableCollection.persistent = false;
