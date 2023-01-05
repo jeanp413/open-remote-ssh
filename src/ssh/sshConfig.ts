@@ -3,19 +3,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import SSHConfig, { Directive, Line, Section } from 'ssh-config';
 import * as vscode from 'vscode';
-import { exists as fileExists } from '../common/files';
+import { exists as fileExists, untildify } from '../common/files';
 import { isWindows } from '../common/platform';
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
 const defaultSSHConfigPath = path.resolve(os.homedir(), '.ssh/config');
 
 export function getSSHConfigPath() {
-    const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
-    return remoteSSHconfig.get<string>('configFile') || defaultSSHConfigPath;
+    const sshConfigPath = vscode.workspace.getConfiguration('remote.SSH').get<string>('configFile');
+    return sshConfigPath ? untildify(sshConfigPath) : defaultSSHConfigPath;
 }
 
 function isDirective(line: Line): line is Directive {
-    return line.type === SSHConfig.DIRECTIVE
+    return line.type === SSHConfig.DIRECTIVE;
 }
 
 function isHostSection(line: Line): line is Section {
