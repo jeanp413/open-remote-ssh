@@ -74,7 +74,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         const installDir = `$HOME\\${vscodeServerConfig.serverDataFolderName}\\install`;
         const installScript = `${installDir}\\${vscodeServerConfig.commit}.ps1`;
         const endRegex = new RegExp(`${scriptId}: end`);
-        const command = `md -Force "$HOME\\.vscodium-server\\install"; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
+        const command = `md -Force "$HOME\\${vscodeServerConfig.serverDataFolderName}\\install"; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
         
         commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
