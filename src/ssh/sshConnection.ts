@@ -114,6 +114,46 @@ export default class SSHConnection extends EventEmitter {
             });
         });
     }
+    
+    /**
+     * Exec a command
+     */
+    execPartial(cmd: string, tester: (stdout: string, stderr: string) => boolean, params?: Array<string>, options: ExecOptions = {}): Promise<{ stdout: string; stderr: string }> {
+        cmd += (Array.isArray(params) ? (' ' + params.join(' ')) : '');
+        return this.connect().then(() => {
+            return new Promise((resolve, reject) => {
+                this.sshConnection!.exec(cmd, options, (err, stream) => {
+                    if (err) {
+                        return reject(err);
+                    }
+                    let stdout = '';
+                    let stderr = '';
+                    let resolved = false;
+                    stream.on('close', function () {
+                        if (!resolved) {
+                            return resolve({ stdout, stderr });
+                        }
+                    }).on('data', function (data: Buffer | string) {
+                        stdout += data.toString();
+                        
+                        if (tester(stdout, stderr)) {
+                            resolved = true;
+                            
+                            return resolve({ stdout, stderr });
+                        }
+                    }).stderr.on('data', function (data: Buffer | string) {
+                        stderr += data.toString();
+                        
+                        if (tester(stdout, stderr)) {
+                            resolved = true;
+                        
+                            return resolve({ stdout, stderr });
+                        }
+                    });
+                });
+            });
+        });
+    }
 
     /**
      * Forward out
