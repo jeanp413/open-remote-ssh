@@ -118,8 +118,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
                         const proxyhHostName = proxyHostConfig['HostName'] || proxy.hostname;
-                        const proxyUser = proxyHostConfig['User'] || sshUser;
-                        const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : sshPort;
+                        const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
+                        const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : (proxy.port || sshPort);
 
                         const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                         const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
@@ -144,7 +144,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                         const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                         const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
-                        const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(proxyHostConfig['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
+                        const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(nextProxyJump[1]['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
