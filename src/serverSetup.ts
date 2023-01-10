@@ -37,9 +37,19 @@ export class ServerInstallError extends Error {
 
 export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
     if (!platform) {
-        const detectedPlatform = await conn.exec('uname -s');
-        if (/MINGW64|windows32/g.test(detectedPlatform.stdout)) {
-            platform = 'windows';
+        const result = await conn.exec('uname -s');
+        if (result.stdout) {
+            if (/MINGW64|windows32/g.test(result.stdout)) {
+                platform = 'windows';
+            }
+        }
+        else if (result.stderr) {
+            if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
+                platform = 'windows';
+            }
+        }
+        
+        if (platform) {
             logger.trace(`Detected platform: ${platform}`);
         }
     }
@@ -383,7 +393,6 @@ $SERVER_DOWNLOAD_URL=
 $LISTENING_ON=
 $OS_RELEASE_ID=
 $ARCH=
-$PLATFORM=
 
 function printInstallResults($code) {
     "${id}: start"
@@ -393,18 +402,15 @@ function printInstallResults($code) {
     "logFile==$SERVER_LOGFILE=="
     "osReleaseId==$OS_RELEASE_ID=="
     "arch==$ARCH=="
-    "platform==$PLATFORM=="
+    "platform==windows=="
     "tmpDir==$TMP_DIR=="
     ${envVariables.map(envVar => `"${envVar}==$${envVar}=="`).join('\n')}
     "${id}: end"
 }
 
-# Check if platform is supported
-$PLATFORM="$(uname -s)"
-
 # Check machine architecture
-$ARCH="$(uname -m)"
-if(($ARCH -eq "x86_64") -or ($ARCH -eq "i686-pc")) {
+$ARCH=$env:PROCESSOR_ARCHITECTURE
+if(($ARCH -eq "AMD64") -or ($ARCH -eq "IA64")) {
     $SERVER_ARCH="x64"
 }
 else {
