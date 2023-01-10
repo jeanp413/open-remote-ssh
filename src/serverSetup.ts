@@ -42,8 +42,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
             if (/MINGW64|windows32/g.test(result.stdout)) {
                 platform = 'windows';
             }
-        }
-        else if (result.stderr) {
+        } else if (result.stderr) {
             if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
                 platform = 'windows';
             }
