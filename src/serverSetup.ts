@@ -36,20 +36,32 @@ export class ServerInstallError extends Error {
 }
 
 export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
-    if (!platform) {
+    let shell = 'powershell';
+
+    // detect plaform and shell for windows
+    if (!platform || platform === 'windows') {
         const result = await conn.exec('uname -s');
+
         if (result.stdout) {
-            if (/MINGW64|windows32/g.test(result.stdout)) {
+            if (result.stdout.includes('windows32')) {
                 platform = 'windows';
+            } else if (result.stdout.includes('MINGW64')) {
+                platform = 'windows';
+                shell = 'bash';
             }
         } else if (result.stderr) {
             if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
                 platform = 'windows';
             }
+
+            if (result.stderr.includes('is not recognized as an internal or external command')) {
+                platform = 'windows';
+                shell = 'cmd';
+            }
         }
-        
+
         if (platform) {
-            logger.trace(`Detected platform: ${platform}`);
+            logger.trace(`Detected platform: ${platform}, ${shell}`);
         }
     }
 
@@ -78,7 +90,39 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         const installDir = `$HOME\\${vscodeServerConfig.serverDataFolderName}\\install`;
         const installScript = `${installDir}\\${vscodeServerConfig.commit}.ps1`;
         const endRegex = new RegExp(`${scriptId}: end`);
-        const command = `md -Force "$HOME\\${vscodeServerConfig.serverDataFolderName}\\install"; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
+        let command = '';
+
+        if (shell === 'powershell') {
+            command = `md -Force ${installDir}; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
+        } else if (shell === 'bash') {
+            command = `mkdir -p ${installDir.replace(/\\/g, '/')} && echo '\n${installServerScript.replace(/'/g, '\'"\'"\'')}\n' > ${installScript.replace(/\\/g, '/')} && powershell -ExecutionPolicy ByPass -File "${installScript}"`;
+        } else if (shell === 'cmd') {
+            const script = installServerScript.trim()
+                // remove comments
+                .replace(/^#.*$/gm, '')
+                // remove empty lines
+                .replace(/\n{2,}/gm, '\n')
+                // remove leading spaces
+                .replace(/^\s*/gm, '')
+                // escape double quotes (from powershell/cmd)
+                .replace(/"/g, '"""')
+                // escape single quotes (from cmd)
+                .replace(/'/g, "''")
+                // escape redirect (from cmd)
+                .replace(/>/g, "^>")
+                // escape new lines (from powershell/cmd)
+                .replace(/\n/g, '\'`n\'');
+
+            command = `powershell "md -Force ${installDir}" && powershell "echo '${script}'" > ${installScript.replace('$HOME', '%USERPROFILE%')} && powershell -ExecutionPolicy ByPass -File "${installScript.replace('$HOME', '%USERPROFILE%')}"`;
+
+            logger.trace('Command length (8191 max):', command.length);
+
+            if (command.length > 8191) {
+                throw new ServerInstallError(`Command line too long`);
+            }
+        } else {
+            throw new ServerInstallError(`Not supported shell: ${shell}`);
+        }
 
         commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
