@@ -90,8 +90,9 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         const installDir = `$HOME\\${vscodeServerConfig.serverDataFolderName}\\install`;
         const installScript = `${installDir}\\${vscodeServerConfig.commit}.ps1`;
         const endRegex = new RegExp(`${scriptId}: end`);
+        // investigate if it's possible to use `-EncodedCommand` flag
+        // https://devblogs.microsoft.com/powershell/invoking-powershell-with-complex-expressions-using-scriptblocks/
         let command = '';
-
         if (shell === 'powershell') {
             command = `md -Force ${installDir}; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
         } else if (shell === 'bash') {
