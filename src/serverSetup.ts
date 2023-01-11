@@ -108,9 +108,9 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
                 // escape double quotes (from powershell/cmd)
                 .replace(/"/g, '"""')
                 // escape single quotes (from cmd)
-                .replace(/'/g, "''")
+                .replace(/'/g, `''`)
                 // escape redirect (from cmd)
-                .replace(/>/g, "^>")
+                .replace(/>/g, `^>`)
                 // escape new lines (from powershell/cmd)
                 .replace(/\n/g, '\'`n\'');
 
