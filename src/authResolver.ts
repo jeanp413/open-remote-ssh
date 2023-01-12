@@ -47,6 +47,18 @@ interface SSHKey {
     isPrivate?: boolean;
 }
 
+async function resolveUrlTemplate(): Promise<string> {
+    let url = null;
+
+    const commands = await vscode.commands.getCommands();
+
+    if (commands.some((command) => command === 'remote.serverDownloadUrlTemplate')) {
+        url = await vscode.commands.executeCommand<string | null>('remote.serverDownloadUrlTemplate');
+    }
+
+    return url || 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
+}
+
 export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode.Disposable {
 
     private proxyConnections: SSHConnection[] = [];
@@ -80,8 +92,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
         const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
-        const defaultTemplate = await vscode.commands.executeCommand<string>('remote.serverDownloadUrlTemplate');
-        const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', defaultTemplate ?? 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz')!;
+        const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', await resolveUrlTemplate())!;
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
