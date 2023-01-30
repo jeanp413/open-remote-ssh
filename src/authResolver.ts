@@ -47,6 +47,21 @@ interface SSHKey {
     isPrivate?: boolean;
 }
 
+// Custom logic to get the serverDownloadUrlTemplate for distros other than vscodium stable
+// Cases:
+// - VSCodium: Added a custom command `remote.serverDownloadUrlTemplate` https://github.com/VSCodium/vscodium/pull/1392
+async function resolveCustomUrlTemplate(): Promise<string | undefined> {
+    let url = undefined;
+    try {
+        if (vscode.env.appName.toLowerCase().includes('vscodium')) {
+            url = await vscode.commands.executeCommand<string>('remote.serverDownloadUrlTemplate');
+        }
+    } catch {
+        // noop
+    }
+    return url;
+}
+
 export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode.Disposable {
 
     private proxyConnections: SSHConnection[] = [];
@@ -80,7 +95,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
         const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
-        const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz')!;
+        let serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate', 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz')!;
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
@@ -179,6 +194,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 if (agentForward) {
                     envVariables.push('SSH_AUTH_SOCK');
                 }
+
+                serverDownloadUrlTemplate = await resolveCustomUrlTemplate() || serverDownloadUrlTemplate;
 
                 const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, envVariables, remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
 
