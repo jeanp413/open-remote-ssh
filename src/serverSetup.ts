@@ -71,7 +71,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
     let commandOutput: { stdout: string; stderr: string };
     if (platform === 'windows') {
-         const installServerScript = generatePowerShellInstallScript({
+        const installServerScript = generatePowerShellInstallScript({
             id: scriptId,
             version: vscodeServerConfig.version,
             commit: vscodeServerConfig.commit,
@@ -407,7 +407,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         .replace(/\$\{version\}/g, version)
         .replace(/\$\{commit\}/g, commit)
         .replace(/\$\{os\}/g, 'win32')
-        .replace(/\$\{arch\}/g,  'x64')
+        .replace(/\$\{arch\}/g, 'x64')
         .replace(/\$\{release\}/g, release ?? '');
 
     return `
@@ -485,13 +485,13 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     del vscode-server.tar.gz
 
     $REQUEST_ARGUMENTS = @{
-		Uri="${downloadUrl}"
-		TimeoutSec=20
-		OutFile="vscode-server.tar.gz"
-		UseBasicParsing=$True
-	}
+        Uri="${downloadUrl}"
+        TimeoutSec=20
+        OutFile="vscode-server.tar.gz"
+        UseBasicParsing=$True
+    }
 
-	[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     Invoke-RestMethod @REQUEST_ARGUMENTS
 
