@@ -54,7 +54,12 @@ async function resolveCustomUrlTemplate(): Promise<string | undefined> {
     let url = undefined;
     try {
         if (vscode.env.appName.toLowerCase().includes('vscodium')) {
-            url = await vscode.commands.executeCommand<string>('remote.serverDownloadUrlTemplate');
+            // Check if command is registered first, because we execute the command while resolving the remote
+            // it will hangout indefinetely instead of just throwing an error if the command is not present.
+            const commands = await vscode.commands.getCommands();
+            if (commands.some((command) => command === 'remote.serverDownloadUrlTemplate')) {
+                url = await vscode.commands.executeCommand<string>('remote.serverDownloadUrlTemplate');
+            }
         }
     } catch {
         // noop
