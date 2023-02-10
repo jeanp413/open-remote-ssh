@@ -91,6 +91,12 @@
 					"type": "boolean",
 					"description": "When true, the remote vscode server will listen on a socket path instead of opening a port. Only valid for Linux and macOS remotes. Requires `AllowStreamLocalForwarding` to be enabled for the SSH server.",
 					"default": false
+				},
+				"remote.SSH.experimental.serverBinaryName": {
+					"type": "string",
+					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
+					"scope": "application",
+					"default": ""
 				}
 			}
 		},

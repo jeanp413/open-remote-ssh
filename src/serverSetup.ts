@@ -68,22 +68,23 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
     const scriptId = crypto.randomBytes(12).toString('hex');
 
     const vscodeServerConfig = await getVSCodeServerConfig();
+    const installOptions: ServerInstallOptions = {
+        id: scriptId,
+        version: vscodeServerConfig.version,
+        commit: vscodeServerConfig.commit,
+        quality: vscodeServerConfig.quality,
+        release: vscodeServerConfig.release,
+        extensionIds,
+        envVariables,
+        useSocketPath,
+        serverApplicationName: vscodeServerConfig.serverApplicationName,
+        serverDataFolderName: vscodeServerConfig.serverDataFolderName,
+        serverDownloadUrlTemplate,
+    };
 
     let commandOutput: { stdout: string; stderr: string };
     if (platform === 'windows') {
-        const installServerScript = generatePowerShellInstallScript({
-            id: scriptId,
-            version: vscodeServerConfig.version,
-            commit: vscodeServerConfig.commit,
-            quality: vscodeServerConfig.quality,
-            release: vscodeServerConfig.release,
-            extensionIds,
-            envVariables,
-            useSocketPath,
-            serverApplicationName: vscodeServerConfig.serverApplicationName,
-            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-            serverDownloadUrlTemplate,
-        });
+        const installServerScript = generatePowerShellInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
 
@@ -127,19 +128,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
         commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
-        const installServerScript = generateBashInstallScript({
-            id: scriptId,
-            version: vscodeServerConfig.version,
-            commit: vscodeServerConfig.commit,
-            quality: vscodeServerConfig.quality,
-            release: vscodeServerConfig.release,
-            extensionIds,
-            envVariables,
-            useSocketPath,
-            serverApplicationName: vscodeServerConfig.serverApplicationName,
-            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-            serverDownloadUrlTemplate,
-        });
+        const installServerScript = generateBashInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
         // Fish shell does not support heredoc so let's workaround it using -c option,
