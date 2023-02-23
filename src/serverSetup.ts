@@ -252,6 +252,9 @@ case $PLATFORM in
     Linux)
         SERVER_OS="linux"
         ;;
+    FreeBSD)
+        SERVER_OS="freebsd"
+        ;;
     *)
         echo "Error platform not supported: $PLATFORM"
         print_install_results_and_exit 1
@@ -261,7 +264,7 @@ esac
 # Check machine architecture
 ARCH="$(uname -m)"
 case $ARCH in
-    x86_64)
+    x86_64 | amd64)
         SERVER_ARCH="x64"
         ;;
     armv7l | armv8l)
@@ -298,6 +301,11 @@ SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
+    if [[ "$SERVER_OS" = "freebsd" ]]; then
+        echo "Error FreeBSD needs manual installation of remote extension host"
+        print_install_results_and_exit 1
+    fi
+
     pushd $SERVER_DIR > /dev/null
 
     if [[ ! -z $(which wget) ]]; then
