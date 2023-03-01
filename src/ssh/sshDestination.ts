@@ -44,10 +44,6 @@ export default class SSHDestination {
     }
 
     toEncodedString(): string {
-        let result = this.toString();
-        if (result.toLowerCase() !== result) {
-            return result.replace(/[A-Z]/g, (ch) => `\\x${ch.charCodeAt(0).toString(16).toLowerCase()}`);
-        }
-        return result;
+        return this.toString().replace(/[A-Z]/g, (ch) => `\\x${ch.charCodeAt(0).toString(16).toLowerCase()}`);
     }
 }
