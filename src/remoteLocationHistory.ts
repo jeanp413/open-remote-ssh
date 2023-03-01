@@ -39,14 +39,14 @@ export function getRemoteWorkspaceLocationData(): [string, string] | undefined {
     let location = vscode.workspace.workspaceFile;
     if (location && location.scheme === 'vscode-remote' && location.authority.startsWith(REMOTE_SSH_AUTHORITY) && location.path.endsWith('.code-workspace')) {
         const [, host] = location.authority.split('+');
-        const sshDest = SSHDestination.parse(host);
+        const sshDest = SSHDestination.parseEncoded(host);
         return [sshDest.hostname, location.path];
     }
 
     location = vscode.workspace.workspaceFolders?.[0].uri;
     if (location && location.scheme === 'vscode-remote' && location.authority.startsWith(REMOTE_SSH_AUTHORITY)) {
         const [, host] = location.authority.split('+');
-        const sshDest = SSHDestination.parse(host);
+        const sshDest = SSHDestination.parseEncoded(host);
         return [sshDest.hostname, location.path];
     }
 
