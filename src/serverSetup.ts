@@ -35,7 +35,9 @@ export class ServerInstallError extends Error {
     }
 }
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
+
+export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
     // detect plaform and shell for windows
@@ -82,7 +84,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
             useSocketPath,
             serverApplicationName: vscodeServerConfig.serverApplicationName,
             serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-            serverDownloadUrlTemplate,
+            serverDownloadUrlTemplate: serverDownloadUrlTemplate ?? vscodeServerConfig.serverDownloadUrlTemplate ?? DEFAULT_DOWNLOAD_URL_TEMPLATE,
         });
 
         logger.trace('Server install command:', installServerScript);
@@ -138,7 +140,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
             useSocketPath,
             serverApplicationName: vscodeServerConfig.serverApplicationName,
             serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-            serverDownloadUrlTemplate,
+            serverDownloadUrlTemplate: serverDownloadUrlTemplate ?? vscodeServerConfig.serverDownloadUrlTemplate ?? DEFAULT_DOWNLOAD_URL_TEMPLATE,
         });
 
         logger.trace('Server install command:', installServerScript);
