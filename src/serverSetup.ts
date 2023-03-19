@@ -70,22 +70,23 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
     const scriptId = crypto.randomBytes(12).toString('hex');
 
     const vscodeServerConfig = await getVSCodeServerConfig();
+    const installOptions: ServerInstallOptions = {
+        id: scriptId,
+        version: vscodeServerConfig.version,
+        commit: vscodeServerConfig.commit,
+        quality: vscodeServerConfig.quality,
+        release: vscodeServerConfig.release,
+        extensionIds,
+        envVariables,
+        useSocketPath,
+        serverApplicationName: vscodeServerConfig.serverApplicationName,
+        serverDataFolderName: vscodeServerConfig.serverDataFolderName,
+        serverDownloadUrlTemplate: serverDownloadUrlTemplate ?? vscodeServerConfig.serverDownloadUrlTemplate ?? DEFAULT_DOWNLOAD_URL_TEMPLATE,
+    };
 
     let commandOutput: { stdout: string; stderr: string };
     if (platform === 'windows') {
-        const installServerScript = generatePowerShellInstallScript({
-            id: scriptId,
-            version: vscodeServerConfig.version,
-            commit: vscodeServerConfig.commit,
-            quality: vscodeServerConfig.quality,
-            release: vscodeServerConfig.release,
-            extensionIds,
-            envVariables,
-            useSocketPath,
-            serverApplicationName: vscodeServerConfig.serverApplicationName,
-            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-            serverDownloadUrlTemplate: serverDownloadUrlTemplate ?? vscodeServerConfig.serverDownloadUrlTemplate ?? DEFAULT_DOWNLOAD_URL_TEMPLATE,
-        });
+        const installServerScript = generatePowerShellInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
 
@@ -129,19 +130,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
         commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
-        const installServerScript = generateBashInstallScript({
-            id: scriptId,
-            version: vscodeServerConfig.version,
-            commit: vscodeServerConfig.commit,
-            quality: vscodeServerConfig.quality,
-            release: vscodeServerConfig.release,
-            extensionIds,
-            envVariables,
-            useSocketPath,
-            serverApplicationName: vscodeServerConfig.serverApplicationName,
-            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-            serverDownloadUrlTemplate: serverDownloadUrlTemplate ?? vscodeServerConfig.serverDownloadUrlTemplate ?? DEFAULT_DOWNLOAD_URL_TEMPLATE,
-        });
+        const installServerScript = generateBashInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
         // Fish shell does not support heredoc so let's workaround it using -c option,
@@ -265,6 +254,9 @@ case $PLATFORM in
     Linux)
         SERVER_OS="linux"
         ;;
+    FreeBSD)
+        SERVER_OS="freebsd"
+        ;;
     *)
         echo "Error platform not supported: $PLATFORM"
         print_install_results_and_exit 1
@@ -274,7 +266,7 @@ esac
 # Check machine architecture
 ARCH="$(uname -m)"
 case $ARCH in
-    x86_64)
+    x86_64 | amd64)
         SERVER_ARCH="x64"
         ;;
     armv7l | armv8l)
@@ -311,6 +303,11 @@ SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
+    if [[ "$SERVER_OS" = "freebsd" ]]; then
+        echo "Error FreeBSD needs manual installation of remote extension host"
+        print_install_results_and_exit 1
+    fi
+
     pushd $SERVER_DIR > /dev/null
 
     if [[ ! -z $(which wget) ]]; then

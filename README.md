@@ -12,6 +12,7 @@ You can connect to a running SSH server on the following platforms.
 - ARMv8l (AArch64) Ubuntu 18.04+ (64-bit).
 - macOS 10.14+ (Mojave)
 - Windows 10+
+- FreeBSD 13 (Requires manual remote-extension-host installation)
 
 ## Requirements
 

@@ -95,11 +95,11 @@ export class HostTreeDataProvider extends Disposable implements vscode.TreeDataP
 
     private async openRemoteSSHWindow(element: HostItem, reuseWindow: boolean) {
         const sshDest = new SSHDestination(element.hostname);
-        openRemoteSSHWindow(sshDest.toString(), reuseWindow);
+        openRemoteSSHWindow(sshDest.toEncodedString(), reuseWindow);
     }
 
     private async openRemoteSSHLocationWindow(element: HostLocationItem, reuseWindow: boolean) {
         const sshDest = new SSHDestination(element.hostname);
-        openRemoteSSHLocationWindow(sshDest.toString(), element.path, reuseWindow);
+        openRemoteSSHLocationWindow(sshDest.toEncodedString(), element.path, reuseWindow);
     }
 }
