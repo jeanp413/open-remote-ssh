@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import SSHConfig, { Directive, Line, Section } from 'ssh-config';
 import * as vscode from 'vscode';
-import { exists as fileExists, untildify } from '../common/files';
+import { exists as fileExists, normalizeToSlash, untildify } from '../common/files';
 import { isWindows } from '../common/platform';
 import { glob } from 'glob';
 
@@ -68,9 +68,9 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     for (let i = 0; i < config.length; i++) {
         const line = config[i];
         if (isIncludeDirective(line)) {
-            const includePaths = await glob(untildify(line.value), {
+            const includePaths = await glob(normalizeToSlash(untildify(line.value)), {
                 absolute: true,
-                cwd: path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig).replace(/\\/g, '/')
+                cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
             });
             for (const p of includePaths) {
                 includedConfigs.set(i, await parseSSHConfigFromFile(p, userConfig));
