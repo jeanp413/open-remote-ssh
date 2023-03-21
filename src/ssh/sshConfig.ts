@@ -5,6 +5,7 @@ import SSHConfig, { Directive, Line, Section } from 'ssh-config';
 import * as vscode from 'vscode';
 import { exists as fileExists, untildify } from '../common/files';
 import { isWindows } from '../common/platform';
+import { glob } from 'glob';
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
 const defaultSSHConfigPath = path.resolve(os.homedir(), '.ssh/config');
@@ -56,7 +57,7 @@ function normalizeSSHConfig(config: SSHConfig) {
     return config;
 }
 
-async function parseSSHConfigFromFile(filePath: string) {
+async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     let content = '';
     if (await fileExists(filePath)) {
         content = (await fs.promises.readFile(filePath, 'utf8')).trim();
@@ -67,8 +68,13 @@ async function parseSSHConfigFromFile(filePath: string) {
     for (let i = 0; i < config.length; i++) {
         const line = config[i];
         if (isIncludeDirective(line)) {
-            const includePath = path.resolve(path.dirname(filePath), untildify(line.value));
-            includedConfigs.set(i, await parseSSHConfigFromFile(includePath));
+            const includePaths = await glob(untildify(line.value), {
+                absolute: true,
+                cwd: path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig).replace(/\\/g, '/')
+            });
+            for (const p of includePaths) {
+                includedConfigs.set(i, await parseSSHConfigFromFile(p, userConfig));
+            }
         }
     }
     for (const [idx, includeConfig] of includedConfigs.entries()) {
@@ -81,8 +87,8 @@ async function parseSSHConfigFromFile(filePath: string) {
 export default class SSHConfiguration {
 
     static async loadFromFS(): Promise<SSHConfiguration> {
-        const config = await parseSSHConfigFromFile(getSSHConfigPath());
-        config.push(...await parseSSHConfigFromFile(systemSSHConfig));
+        const config = await parseSSHConfigFromFile(getSSHConfigPath(), true);
+        config.push(...await parseSSHConfigFromFile(systemSSHConfig, false));
 
         return new SSHConfiguration(config);
     }
