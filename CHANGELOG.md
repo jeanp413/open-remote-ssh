@@ -1,3 +1,6 @@
+## 0.0.33
+
+- feat: support %r user substitution in proxycommand
 ## 0.0.32
 
 - feat: use serverDownloadUrlTemplate from product.json (#59) 
