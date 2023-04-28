@@ -98,7 +98,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const sshUser = sshHostConfig['User'] || sshDest.user || '';
                 const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : 22;
 
-                this.sshAgentSock = isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : (sshHostConfig['IdentityAgent'] || process.env['SSH_AUTH_SOCK']);
+                this.sshAgentSock = sshHostConfig['IdentityAgent'] || process.env['SSH_AUTH_SOCK'] || (isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined);
                 this.sshAgentSock = this.sshAgentSock ? untildify(this.sshAgentSock) : undefined;
                 const agentForward = enableAgentForwarding && (sshHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                 const agent = agentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
