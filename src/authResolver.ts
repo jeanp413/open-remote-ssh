@@ -84,6 +84,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
+        const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
 
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${sshDest.hostname}`,
@@ -134,7 +135,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             port: !proxyStream ? proxyPort : undefined,
                             sock: proxyStream,
                             username: proxyUser,
-                            readyTimeout: 90000,
+                            readyTimeout: connectTimeout * 1000,
                             strictVendor: false,
                             agentForward: proxyAgentForward,
                             agent: proxyAgent,
@@ -167,7 +168,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     port: !proxyStream ? sshPort : undefined,
                     sock: proxyStream,
                     username: sshUser,
-                    readyTimeout: 90000,
+                    readyTimeout: connectTimeout * 1000,
                     strictVendor: false,
                     agentForward,
                     agent,
