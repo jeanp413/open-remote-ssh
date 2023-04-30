@@ -311,7 +311,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     pushd $SERVER_DIR > /dev/null
 
     if [[ ! -z $(which wget) ]]; then
-        wget --tries=3 --timeout=10 --quiet -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+        wget --tries=3 --timeout=10 --continue --quiet -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
     elif [[ ! -z $(which curl) ]]; then
         curl --retry 3 --connect-timeout 10 --location --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
     else
