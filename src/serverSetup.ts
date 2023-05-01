@@ -257,6 +257,9 @@ case $PLATFORM in
     FreeBSD)
         SERVER_OS="freebsd"
         ;;
+    DragonFly)
+        SERVER_OS="dragonfly"
+        ;;
     *)
         echo "Error platform not supported: $PLATFORM"
         print_install_results_and_exit 1
@@ -303,8 +306,8 @@ SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
-    if [[ "$SERVER_OS" = "freebsd" ]]; then
-        echo "Error FreeBSD needs manual installation of remote extension host"
+    if [[ "$SERVER_OS" = "dragonfly" ]] || [[ "$SERVER_OS" = "freebsd" ]]; then
+        echo "Error "$SERVER_OS" needs manual installation of remote extension host"
         print_install_results_and_exit 1
     fi
 
