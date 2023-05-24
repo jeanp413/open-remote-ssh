@@ -16,6 +16,7 @@ import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError } from './serverSetup';
 import { isWindows } from './common/platform';
+import * as os from 'os';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -95,7 +96,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const sshconfig = await SSHConfiguration.loadFromFS();
                 const sshHostConfig = sshconfig.getHostConfiguration(sshDest.hostname);
                 const sshHostName = sshHostConfig['HostName'] ? sshHostConfig['HostName'].replace('%h', sshDest.hostname) : sshDest.hostname;
-                const sshUser = sshHostConfig['User'] || sshDest.user || '';
+                const sshUser = sshHostConfig['User'] || sshDest.user || os.userInfo().username || '';
                 const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : 22;
 
                 this.sshAgentSock = sshHostConfig['IdentityAgent'] || process.env['SSH_AUTH_SOCK'] || (isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined);
