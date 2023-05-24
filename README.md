@@ -17,7 +17,12 @@ You can connect to a running SSH server on the following platforms.
 
 ## Requirements
 
+**Activation**
+
+> NOTE: Not needed in VSCodium since version 1.75
+
 Enable the extension in your `argv.json`
+
 
 ```json
 {
@@ -39,3 +44,7 @@ running
 ```bash
 sudo apk add gcompat libstdc++ procps
 ```
+
+## SSH configuration file
+
+[OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections. To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
