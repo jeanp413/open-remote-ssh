@@ -278,6 +278,9 @@ case $ARCH in
     arm64 | aarch64)
         SERVER_ARCH="arm64"
         ;;
+    ppc64le)
+        SERVER_ARCH="ppc64le"
+        ;;
     *)
         echo "Error architecture not supported: $ARCH"
         print_install_results_and_exit 1
