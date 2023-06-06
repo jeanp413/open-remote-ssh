@@ -2,7 +2,7 @@
 	"name": "open-remote-ssh",
 	"displayName": "Open Remote - SSH",
 	"description": "Use any remote machine with a SSH server as your development environment.",
-	"version": "0.0.18",
+	"version": "0.0.38",
 	"publisher": "jeanp413",
 	"repository": {
 		"type": "git",
@@ -47,6 +47,13 @@
 					"default": "",
 					"scope": "application"
 				},
+				"remote.SSH.connectTimeout": {
+					"type": "number",
+					"description": "Specifies the timeout in seconds used for the SSH command that connects to the remote.",
+					"default": 60,
+					"scope": "application",
+					"minimum": 1
+				},
 				"remote.SSH.defaultExtensions": {
 					"type": "array",
 					"items": {
@@ -73,10 +80,30 @@
 					"scope": "application",
 					"default": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz"
 				},
+				"remote.SSH.remotePlatform": {
+					"type": "object",
+					"description": "A map of the remote hostname to the platform for that remote. Valid values: linux, macos, windows.",
+					"scope": "application",
+					"default": {},
+					"additionalProperties": {
+						"type": "string",
+						"enum": [
+							"linux",
+							"macos",
+							"windows"
+						]
+					}
+				},
 				"remote.SSH.remoteServerListenOnSocket": {
 					"type": "boolean",
 					"description": "When true, the remote vscode server will listen on a socket path instead of opening a port. Only valid for Linux and macOS remotes. Requires `AllowStreamLocalForwarding` to be enabled for the SSH server.",
 					"default": false
+				},
+				"remote.SSH.experimental.serverBinaryName": {
+					"type": "string",
+					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
+					"scope": "application",
+					"default": ""
 				}
 			}
 		},
@@ -327,6 +354,7 @@
 		"@typescript-eslint/parser": "^5.19.0",
 		"eslint": "^8.13.0",
 		"eslint-plugin-jsdoc": "^19.1.0",
+		"glob": "^9.3.1",
 		"ts-loader": "^9.2.7",
 		"typescript": "^4.6.3",
 		"webpack": "^5.42.0",

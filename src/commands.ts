@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { getRemoteAuthority } from './authResolver';
 import { getSSHConfigPath } from './ssh/sshConfig';
 import { exists as fileExists } from './common/files';
+import SSHDestination from './ssh/sshDestination';
 
 export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
     const host = await vscode.window.showInputBox({
@@ -13,7 +14,8 @@ export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
         return;
     }
 
-    openRemoteSSHWindow(host, reuseWindow);
+    const sshDest = new SSHDestination(host);
+    openRemoteSSHWindow(sshDest.toEncodedString(), reuseWindow);
 }
 
 export function openRemoteSSHWindow(host: string, reuseWindow: boolean) {

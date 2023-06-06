@@ -16,7 +16,7 @@ const PATH_SSH_CLIENT_ID_XMSS = path.join(homeDir, '.ssh', '/id_xmss');
 const PATH_SSH_CLIENT_ID_ECDSA_SK = path.join(homeDir, '.ssh', '/id_ecdsa_sk');
 const PATH_SSH_CLIENT_ID_ED25519_SK = path.join(homeDir, '.ssh', '/id_ed25519_sk');
 
-export const DEFAULT_IDENTITY_FILES: string[] = [
+const DEFAULT_IDENTITY_FILES: string[] = [
     PATH_SSH_CLIENT_ID_RSA,
     PATH_SSH_CLIENT_ID_ECDSA,
     PATH_SSH_CLIENT_ID_ECDSA_SK,
