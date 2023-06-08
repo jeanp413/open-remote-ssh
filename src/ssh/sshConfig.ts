@@ -36,6 +36,7 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'identitiesonly': 'IdentitiesOnly',
     'identityfile': 'IdentityFile',
     'forwardagent': 'ForwardAgent',
+    'preferredauthentications': 'PreferredAuthentications',
     'proxyjump': 'ProxyJump',
     'proxycommand': 'ProxyCommand',
     'include': 'Include',
