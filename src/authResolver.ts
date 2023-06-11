@@ -308,7 +308,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);
     }
 
-    private getSSHAuthHandler(sshUser: string, sshHostName: string, identityKeys: SSHKey[], preferredauthentications: string[]) {
+    private getSSHAuthHandler(sshUser: string, sshHostName: string, identityKeys: SSHKey[], preferredAuthentications: string[]) {
         let passwordRetryCount = PASSWORD_RETRY_COUNT;
         let keyboardRetryCount = PASSWORD_RETRY_COUNT;
         identityKeys = identityKeys.slice();
@@ -321,7 +321,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     username: sshUser,
                 });
             }
-            if (methodsLeft.includes('publickey') && identityKeys.length && preferredauthentications.includes('publickey')) {
+            if (methodsLeft.includes('publickey') && identityKeys.length && preferredAuthentications.includes('publickey')) {
                 const identityKey = identityKeys.shift()!;
 
                 this.logger.info(`Trying publickey authentication: ${identityKey.filename} ${identityKey.parsedKey.type} SHA256:${identityKey.fingerprint}`);
@@ -379,7 +379,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     key
                 });
             }
-            if (methodsLeft.includes('password') && passwordRetryCount > 0 && preferredauthentications.includes('password')) {
+            if (methodsLeft.includes('password') && passwordRetryCount > 0 && preferredAuthentications.includes('password')) {
                 if (passwordRetryCount === PASSWORD_RETRY_COUNT) {
                     this.logger.info(`Trying password authentication`);
                 }
@@ -399,7 +399,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                     : false);
             }
-            if (methodsLeft.includes('keyboard-interactive') && keyboardRetryCount > 0 && preferredauthentications.includes('keyboard-interactive')) {
+            if (methodsLeft.includes('keyboard-interactive') && keyboardRetryCount > 0 && preferredAuthentications.includes('keyboard-interactive')) {
                 if (keyboardRetryCount === PASSWORD_RETRY_COUNT) {
                     this.logger.info(`Trying keyboard-interactive authentication`);
                 }
