@@ -1,3 +1,8 @@
+## 0.0.39
+
+- output error messages when downloading vscode server (#39)
+- Add PreferredAuthentications support (#97)
+
 ## 0.0.38
 
 - Enable remote support for ppc64le (#93)
