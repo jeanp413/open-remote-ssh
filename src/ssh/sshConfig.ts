@@ -1,3 +1,4 @@
+import * as cp from 'child_process';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -85,13 +86,17 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     return config;
 }
 
-export default class SSHConfiguration {
+export interface SSHConfiguration {
+    getHostConfiguration(host: string): Record<string, string>;
+}
 
-    static async loadFromFS(): Promise<SSHConfiguration> {
+export class ComputedSSHConfiguration implements SSHConfiguration {
+
+    static async loadFromFS(): Promise<ComputedSSHConfiguration> {
         const config = await parseSSHConfigFromFile(getSSHConfigPath(), true);
         config.push(...await parseSSHConfigFromFile(systemSSHConfig, false));
 
-        return new SSHConfiguration(config);
+        return new ComputedSSHConfiguration(config);
     }
 
     constructor(private sshConfig: SSHConfig) {
@@ -114,5 +119,38 @@ export default class SSHConfiguration {
 
     getHostConfiguration(host: string): Record<string, string> {
         return this.sshConfig.compute(host);
+    }
+}
+
+export class NativeSSHConfiguration implements SSHConfiguration {
+    getHostConfiguration(host: string): Record<string, string> {
+        // NOTE: We can't use -F to set a custom config path because it drops some fields and prevents
+        //       loading the system config.
+        const child = cp.spawnSync("ssh", ["-G", host]);
+        const config: {[key: string]: string} = {}
+
+        const normalizeKey = (key: string) => SSH_CONFIG_PROPERTIES[key.toLowerCase()] || key;
+
+        for (const line of child.stdout.toString().split("\n")) {
+            const index = line.indexOf(" ");
+
+            if (index >= 0) {
+                const key = normalizeKey(line.slice(0, index));
+                const val = line.slice(index + 1);
+
+                if (key === "IdentityFile") {
+                    if (key in config) {
+                        (config[key] as unknown as string[]).push(val);
+                    } else {
+                        (config[key] as unknown as string[]) = [val];
+                    }
+                } else {
+                    config[key] = val;
+                }
+
+            }
+        }
+
+        return config;
     }
 }

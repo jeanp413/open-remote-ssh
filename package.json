@@ -104,6 +104,12 @@
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.experimental.nativeConfig": {
+					"type": "boolean",
+					"description": "**Experimental:** Query the host config by invoking `ssh -G hostname` instead of parsing the config files. Does not respect a custom config file.",
+					"scope": "application",
+					"default": false
 				}
 			}
 		},

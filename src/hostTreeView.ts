@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import SSHConfiguration, { getSSHConfigPath } from './ssh/sshConfig';
+import { ComputedSSHConfiguration, getSSHConfigPath } from './ssh/sshConfig';
 import { RemoteLocationHistory } from './remoteLocationHistory';
 import { Disposable } from './common/disposable';
 import { addNewHost, openRemoteSSHLocationWindow, openRemoteSSHWindow, openSSHConfigFile } from './commands';
@@ -74,7 +74,7 @@ export class HostTreeDataProvider extends Disposable implements vscode.TreeDataP
 
     async getChildren(element?: HostItem): Promise<DataTreeItem[]> {
         if (!element) {
-            const sshConfigFile = await SSHConfiguration.loadFromFS();
+            const sshConfigFile = await ComputedSSHConfiguration.loadFromFS();
             const hosts = sshConfigFile.getAllConfiguredHosts();
             return hosts.map(hostname => new HostItem(hostname, this.locationHistory.getHistory(hostname)));
         }
