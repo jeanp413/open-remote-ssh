@@ -1,3 +1,6 @@
+## 0.0.40
+- Update ssh-config package
+
 ## 0.0.39
 
 - output error messages when downloading vscode server (#39)
