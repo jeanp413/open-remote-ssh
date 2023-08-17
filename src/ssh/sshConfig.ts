@@ -69,12 +69,15 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     for (let i = 0; i < config.length; i++) {
         const line = config[i];
         if (isIncludeDirective(line)) {
-            const includePaths = await glob(normalizeToSlash(untildify(line.value)), {
-                absolute: true,
-                cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
-            });
-            for (const p of includePaths) {
-                includedConfigs.set(i, await parseSSHConfigFromFile(p, userConfig));
+            const values = (line.value as string).split(',').map(s => s.trim());
+            for (const value of values) {
+                const includePaths = await glob(normalizeToSlash(untildify(value)), {
+                    absolute: true,
+                    cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
+                });
+                for (const p of includePaths) {
+                    includedConfigs.set(i, await parseSSHConfigFromFile(p, userConfig));
+                }
             }
         }
     }
@@ -101,7 +104,7 @@ export default class SSHConfiguration {
         const hosts = new Set<string>();
         for (const line of this.sshConfig) {
             if (isHostSection(line)) {
-                const value = Array.isArray(line.value as string[] | string) ? line.value[0] : line.value;
+                const value = Array.isArray(line.value) ? line.value[0] : line.value;
                 const isPattern = /^!/.test(value) || /[?*]/.test(value);
                 if (!isPattern) {
                     hosts.add(value);
@@ -113,6 +116,8 @@ export default class SSHConfiguration {
     }
 
     getHostConfiguration(host: string): Record<string, string> {
-        return this.sshConfig.compute(host);
+        // Only a few directives return an array
+        // https://github.com/jeanp413/ssh-config/blob/8d187bb8f1d83a51ff2b1d127e6b6269d24092b5/src/ssh-config.ts#L9C1-L9C118
+        return this.sshConfig.compute(host) as Record<string, string>;
     }
 }

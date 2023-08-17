@@ -1526,10 +1526,9 @@ spdx-license-ids@^3.0.0:
   resolved "https://registry.yarnpkg.com/spdx-license-ids/-/spdx-license-ids-3.0.11.tgz#50c0d8c40a14ec1bf449bae69a0ea4685a9d9f95"
   integrity sha512-Ctl2BrFiM0X3MANYgj3CkygxhRmr9mi6xhejbdO960nF6EDJApTYpn0BQnDKlnNBULKiCN1n3w9EBkHK8ZWg+g==
 
-ssh-config@^4.3.0:
+"ssh-config@git+https://github.com/jeanp413/ssh-config#master":
   version "4.3.0"
-  resolved "https://registry.yarnpkg.com/ssh-config/-/ssh-config-4.3.0.tgz#3a132c656374a5fbdd57c9f9e8aa8542eff1a666"
-  integrity sha512-VOsrKxYnes0A3NGzzuOAy2yB36gv+hie77ltuqLXOWRiYrmAWI9WrKAKJ2+/4f+6vx4eEDSnGYGaCbyqX8aHxg==
+  resolved "git+https://github.com/jeanp413/ssh-config#8d187bb8f1d83a51ff2b1d127e6b6269d24092b5"
 
 "ssh2@git+https://github.com/jeanp413/ssh2#master":
   version "1.11.0"
