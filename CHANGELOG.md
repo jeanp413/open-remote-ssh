@@ -1,3 +1,6 @@
+## 0.0.41
+- Take into account parsed port from ssh destination. Fixes (#110)
+
 ## 0.0.40
 - Update ssh-config package
 
