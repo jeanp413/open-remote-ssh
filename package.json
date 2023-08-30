@@ -363,7 +363,7 @@
 		"glob": "^9.3.1",
 		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
 		"socks": "^2.5.0",
-		"ssh-config": "git+https://github.com/jeanp413/ssh-config#master",
+		"@jeanp413/ssh-config": "^4.3.1",
 		"ssh2": "git+https://github.com/jeanp413/ssh2#master"
 	}
 }

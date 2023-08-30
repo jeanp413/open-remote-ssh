@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import SSHConfig, { Directive, Line, Section } from 'ssh-config';
+import SSHConfig, { Directive, Line, Section } from '@jeanp413/ssh-config';
 import * as vscode from 'vscode';
 import { exists as fileExists, normalizeToSlash, untildify } from '../common/files';
 import { isWindows } from '../common/platform';

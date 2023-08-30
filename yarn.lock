@@ -44,6 +44,11 @@
   resolved "https://registry.yarnpkg.com/@humanwhocodes/object-schema/-/object-schema-1.2.1.tgz#b520529ec21d8e5945a1851dfd1c32e94e39ff45"
   integrity sha512-ZnQMnLV4e7hDlUvw8H+U8ASL02SS2Gn6+9Ac3wGGLIe7+je2AeAOxPY+izIPJDfFDb7eDjev0Us8MO1iFRN8hA==
 
+"@jeanp413/ssh-config@^4.3.1":
+  version "4.3.1"
+  resolved "https://registry.yarnpkg.com/@jeanp413/ssh-config/-/ssh-config-4.3.1.tgz#08055a9ea3a42b6557115e658d336c00b14d1313"
+  integrity sha512-x0EaWRdjs5sPDNmYr11wVB1GdwWQgRekc7SbueuO5FK7YZUav98qZKtZZU5iSDKyxJkooCs3rgVizB1wIWrF7g==
+
 "@jridgewell/gen-mapping@^0.3.0":
   version "0.3.2"
   resolved "https://registry.yarnpkg.com/@jridgewell/gen-mapping/-/gen-mapping-0.3.2.tgz#c1aedc61e853f2bb9f5dfe6d4442d3b565b253b9"
@@ -1525,10 +1530,6 @@ spdx-license-ids@^3.0.0:
   version "3.0.11"
   resolved "https://registry.yarnpkg.com/spdx-license-ids/-/spdx-license-ids-3.0.11.tgz#50c0d8c40a14ec1bf449bae69a0ea4685a9d9f95"
   integrity sha512-Ctl2BrFiM0X3MANYgj3CkygxhRmr9mi6xhejbdO960nF6EDJApTYpn0BQnDKlnNBULKiCN1n3w9EBkHK8ZWg+g==
-
-"ssh-config@git+https://github.com/jeanp413/ssh-config#master":
-  version "4.3.0"
-  resolved "git+https://github.com/jeanp413/ssh-config#8d187bb8f1d83a51ff2b1d127e6b6269d24092b5"
 
 "ssh2@git+https://github.com/jeanp413/ssh2#master":
   version "1.11.0"
