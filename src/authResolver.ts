@@ -217,7 +217,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         label: '${path}',
                         separator: '/',
                         tildify: true,
-                        workspaceSuffix: `SSH: ${sshDest.hostname}`
+                        workspaceSuffix: `SSH: ${sshDest.hostname}` + (sshDest.port && sshDest.port !== 22 ? `:${sshDest.port}` : '')
                     }
                 });
 
