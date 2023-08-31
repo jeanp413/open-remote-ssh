@@ -1,3 +1,6 @@
+## 0.0.42
+- Fix remote label to show port when connecting to a port other than 22
+
 ## 0.0.41
 - Take into account parsed port from ssh destination. Fixes (#110)
 
