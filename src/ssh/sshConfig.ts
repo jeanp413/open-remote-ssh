@@ -65,7 +65,7 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     }
     const config = normalizeSSHConfig(SSHConfig.parse(content));
 
-    const includedConfigs = new Map<number, SSHConfig>();
+    const includedConfigs: [number, SSHConfig[]][] = [];
     for (let i = 0; i < config.length; i++) {
         const line = config[i];
         if (isIncludeDirective(line)) {
@@ -75,14 +75,16 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
                     absolute: true,
                     cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
                 });
+                const configs: SSHConfig[] = [];
                 for (const p of includePaths) {
-                    includedConfigs.set(i, await parseSSHConfigFromFile(p, userConfig));
+                    configs.push(await parseSSHConfigFromFile(p, userConfig));
                 }
+                includedConfigs.push([i, configs]);
             }
         }
     }
-    for (const [idx, includeConfig] of includedConfigs.entries()) {
-        config.splice(idx, 1, ...includeConfig);
+    for (const [idx, includeConfigs] of includedConfigs.reverse()) {
+        config.splice(idx, 1, ...includeConfigs.flat());
     }
 
     return config;
