@@ -70,17 +70,17 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
         const line = config[i];
         if (isIncludeDirective(line)) {
             const values = (line.value as string).split(',').map(s => s.trim());
+            const configs: SSHConfig[] = [];
             for (const value of values) {
                 const includePaths = await glob(normalizeToSlash(untildify(value)), {
                     absolute: true,
                     cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
                 });
-                const configs: SSHConfig[] = [];
                 for (const p of includePaths) {
                     configs.push(await parseSSHConfigFromFile(p, userConfig));
                 }
-                includedConfigs.push([i, configs]);
             }
+            includedConfigs.push([i, configs]);
         }
     }
     for (const [idx, includeConfigs] of includedConfigs.reverse()) {
