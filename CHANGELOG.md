@@ -1,4 +1,4 @@
-## 0.0.42
+## 0.0.43
 - Fix parsing multiple include directives
 
 ## 0.0.42
