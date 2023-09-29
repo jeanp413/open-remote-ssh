@@ -179,18 +179,24 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 });
                 await this.sshConnection.connect();
 
-                const envVariables = [];
+                const envVariables: Record<string, string | null> = {};
                 if (agentForward) {
-                    envVariables.push('SSH_AUTH_SOCK');
+                    envVariables['SSH_AUTH_SOCK'] = null;
                 }
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, envVariables, remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
+                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
+
+                for (const key of Object.keys(envVariables)) {
+                    if (installResult[key] !== undefined) {
+                        envVariables[key] = installResult[key];
+                    }
+                }
 
                 // Update terminal env variables
                 this.context.environmentVariableCollection.persistent = false;
-                for (const envVar of envVariables) {
-                    if (installResult[envVar] !== undefined) {
-                        this.context.environmentVariableCollection.replace(envVar, installResult[envVar]);
+                for (const [key, value] of Object.entries(envVariables)) {
+                    if (value) {
+                        this.context.environmentVariableCollection.replace(key, value);
                     }
                 }
 
@@ -221,7 +227,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 });
 
-                return new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
+                const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
+                resolvedResult.extensionHostEnv = envVariables;
+                return resolvedResult;
             } catch (e: unknown) {
                 this.logger.error(`Error resolving authority`, e);
 

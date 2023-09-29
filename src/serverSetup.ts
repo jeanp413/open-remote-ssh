@@ -219,7 +219,6 @@ SERVER_SCRIPT="$SERVER_DIR/bin/$SERVER_APP_NAME"
 SERVER_LOGFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.log"
 SERVER_PIDFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.pid"
 SERVER_TOKENFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.token"
-SERVER_OS=
 SERVER_ARCH=
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
@@ -246,22 +245,22 @@ print_install_results_and_exit() {
 }
 
 # Check if platform is supported
-PLATFORM="$(uname -s)"
-case $PLATFORM in
+KERNEL="$(uname -s)"
+case $KERNEL in
     Darwin)
-        SERVER_OS="darwin"
+        PLATFORM="darwin"
         ;;
     Linux)
-        SERVER_OS="linux"
+        PLATFORM="linux"
         ;;
     FreeBSD)
-        SERVER_OS="freebsd"
+        PLATFORM="freebsd"
         ;;
     DragonFly)
-        SERVER_OS="dragonfly"
+        PLATFORM="dragonfly"
         ;;
     *)
-        echo "Error platform not supported: $PLATFORM"
+        echo "Error platform not supported: $KERNEL"
         print_install_results_and_exit 1
         ;;
 esac
@@ -305,12 +304,12 @@ if [[ ! -d $SERVER_DIR ]]; then
     fi
 fi
 
-SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${os}/$SERVER_OS/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
+SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${os}/$PLATFORM/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
-    if [[ "$SERVER_OS" = "dragonfly" ]] || [[ "$SERVER_OS" = "freebsd" ]]; then
-        echo "Error "$SERVER_OS" needs manual installation of remote extension host"
+    if [[ "$PLATFORM" != "darwin" ]] && [[ "$PLATFORM" != "linux" ]]; then
+        echo "Error "$PLATFORM" needs manual installation of remote extension host"
         print_install_results_and_exit 1
     fi
 
@@ -434,7 +433,6 @@ $SERVER_SCRIPT="$SERVER_DIR\\bin\\$SERVER_APP_NAME.cmd"
 $SERVER_LOGFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.log"
 $SERVER_PIDFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.pid"
 $SERVER_TOKENFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.token"
-$SERVER_OS="win32"
 $SERVER_ARCH=
 $SERVER_CONNECTION_TOKEN=
 $SERVER_DOWNLOAD_URL=
@@ -442,6 +440,7 @@ $SERVER_DOWNLOAD_URL=
 $LISTENING_ON=
 $OS_RELEASE_ID=
 $ARCH=
+$PLATFORM="win32"
 
 function printInstallResults($code) {
     "${id}: start"
@@ -451,7 +450,7 @@ function printInstallResults($code) {
     "logFile==$SERVER_LOGFILE=="
     "osReleaseId==$OS_RELEASE_ID=="
     "arch==$ARCH=="
-    "platform==windows=="
+    "platform==$PLATFORM=="
     "tmpDir==$TMP_DIR=="
     ${envVariables.map(envVar => `"${envVar}==$${envVar}=="`).join('\n')}
     "${id}: end"
