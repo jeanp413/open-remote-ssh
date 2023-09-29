@@ -40,6 +40,11 @@ export default class SSHDestination {
     // vscode.uri implementation lowercases the authority, so when reopen or restore
     // a remote session from the recently openend list the connection fails
     static parseEncoded(dest: string): SSHDestination {
+        try {
+            const data = JSON.parse(Buffer.from(dest, 'hex').toString());
+            return new SSHDestination(data.hostName, data.user, data.port);
+        } catch {
+        }
         return SSHDestination.parse(dest.replace(/\\x([0-9a-f]{2})/g, (_, charCode) => String.fromCharCode(parseInt(charCode, 16))));
     }
 
