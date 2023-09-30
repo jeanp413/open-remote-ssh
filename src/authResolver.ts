@@ -158,7 +158,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                     this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
 
-                    const child = cp.spawn(proxyCommand, proxyArgs);
+                    const child = cp.spawn(proxyCommand, proxyArgs, { windowsHide: true, windowsVerbatimArguments: true });
                     proxyStream = stream.Duplex.from({ readable: child.stdout, writable: child.stdin });
                     this.proxyCommandProcess = child;
                 }
