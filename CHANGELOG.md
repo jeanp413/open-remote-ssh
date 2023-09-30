@@ -1,3 +1,7 @@
+## 0.0.44
+- Update ssh2 lib
+- Properly set extensionHost env variables
+
 ## 0.0.43
 - Fix parsing multiple include directives
 
