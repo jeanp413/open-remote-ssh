@@ -152,16 +152,18 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
-                    const proxyArgs = (sshHostConfig['ProxyCommand'] as unknown as string[])
-                        .map((arg) => `"${arg.replace('%h', sshHostName).replace('%p', sshPort.toString()).replace('%r', sshUser)}"`);
-                    const proxyCommand = proxyArgs.shift()!;
-
-                    this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
+                    let proxyArgs = (sshHostConfig['ProxyCommand'] as unknown as string[])
+                        .map((arg) => arg.replace('%h', sshHostName).replace('%p', sshPort.toString()).replace('%r', sshUser));
+                    let proxyCommand = proxyArgs.shift()!;
 
                     let options = {};
-                    if (isWindows && /\.(bat|cmd)"$/.test(proxyCommand)) {
+                    if (isWindows && /\.(bat|cmd)$/.test(proxyCommand)) {
+                        proxyCommand = `"${proxyCommand}"`;
+                        proxyArgs = proxyArgs.map((arg) => arg.includes(' ') ? `"${arg}"` : arg);
                         options = { shell: true, windowsHide: true, windowsVerbatimArguments: true };
                     }
+
+                    this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
 
                     const child = cp.spawn(proxyCommand, proxyArgs, options);
                     proxyStream = stream.Duplex.from({ readable: child.stdout, writable: child.stdin });
