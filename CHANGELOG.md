@@ -1,3 +1,6 @@
+## 0.0.45
+- Use windows-x64 server on windows-arm64
+
 ## 0.0.44
 - Update ssh2 lib
 - Properly set extensionHost env variables
