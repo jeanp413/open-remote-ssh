@@ -458,7 +458,8 @@ function printInstallResults($code) {
 
 # Check machine architecture
 $ARCH=$env:PROCESSOR_ARCHITECTURE
-if(($ARCH -eq "AMD64") -or ($ARCH -eq "IA64")) {
+# Use x64 version for ARM64, as it's not yet available.
+if(($ARCH -eq "AMD64") -or ($ARCH -eq "IA64") -or ($ARCH -eq "ARM64")) {
     $SERVER_ARCH="x64"
 }
 else {
