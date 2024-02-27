@@ -135,7 +135,9 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         logger.trace('Server install command:', installServerScript);
         // Fish shell does not support heredoc so let's workaround it using -c option,
         // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
-        commandOutput = await conn.exec(`bash -c '${installServerScript.replace(/'/g, `'\\''`)}'`);
+        const installServerScriptCall = ${installServerScript.replace(/'/g, `'\\''`)};
+        
+        commandOutput = await conn.exec(`bash -c '${installServerScriptCall}' || ash -c '${installServerScriptCall}'  `);
     }
 
     if (commandOutput.stderr) {
