@@ -1,3 +1,6 @@
+## 0.0.46
+- Add riscv64 support (#147)
+
 ## 0.0.45
 - Use windows-x64 server on windows-arm64
 
