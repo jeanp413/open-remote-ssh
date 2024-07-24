@@ -104,6 +104,30 @@
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.experimental.connections": {
+					"type": "object",
+					"description": "**Experimental:** Server connection info for hosts",
+					"scope": "application",
+					"additionalProperties": {
+						"type": "object",
+						"properties": {
+							"listeningOn": {
+								"type": [
+									"number",
+									"string"
+								],
+								"description": "The TCP port number, or Unix domain socket path where the server listening on"
+							},
+							"connectionToken": {
+								"type": "string",
+								"description": "Sever connection token."
+							}
+						},
+						"required": [
+							"listeningOn"
+						]
+					}
 				}
 			}
 		},

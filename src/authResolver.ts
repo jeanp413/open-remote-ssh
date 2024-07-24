@@ -14,7 +14,7 @@ import { gatherIdentityFiles } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer, ServerInstallError } from './serverSetup';
+import { ConnectionInfo, installCodeServer, ServerInstallError } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
 
@@ -86,6 +86,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
+        const connectionInfoMap = vscode.workspace.getConfiguration('remote.SSH.experimental').get<Record<string, ConnectionInfo>>('connections', {})!;
 
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${sshDest.hostname}`,
@@ -191,21 +192,33 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     envVariables['SSH_AUTH_SOCK'] = null;
                 }
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
-
-                for (const key of Object.keys(envVariables)) {
-                    if (installResult[key] !== undefined) {
-                        envVariables[key] = installResult[key];
+                const connectionInfo = await (async () => {
+                    // If the connection info is provided in the configuration,
+                    // assume this is a valid remote server and just connect to it.
+                    if (sshDest.hostname in connectionInfoMap) {
+                        return connectionInfoMap[sshDest.hostname];
                     }
-                }
 
-                // Update terminal env variables
-                this.context.environmentVariableCollection.persistent = false;
-                for (const [key, value] of Object.entries(envVariables)) {
-                    if (value) {
-                        this.context.environmentVariableCollection.replace(key, value);
+                    // Otherwise, install & download the server automatically.
+                    this.logger.info(`connection info not specified for ${sshDest.hostname}, installing code server`);
+                    const installResult = await installCodeServer(this.sshConnection!, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
+
+                    for (const key of Object.keys(envVariables)) {
+                        if (installResult[key] !== undefined) {
+                            envVariables[key] = installResult[key];
+                        }
                     }
-                }
+
+                    // Update terminal env variables
+                    this.context.environmentVariableCollection.persistent = false;
+                    for (const [key, value] of Object.entries(envVariables)) {
+                        if (value) {
+                            this.context.environmentVariableCollection.replace(key, value);
+                        }
+                    }
+
+                    return installResult;
+                })();
 
                 if (enableDynamicForwarding) {
                     const socksPort = await findRandomPort();
@@ -216,7 +229,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     });
                 }
 
-                const tunnelConfig = await this.openTunnel(0, installResult.listeningOn);
+                const tunnelConfig = await this.openTunnel(0, connectionInfo.listeningOn);
                 this.tunnels.push(tunnelConfig);
 
                 // Enable ports view
@@ -234,7 +247,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 });
 
-                const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
+                const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, connectionInfo.connectionToken);
                 resolvedResult.extensionHostEnv = envVariables;
                 return resolvedResult;
             } catch (e: unknown) {

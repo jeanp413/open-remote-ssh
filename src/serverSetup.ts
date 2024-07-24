@@ -17,10 +17,16 @@ export interface ServerInstallOptions {
     serverDownloadUrlTemplate: string;
 }
 
-export interface ServerInstallResult {
-    exitCode: number;
+/**
+ * Information required for running server connection.
+ */
+export interface ConnectionInfo {
     listeningOn: number | string;
-    connectionToken: string;
+    connectionToken?: string;
+}
+
+export interface ServerInstallResult extends ConnectionInfo {
+    exitCode: number;
     logFile: string;
     osReleaseId: string;
     arch: string;
