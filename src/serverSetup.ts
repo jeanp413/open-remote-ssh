@@ -366,6 +366,7 @@ if [[ -z $SERVER_RUNNING_PROCESS ]]; then
         rm $SERVER_TOKENFILE
     fi
 
+    touch $SERVER_LOGFILE
     touch $SERVER_TOKENFILE
     chmod 600 $SERVER_TOKENFILE
     SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
