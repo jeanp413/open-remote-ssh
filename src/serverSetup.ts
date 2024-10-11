@@ -259,6 +259,14 @@ case $KERNEL in
     DragonFly)
         PLATFORM="dragonfly"
         ;;
+    "")
+        if ! command -v uname; then
+            echo "Error 'uname' command not found, could not get platform/arch data."
+        else
+            echo "Error uname -s yields empty result"
+        fi
+        print_install_results_and_exit 1
+        ;;
     *)
         echo "Error platform not supported: $KERNEL"
         print_install_results_and_exit 1
@@ -329,12 +337,14 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     if (( $? > 0 )); then
         echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+        rm -rf vscode-server.tar.gz
         print_install_results_and_exit 1
     fi
 
     tar -xf vscode-server.tar.gz --strip-components 1
     if (( $? > 0 )); then
         echo "Error while extracting server contents"
+        rm -rf vscode-server.tar.gz
         print_install_results_and_exit 1
     fi
 
