@@ -283,6 +283,9 @@ case $ARCH in
     riscv64)
         SERVER_ARCH="riscv64"
         ;;
+    loongarch64)
+        SERVER_ARCH="loong64"
+        ;;
     *)
         echo "Error architecture not supported: $ARCH"
         print_install_results_and_exit 1
