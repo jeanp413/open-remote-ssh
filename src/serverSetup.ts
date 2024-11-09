@@ -313,14 +313,23 @@ if [[ ! -d $SERVER_DIR ]]; then
     fi
 fi
 
+# adjust platform for vscodium download, if needed
+if [[ $OS_RELEASE_ID = alpine ]]; then
+    PLATFORM=$OS_RELEASE_ID
+fi
+
 SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${')}" | sed "s/\\\${quality}/$DISTRO_QUALITY/g" | sed "s/\\\${version}/$DISTRO_VERSION/g" | sed "s/\\\${commit}/$DISTRO_COMMIT/g" | sed "s/\\\${os}/$PLATFORM/g" | sed "s/\\\${arch}/$SERVER_ARCH/g" | sed "s/\\\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
 
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
-    if [[ "$PLATFORM" != "darwin" ]] && [[ "$PLATFORM" != "linux" ]]; then
-        echo "Error "$PLATFORM" needs manual installation of remote extension host"
-        print_install_results_and_exit 1
-    fi
+    case "$PLATFORM" in
+        darwin | linux | alpine )
+            ;;
+        *)
+            echo "Error '$PLATFORM' needs manual installation of remote extension host"
+            print_install_results_and_exit 1
+            ;;
+    esac
 
     pushd $SERVER_DIR > /dev/null
 
