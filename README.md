@@ -39,10 +39,10 @@ The file is located in `~/.vscode-oss/argv.json`.
 
 **Alpine linux**
 
-When running on alpine linux, the packages `gcompat`, `libstdc++`, and  `procps` are necessary and can be installed via
+When running on alpine linux, the packages `libstdc++` and `bash` are necessary and can be installed via
 running
 ```bash
-sudo apk add gcompat libstdc++ procps
+sudo apk add bash libstdc++
 ```
 
 ## SSH configuration file
