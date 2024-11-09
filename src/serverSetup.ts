@@ -286,6 +286,9 @@ case $ARCH in
     loongarch64)
         SERVER_ARCH="loong64"
         ;;
+    s390x)
+        SERVER_ARCH="s390x"
+        ;;
     *)
         echo "Error architecture not supported: $ARCH"
         print_install_results_and_exit 1
