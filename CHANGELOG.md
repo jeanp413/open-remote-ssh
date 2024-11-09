@@ -1,3 +1,8 @@
+## 0.0.47
+- Add support for loong64 (#175)
+- Add s390x support (#174)
+- Support vscodium alpine reh (#142)
+
 ## 0.0.46
 - Add riscv64 support (#147)
 
