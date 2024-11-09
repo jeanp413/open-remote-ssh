@@ -283,6 +283,9 @@ case $ARCH in
     riscv64)
         SERVER_ARCH="riscv64"
         ;;
+    loongarch64)
+        SERVER_ARCH="loong64"
+        ;;
     s390x)
         SERVER_ARCH="s390x"
         ;;
