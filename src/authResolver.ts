@@ -121,7 +121,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         });
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
-                        const proxyhHostName = proxyHostConfig['HostName'] || proxy.hostname;
+                        const proxyHostName = proxyHostConfig['HostName'] || proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
                         const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : (proxy.port || sshPort);
 
@@ -132,9 +132,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                         const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
-                        const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyhHostName, proxyIdentityKeys, preferredAuthentications);
+                        const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyHostName, proxyIdentityKeys, preferredAuthentications);
                         const proxyConnection = new SSHConnection({
-                            host: !proxyStream ? proxyhHostName : undefined,
+                            host: !proxyStream ? proxyHostName : undefined,
                             port: !proxyStream ? proxyPort : undefined,
                             sock: proxyStream,
                             username: proxyUser,
