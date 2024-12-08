@@ -436,6 +436,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
 # Server installation script
 
 $TMP_DIR="$env:TEMP\\$([System.IO.Path]::GetRandomFileName())"
+$ProgressPreference = "SilentlyContinue"
 
 $DISTRO_VERSION="${version}"
 $DISTRO_COMMIT="${commit}"
