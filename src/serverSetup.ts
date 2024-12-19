@@ -201,7 +201,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
 function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     return `
-#!/bin/sh
+#!/usr/bin/env sh
 # Server installation script
 
 TMP_DIR="\${XDG_RUNTIME_DIR:-"/tmp"}"
