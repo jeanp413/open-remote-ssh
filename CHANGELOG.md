@@ -1,3 +1,8 @@
+## 0.0.48
+- Support `%n` in ProxyCommand
+- fix: add missing direct @types/ssh2-stream dependency (#177)
+- fix Win32 internal error (#178)
+
 ## 0.0.47
 - Add support for loong64 (#175)
 - Add s390x support (#174)
