@@ -153,7 +153,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
                     let proxyArgs = (sshHostConfig['ProxyCommand'] as unknown as string[])
-                        .map((arg) => arg.replace('%h', sshHostName).replace('%p', sshPort.toString()).replace('%r', sshUser));
+                        .map((arg) => arg.replace('%h', sshHostName).replace('%n', sshDest.hostname).replace('%p', sshPort.toString()).replace('%r', sshUser));
                     let proxyCommand = proxyArgs.shift()!;
 
                     let options = {};
