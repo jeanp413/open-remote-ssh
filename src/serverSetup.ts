@@ -365,6 +365,9 @@ else
     echo "Server script already installed in $SERVER_SCRIPT"
 fi
 
+# Make sure the commits match
+sed -i -E 's/"commit": "[0-9a-f]+",/"commit": "'"$DISTRO_COMMIT"'",/' "$SERVER_DIR/product.json"
+
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
     SERVER_PID="$(cat $SERVER_PIDFILE)"
@@ -533,6 +536,10 @@ if(!(Test-Path $SERVER_SCRIPT)) {
 else {
     "Server script already installed in $SERVER_SCRIPT"
 }
+
+# Make sure the commits match
+(Get-Content -Raw "$SERVER_DIR\\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",/') |
+    Set-Content -NoNewLine "$SERVER_DIR\\product.json"
 
 # Try to find if server is already running
 if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SERVER_DIR\\*") {
