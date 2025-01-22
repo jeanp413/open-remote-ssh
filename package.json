@@ -110,6 +110,12 @@
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.experimental.modifyMatchingCommit": {
+					"type": "boolean",
+					"description": "**Experimental:** When true, modify the commit value of the remote server to match the local host.",
+					"scope": "application",
+					"default": false
 				}
 			}
 		},
