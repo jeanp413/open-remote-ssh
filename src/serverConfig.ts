@@ -27,12 +27,13 @@ export async function getVSCodeServerConfig(): Promise<IServerConfig> {
     const productJson = await getVSCodeProductJson();
 
     const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('serverBinaryName', '');
+    const customRelease = vscode.workspace.getConfiguration('remote.SSH').get<string>('vscodiumReleaseNumber', '');
 
     return {
         version: vscode.version.replace('-insider',''),
         commit: productJson.commit as string,
         quality: productJson.quality as string,
-        release: productJson.release as string,
+        release: customRelease as string,
         serverApplicationName: customServerBinaryName || productJson.serverApplicationName as string,
         serverDataFolderName: productJson.serverDataFolderName as string,
         serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate as string
