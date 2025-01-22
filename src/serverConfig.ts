@@ -17,16 +17,18 @@ export interface IServerConfig {
     version: string;
     commit: string;
     quality: string;
-    release?: string; // vscodium-like specific
+    release?: string;
     serverApplicationName: string;
     serverDataFolderName: string;
-    serverDownloadUrlTemplate?: string; // vscodium-like specific
+    serverDownloadUrlTemplate?: string;
+    modifyMatchingCommit: boolean;
 }
 
 export async function getVSCodeServerConfig(): Promise<IServerConfig> {
     const productJson = await getVSCodeProductJson();
 
     const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('serverBinaryName', '');
+    const customModifyMatchingCommit = vscode.workspace.getConfiguration('remote.SSH.experimental').get<boolean>('modifyMatchingCommit', false);
     const customRelease = vscode.workspace.getConfiguration('remote.SSH').get<string>('vscodiumReleaseNumber', '');
 
     return {
@@ -36,6 +38,7 @@ export async function getVSCodeServerConfig(): Promise<IServerConfig> {
         release: customRelease as string,
         serverApplicationName: customServerBinaryName || productJson.serverApplicationName as string,
         serverDataFolderName: productJson.serverDataFolderName as string,
-        serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate as string
+        serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate as string,
+        modifyMatchingCommit: customModifyMatchingCommit,
     };
 }
