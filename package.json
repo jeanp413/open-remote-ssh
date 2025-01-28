@@ -74,12 +74,6 @@
 					"scope": "application",
 					"default": true
 				},
-				"remote.SSH.vscodiumReleaseNumber": {
-					"type": "string",
-					"description": "The VSCodium specific release number to use with serverDownloadUrlTemplate, automatic if left empty. It needs to be provided to install with VSCode-OSS.",
-					"scope": "application",
-					"default": ""
-				},
 				"remote.SSH.serverDownloadUrlTemplate": {
 					"type": "string",
 					"description": "The URL from where the vscode server will be downloaded. You can use the following variables and they will be replaced dynamically:\n- ${quality}: vscode server quality, e.g. stable or insiders\n- ${version}: vscode server version, e.g. 1.69.0\n- ${commit}: vscode server release commit\n- ${arch}: vscode server arch, e.g. x64, armhf, arm64\n- ${release}: release number, vscodium only https://github.com/VSCodium/vscodium/pull/1192",
@@ -108,6 +102,12 @@
 				"remote.SSH.experimental.serverBinaryName": {
 					"type": "string",
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
+					"scope": "application",
+					"default": ""
+				},
+				"remote.SSH.experimental.vscodiumReleaseNumber": {
+					"type": "string",
+					"description": "**Experimental:** The VSCodium specific release number to use with serverDownloadUrlTemplate, automatic if left empty.",
 					"scope": "application",
 					"default": ""
 				},
@@ -375,6 +375,7 @@
 	"dependencies": {
 		"@jeanp413/ssh-config": "^4.3.1",
 		"glob": "^9.3.1",
+		"node-fetch": "^3.3.2",
 		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
 		"socks": "^2.5.0",
 		"ssh2": "git+https://github.com/jeanp413/ssh2#master"

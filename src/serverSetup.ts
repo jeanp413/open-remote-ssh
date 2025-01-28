@@ -70,7 +70,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
-    const vscodeServerConfig = await getVSCodeServerConfig();
+    const vscodeServerConfig = await getVSCodeServerConfig(logger);
     const installOptions: ServerInstallOptions = {
         id: scriptId,
         version: vscodeServerConfig.version,
