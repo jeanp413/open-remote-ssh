@@ -53,15 +53,28 @@ sudo apk add bash libstdc++
 
 If you are using VSCode-OSS instead of VSCodium, you need some extra steps to make it work.
 
-Mainly, VSCodium versions have an extra `release` part that you need to provide for the plugin to download
-the appropriate version. For this, look for the release number associated with your version of VSCode
-in the [release page](https://github.com/VSCodium/vscodium/releases/).
-For instance, for VSCode version "1.96.0", the (last) VSCodium release number is "24352".
-
-Then, in the plugin settings, modify the following entries:
+Modify the following entries in the plugin settings:
 
 ```
 "remote.SSH.experimental.modifyMatchingCommit": true,
 "remote.SSH.experimental.serverBinaryName": "codium-server",
-"remote.SSH.vscodiumReleaseNumber": "<vscodium-release>",
+```
+
+Additionally, you may need to change the `vscodiumReleaseNumber`.
+VSCodium versions have an extra `release` part that do not have equivalent for VSCode-OSS.
+The plugin will use the latest release of the corresponding version. If you need to use another
+VSCodium release, look for the release numbers associated with your VSCode version in the
+[release page](https://github.com/VSCodium/vscodium/releases/).
+For instance, for VSCode version "1.96.0", the (last) VSCodium release number is "24352".
+
+In the plugin settings, modify the following entry to specify a particular release:
+
+```
+"remote.SSH.experimental.vscodiumReleaseNumber": "<vscodium-release>",
+```
+
+If left empty, it will pick the latest release:
+
+```
+"remote.SSH.experimental.vscodiumReleaseNumber": "",
 ```
