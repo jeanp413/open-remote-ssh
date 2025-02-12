@@ -104,6 +104,18 @@
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.experimental.vscodiumReleaseNumber": {
+					"type": "string",
+					"description": "**Experimental:** The VSCodium specific release number to use with serverDownloadUrlTemplate, automatic if left empty.",
+					"scope": "application",
+					"default": ""
+				},
+				"remote.SSH.experimental.modifyMatchingCommit": {
+					"type": "boolean",
+					"description": "**Experimental:** When true, modify the commit value of the remote server to match the local host.",
+					"scope": "application",
+					"default": false
 				}
 			}
 		},
@@ -361,10 +373,11 @@
 		"webpack-cli": "^4.7.2"
 	},
 	"dependencies": {
+		"@jeanp413/ssh-config": "^4.3.1",
 		"glob": "^9.3.1",
+		"node-fetch": "^3.3.2",
 		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
 		"socks": "^2.5.0",
-		"@jeanp413/ssh-config": "^4.3.1",
 		"ssh2": "git+https://github.com/jeanp413/ssh2#master"
 	}
 }

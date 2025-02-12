@@ -8,13 +8,14 @@ export interface ServerInstallOptions {
     quality: string;
     commit: string;
     version: string;
-    release?: string; // vscodium specific
+    release?: string;
     extensionIds: string[];
     envVariables: string[];
     useSocketPath: boolean;
     serverApplicationName: string;
     serverDataFolderName: string;
     serverDownloadUrlTemplate: string;
+    modifyMatchingCommit: boolean;
 }
 
 export interface ServerInstallResult {
@@ -69,7 +70,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
-    const vscodeServerConfig = await getVSCodeServerConfig();
+    const vscodeServerConfig = await getVSCodeServerConfig(logger);
     const installOptions: ServerInstallOptions = {
         id: scriptId,
         version: vscodeServerConfig.version,
@@ -82,6 +83,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
         serverDownloadUrlTemplate: serverDownloadUrlTemplate ?? vscodeServerConfig.serverDownloadUrlTemplate ?? DEFAULT_DOWNLOAD_URL_TEMPLATE,
+        modifyMatchingCommit: vscodeServerConfig.modifyMatchingCommit,
     };
 
     let commandOutput: { stdout: string; stderr: string };
@@ -198,7 +200,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, modifyMatchingCommit }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     return `
 # Server installation script
@@ -365,6 +367,12 @@ else
     echo "Server script already installed in $SERVER_SCRIPT"
 fi
 
+# Make sure the commits match
+if ${modifyMatchingCommit ? 'true' : 'false'}; then
+    echo "Will modify product.json on remote to match the commit value"
+    sed -i -E 's/"commit": "[0-9a-f]+",/"commit": "'"$DISTRO_COMMIT"'",/' "$SERVER_DIR/product.json"
+fi
+
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
     SERVER_PID="$(cat $SERVER_PIDFILE)"
@@ -422,7 +430,7 @@ print_install_results_and_exit 0
 `;
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, modifyMatchingCommit }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -533,6 +541,13 @@ if(!(Test-Path $SERVER_SCRIPT)) {
 else {
     "Server script already installed in $SERVER_SCRIPT"
 }
+
+# Make sure the commits match
+if ${modifyMatchingCommit ? '$true' : '$false'}; then
+    echo "Will modify product.json on remote to match the commit value"
+    (Get-Content -Raw "$SERVER_DIR\\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",/') |
+        Set-Content -NoNewLine "$SERVER_DIR\\product.json"
+fi
 
 # Try to find if server is already running
 if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SERVER_DIR\\*") {
