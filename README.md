@@ -58,7 +58,7 @@ Modify the following entries in the plugin settings:
 ```
 "remote.SSH.experimental.modifyMatchingCommit": true,
 "remote.SSH.experimental.serverBinaryName": "codium-server",
-"remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}${release}.tar.gz",
+"remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${release}/vscodium-reh-${os}-${arch}-${version}${release}.tar.gz",
 ```
 
 Additionally, you may need to change the `vscodiumReleaseNumber`.
