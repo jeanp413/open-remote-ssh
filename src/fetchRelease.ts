@@ -6,7 +6,7 @@ interface githubReleasesData {
     name: string;
 }
 
-export async function fetchRelease(version: string, logger: Log): Promise<string> {
+export async function fetchRelease(version: string, logger: Log, prefix: string = '.'): Promise<string> {
 
     // Fetch github releases following: https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28
     logger.info('Fetch the last release number of VSCodium corresponding to version ' + version);
@@ -29,8 +29,12 @@ export async function fetchRelease(version: string, logger: Log): Promise<string
                 logger.info('found release version: ' + fullVersion);
 
                 // Found a version match, it is the newer
-                // Remove the version and the dot '.': 1.96.4.25026 -> 25026
-                release = fullVersion.slice(version.length + 1);
+                // Remove the version: 1.96.4.25026 -> .25026
+                release = fullVersion.slice(version.length);
+                // Remove the prefix dot '.', if present: 1.96.4.25026 -> 25026 or 1.99.02277 -> 2277
+                if (release.startsWith(prefix)) {
+                    release = release.slice(prefix.length)
+                }
                 break;
             }
         }
