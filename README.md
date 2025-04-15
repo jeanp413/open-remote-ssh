@@ -58,6 +58,7 @@ Modify the following entries in the plugin settings:
 ```
 "remote.SSH.experimental.modifyMatchingCommit": true,
 "remote.SSH.experimental.serverBinaryName": "codium-server",
+"remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}${release}.tar.gz",
 ```
 
 Additionally, you may need to change the `vscodiumReleaseNumber`.
@@ -77,4 +78,11 @@ If left empty, it will pick the latest release:
 
 ```
 "remote.SSH.experimental.vscodiumReleaseNumber": "",
+```
+
+Starting with VSCodium version 1.99.0, the `release` number is not separated from the `version` by a dot `.` anymore. Therefore "remote.SSH.serverDownloadUrlTemplate" needs to be filled with the new scheme.
+Before 1.99.0, it can be left empty or one should use the old scheme:
+
+```
+"remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz",
 ```
