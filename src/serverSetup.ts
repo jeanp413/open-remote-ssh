@@ -543,11 +543,11 @@ else {
 }
 
 # Make sure the commits match
-if ${modifyMatchingCommit ? '$true' : '$false'}; then
+if(${modifyMatchingCommit ? '$true' : '$false'}) {
     echo "Will modify product.json on remote to match the commit value"
-    (Get-Content -Raw "$SERVER_DIR\\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",/') |
+    (Get-Content -Raw "$SERVER_DIR\\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",') |
         Set-Content -NoNewLine "$SERVER_DIR\\product.json"
-fi
+}
 
 # Try to find if server is already running
 if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SERVER_DIR\\*") {
