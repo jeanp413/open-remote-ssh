@@ -244,6 +244,13 @@ print_install_results_and_exit() {
     exit 0
 }
 
+LOCKFILE="$TMP_DIR/server_install.lock"
+
+exec 42>"$LOCKFILE"
+# wait 30s to acquire lock, otherwise fail
+flock -x -w 30 42 || print_install_results_and_exit 1
+trap 'flock -u 42' EXIT
+
 # Check if platform is supported
 KERNEL="$(uname -s)"
 case $KERNEL in
