@@ -11,6 +11,7 @@ export interface ServerInstallOptions {
     release?: string; // vscodium specific
     extensionIds: string[];
     envVariables: string[];
+    sendEnvVars: Record<string, string>;
     useSocketPath: boolean;
     serverApplicationName: string;
     serverDataFolderName: string;
@@ -37,7 +38,7 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], sendEnvVars: Record<string, string>, platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
     // detect platform and shell for windows
@@ -78,6 +79,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         release: vscodeServerConfig.release,
         extensionIds,
         envVariables,
+        sendEnvVars,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
@@ -198,12 +200,13 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
+    const sendEnvExports = Object.entries(sendEnvVars).map(([key, value]) => `export ${key}="${value.replace(/"/g, '\\"')}"`).join('\n');
     return `
 # Server installation script
 
-TMP_DIR="\${XDG_RUNTIME_DIR:-"/tmp"}"
+${sendEnvExports ? sendEnvExports + '\n' : ''}TMP_DIR="\${XDG_RUNTIME_DIR:-"/tmp"}"
 
 DISTRO_VERSION="${version}"
 DISTRO_COMMIT="${commit}"
@@ -422,8 +425,9 @@ print_install_results_and_exit 0
 `;
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
+    const sendEnvExports = Object.entries(sendEnvVars).map(([key, value]) => `$env:${key}="${value.replace(/"/g, '`"')}"`).join('\n');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
         .replace(/\$\{version\}/g, version)
@@ -435,7 +439,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
     return `
 # Server installation script
 
-$TMP_DIR="$env:TEMP\\$([System.IO.Path]::GetRandomFileName())"
+${sendEnvExports ? sendEnvExports + '\n' : ''}$TMP_DIR="$env:TEMP\\$([System.IO.Path]::GetRandomFileName())"
 $ProgressPreference = "SilentlyContinue"
 
 $DISTRO_VERSION="${version}"
