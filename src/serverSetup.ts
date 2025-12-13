@@ -323,7 +323,7 @@ SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
     case "$PLATFORM" in
-        darwin | linux | alpine )
+        darwin | linux | alpine | freebsd )
             ;;
         *)
             echo "Error '$PLATFORM' needs manual installation of remote extension host"
@@ -337,6 +337,8 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
         wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
     elif [[ ! -z $(which curl) ]]; then
         curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    elif [[ ! -z $(which fetch) ]]; then
+        fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
     else
         echo "Error no tool to download server binary"
         print_install_results_and_exit 1
