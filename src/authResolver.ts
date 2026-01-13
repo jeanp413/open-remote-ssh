@@ -367,7 +367,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 const keyBuffer = await fs.promises.readFile(identityKey.filename);
                 let result = ssh2.utils.parseKey(keyBuffer); // First try without passphrase
-                if (result instanceof Error && result.message === 'Encrypted private OpenSSH key detected, but no passphrase given') {
+                if (result instanceof Error && (
+                    result.message === 'Encrypted private OpenSSH key detected, but no passphrase given' ||
+                    result.message === 'Encrypted OpenSSH private key detected, but no passphrase given'
+                )) {
                     let passphraseRetryCount = PASSPHRASE_RETRY_COUNT;
                     while (result instanceof Error && passphraseRetryCount > 0) {
                         const passphrase = await vscode.window.showInputBox({
