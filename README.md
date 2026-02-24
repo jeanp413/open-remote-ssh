@@ -56,16 +56,16 @@ If you are using VSCode-OSS instead of VSCodium, you need some extra steps to ma
 Modify the following entries in the plugin settings:
 
 ```
+"remote.SSH.experimental.vscodiumReleaseNumber": "",
 "remote.SSH.experimental.modifyMatchingCommit": true,
 "remote.SSH.experimental.serverBinaryName": "codium-server",
 "remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${release}/vscodium-reh-${os}-${arch}-${version}${release}.tar.gz",
 ```
 
-Additionally, you may need to change the `vscodiumReleaseNumber`.
 VSCodium versions have an extra `release` part that do not have equivalent for VSCode-OSS.
-The plugin will use the latest release of the corresponding version. If you need to use another
-VSCodium release, look for the release numbers associated with your VSCode version in the
-[release page](https://github.com/VSCodium/vscodium/releases/).
+The plugin will use the latest release of the corresponding version if `vscodiumReleaseNumber` is left empty.
+If you need to use another VSCodium release, look for the release numbers associated with your VSCode version
+in the [release page](https://github.com/VSCodium/vscodium/releases/).
 For instance, for VSCode version "1.96.0", the (last) VSCodium release number is "24352".
 
 In the plugin settings, modify the following entry to specify a particular release:
@@ -74,14 +74,10 @@ In the plugin settings, modify the following entry to specify a particular relea
 "remote.SSH.experimental.vscodiumReleaseNumber": "<vscodium-release>",
 ```
 
-If left empty, it will pick the latest release:
+Starting with VSCodium version 1.99.0, the `release` number is not separated from the `version` by a dot `.` anymore.
+Therefore `serverDownloadUrlTemplate` needs to be filled with the new scheme (as shown above).
 
-```
-"remote.SSH.experimental.vscodiumReleaseNumber": "",
-```
-
-Starting with VSCodium version 1.99.0, the `release` number is not separated from the `version` by a dot `.` anymore. Therefore "remote.SSH.serverDownloadUrlTemplate" needs to be filled with the new scheme.
-Before 1.99.0, it can be left empty or one should use the old scheme:
+Before 1.99.0, the old scheme needs to be used:
 
 ```
 "remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz",
