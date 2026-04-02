@@ -15,7 +15,7 @@ import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError } from './serverSetup';
-import { isWindows } from './common/platform';
+import { isWindows, isFlatpak } from './common/platform';
 import * as os from 'os';
 
 const PASSWORD_RETRY_COUNT = 3;
@@ -161,6 +161,11 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         proxyCommand = `"${proxyCommand}"`;
                         proxyArgs = proxyArgs.map((arg) => arg.includes(' ') ? `"${arg}"` : arg);
                         options = { shell: true, windowsHide: true, windowsVerbatimArguments: true };
+                    }
+
+                    if (isFlatpak) {
+                        proxyArgs = ["--", "flatpak-spawn", "--host", "--env=TERM=xterm-256", proxyCommand, ...proxyArgs];
+                        proxyCommand = "/usr/bin/env";
                     }
 
                     this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
