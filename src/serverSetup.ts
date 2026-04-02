@@ -37,6 +37,29 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
+function executeOnRemoteInBash(conn: SSHConnection, command: string) {
+    // Fish shell does not support heredoc so let's workaround it using -c option,
+    // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
+    return conn.exec(`bash -c '${command.replace(/'/g, `'\\''`)}'`);
+}
+
+// TODO: Windows also?
+const CUSTOM_INSTALLER_PATHS_LINUX = [
+    '$HOME/.open-remote-ssh/start-server',
+    '/etc/open-remote-ssh/start-server',
+];
+
+async function tryFindCustomInstallerLinux(conn: SSHConnection) {
+    for (const customPath of CUSTOM_INSTALLER_PATHS_LINUX) {
+        const checkCustomPathScript = `if [[ -f "${customPath}" ]]; then echo yes; else echo no; fi`;
+        if ((await executeOnRemoteInBash(conn, checkCustomPathScript)).stdout.includes('yes')) {
+            return customPath;
+        }
+    }
+
+    return undefined;
+}
+
 export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
@@ -130,12 +153,28 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
         commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
-        const installServerScript = generateBashInstallScript(installOptions);
+        let installServerCommand;
 
-        logger.trace('Server install command:', installServerScript);
-        // Fish shell does not support heredoc so let's workaround it using -c option,
-        // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
-        commandOutput = await conn.exec(`bash -c '${installServerScript.replace(/'/g, `'\\''`)}'`);
+        const customInstallerPath = await tryFindCustomInstallerLinux(conn);
+        if (customInstallerPath === undefined) {
+            installServerCommand =
+                generateBashInstallScript(installOptions);
+        }
+        else {
+            const serverUrl = installOptions.serverDownloadUrlTemplate;
+            installServerCommand = [
+                `DISTRO_VERSION="${installOptions.version}"`,
+                `DISTRO_COMMIT="${installOptions.commit}"`,
+                `DISTRO_QUALITY="${installOptions.quality}"`,
+                `DISTRO_VSCODIUM_RELEASE="${installOptions.release}"`,
+                customInstallerPath,
+                `--session-id=${scriptId}`,
+                `--server-url="${serverUrl.replace(/\$/g, '\\$')}"`,
+            ].join(' ');
+        }
+
+        logger.trace('Server install command:', installServerCommand);
+        commandOutput = await executeOnRemoteInBash(conn, installServerCommand);
     }
 
     if (commandOutput.stderr) {
