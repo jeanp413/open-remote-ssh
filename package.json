@@ -103,6 +103,12 @@
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.serverDataFolder": {
+					"type": "string",
+					"description": "The base path to install the server to instead of `~/.vscodium-server`.",
+					"scope": "application",
+					"default": ""
 				}
 			}
 		},
