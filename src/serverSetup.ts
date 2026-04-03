@@ -3,6 +3,60 @@ import Log from './common/logger';
 import { getVSCodeServerConfig } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
 
+/**
+ * Matches a hostname against a pattern that may contain wildcards.
+ * Returns a specificity score: higher scores indicate more specific matches.
+ * Returns -1 if no match.
+ */
+function matchHostnamePattern(hostname: string, pattern: string): number {
+	// Exact match has highest priority
+	if (hostname === pattern) {
+		return 1000;
+	}
+
+	// Catch-all wildcard has lowest priority
+	if (pattern === '*') {
+		return 1;
+	}
+
+	// Convert wildcard pattern to regex
+	// Escape special regex characters except *
+	const regexPattern = pattern
+		.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+		.replace(/\*/g, '.*');
+	
+	const regex = new RegExp(`^${regexPattern}$`);
+	
+	if (regex.test(hostname)) {
+		// Calculate specificity based on the number of non-wildcard characters
+		// More specific patterns (more characters) get higher scores
+		const nonWildcardChars = pattern.replace(/\*/g, '').length;
+		return 10 + nonWildcardChars;
+	}
+
+	return -1;
+}
+
+/**
+ * Finds the best matching path for a hostname from a map of patterns to paths.
+ * Supports wildcards with priority: exact match > specific wildcard > general wildcard.
+ */
+export function findServerInstallPath(hostname: string, pathMap: Record<string, string>): string | undefined {
+	let bestMatch: { pattern: string; path: string; score: number } | undefined;
+
+	for (const [pattern, path] of Object.entries(pathMap)) {
+		const score = matchHostnamePattern(hostname, pattern);
+		
+		if (score > 0) {
+			if (!bestMatch || score > bestMatch.score) {
+				bestMatch = { pattern, path, score };
+			}
+		}
+	}
+
+	return bestMatch?.path;
+}
+
 export interface ServerInstallOptions {
     id: string;
     quality: string;
@@ -15,6 +69,7 @@ export interface ServerInstallOptions {
     serverApplicationName: string;
     serverDataFolderName: string;
     serverDownloadUrlTemplate: string;
+    customInstallPath?: string;
 }
 
 export interface ServerInstallResult {
@@ -37,7 +92,7 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, customInstallPath: string | undefined, logger: Log): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
     // detect platform and shell for windows
@@ -82,6 +137,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
         serverDownloadUrlTemplate: serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE,
+        customInstallPath,
     };
 
     let commandOutput: { stdout: string; stderr: string };
@@ -198,8 +254,9 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
+    const serverDataDir = customInstallPath || `$HOME/${serverDataFolderName}`;
     return `
 # Server installation script
 
@@ -213,7 +270,7 @@ DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
 SERVER_APP_NAME="${serverApplicationName}"
 SERVER_INITIAL_EXTENSIONS="${extensions}"
 SERVER_LISTEN_FLAG="${useSocketPath ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"` : '--port=0'}"
-SERVER_DATA_DIR="$HOME/${serverDataFolderName}"
+SERVER_DATA_DIR="${serverDataDir}"
 SERVER_DIR="$SERVER_DATA_DIR/bin/$DISTRO_COMMIT"
 SERVER_SCRIPT="$SERVER_DIR/bin/$SERVER_APP_NAME"
 SERVER_LOGFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.log"
@@ -422,7 +479,7 @@ print_install_results_and_exit 0
 `;
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -431,6 +488,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         .replace(/\$\{os\}/g, 'win32')
         .replace(/\$\{arch\}/g, 'x64')
         .replace(/\$\{release\}/g, release ?? '');
+    const serverDataDir = customInstallPath || `$(Resolve-Path ~)\\${serverDataFolderName}`;
 
     return `
 # Server installation script
@@ -446,7 +504,7 @@ $DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
 $SERVER_APP_NAME="${serverApplicationName}"
 $SERVER_INITIAL_EXTENSIONS="${extensions}"
 $SERVER_LISTEN_FLAG="${useSocketPath ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"` : '--port=0'}"
-$SERVER_DATA_DIR="$(Resolve-Path ~)\\${serverDataFolderName}"
+$SERVER_DATA_DIR="${serverDataDir}"
 $SERVER_DIR="$SERVER_DATA_DIR\\bin\\$DISTRO_COMMIT"
 $SERVER_SCRIPT="$SERVER_DIR\\bin\\$SERVER_APP_NAME.cmd"
 $SERVER_LOGFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.log"
