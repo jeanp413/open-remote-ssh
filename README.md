@@ -48,3 +48,37 @@ sudo apk add bash libstdc++
 ## SSH configuration file
 
 [OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections. To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
+
+## Note for VSCode-OSS users
+
+If you are using VSCode-OSS instead of VSCodium, you need some extra steps to make it work.
+
+Modify the following entries in the plugin settings:
+
+```
+"remote.SSH.experimental.vscodiumReleaseNumber": "",
+"remote.SSH.experimental.modifyMatchingCommit": true,
+"remote.SSH.experimental.serverBinaryName": "codium-server",
+"remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${release}/vscodium-reh-${os}-${arch}-${version}${release}.tar.gz",
+```
+
+VSCodium versions have an extra `release` part that do not have equivalent for VSCode-OSS.
+The plugin will use the latest release of the corresponding version if `vscodiumReleaseNumber` is left empty.
+If you need to use another VSCodium release, look for the release numbers associated with your VSCode version
+in the [release page](https://github.com/VSCodium/vscodium/releases/).
+For instance, for VSCode version "1.96.0", the (last) VSCodium release number is "24352".
+
+In the plugin settings, modify the following entry to specify a particular release:
+
+```
+"remote.SSH.experimental.vscodiumReleaseNumber": "<vscodium-release>",
+```
+
+Starting with VSCodium version 1.99.0, the `release` number is not separated from the `version` by a dot `.` anymore.
+Therefore `serverDownloadUrlTemplate` needs to be filled with the new scheme (as shown above).
+
+Before 1.99.0, the old scheme needs to be used:
+
+```
+"remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz",
+```
