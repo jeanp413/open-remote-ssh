@@ -42,23 +42,16 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
     // detect platform and shell for windows
     if (!platform || platform === 'windows') {
-        const result = await conn.exec('uname -s');
+        const result = await conn.exec('dir ..');
 
         if (result.stdout) {
-            if (result.stdout.includes('windows32')) {
-                platform = 'windows';
-            } else if (result.stdout.includes('MINGW64')) {
-                platform = 'windows';
-                shell = 'bash';
-            }
-        } else if (result.stderr) {
-            if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
-                platform = 'windows';
-            }
-
-            if (result.stderr.includes('is not recognized as an internal or external command')) {
-                platform = 'windows';
+            platform = 'windows';
+            if (result.stdout.includes('LastWriteTime')) {
+                shell = 'powershell';
+            } else if (result.stdout.includes('<DIR>')) {
                 shell = 'cmd';
+            } else {
+                shell = 'bash';
             }
         }
 
