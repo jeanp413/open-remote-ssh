@@ -2,7 +2,7 @@
 	"name": "open-remote-ssh",
 	"displayName": "Open Remote - SSH",
 	"description": "Use any remote machine with a SSH server as your development environment.",
-	"version": "0.0.49",
+	"version": "0.0.50",
 	"publisher": "jeanp413",
 	"repository": {
 		"type": "git",
