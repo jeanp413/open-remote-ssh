@@ -14,7 +14,7 @@ import { gatherIdentityFiles } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer, ServerInstallError } from './serverSetup';
+import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
 
@@ -86,6 +86,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
+        const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
 
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${sshDest.hostname}`,
@@ -191,7 +192,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     envVariables['SSH_AUTH_SOCK'] = null;
                 }
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
+                // Find the custom install path for this hostname (supports wildcards)
+                const customInstallPath = findServerInstallPath(sshDest.hostname, serverInstallPathMap);
+
+                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, customInstallPath, this.logger);
 
                 for (const key of Object.keys(envVariables)) {
                     if (installResult[key] !== undefined) {

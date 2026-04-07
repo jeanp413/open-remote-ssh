@@ -98,6 +98,15 @@
 					"description": "When true, the remote vscode server will listen on a socket path instead of opening a port. Only valid for Linux and macOS remotes. Requires `AllowStreamLocalForwarding` to be enabled for the SSH server.",
 					"default": false
 				},
+				"remote.SSH.serverInstallPath": {
+					"type": "object",
+					"description": "Specifies custom installation directories for the VS Code server on remote hosts. Maps each remote hostname (or pattern) to an absolute path where the server should be installed. Supports wildcards: use `*` for catch-all, or `*.domain.com` for domain-specific paths. More specific patterns take precedence over general ones. When not specified, the server installs in the default home directory. **Note**: Changing this setting may require manual cleanup of existing server installations in previous locations.",
+					"scope": "application",
+					"default": {},
+					"additionalProperties": {
+						"type": "string"
+					}
+				},
 				"remote.SSH.experimental.serverBinaryName": {
 					"type": "string",
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
