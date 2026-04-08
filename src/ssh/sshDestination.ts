@@ -49,6 +49,8 @@ export default class SSHDestination {
     }
 
     toEncodedString(): string {
-        return this.toString().replace(/[A-Z]/g, (ch) => `\\x${ch.charCodeAt(0).toString(16).toLowerCase()}`);
+        const data = { hostName: this.hostname, user: this.user, port: this.port };
+        const json = JSON.stringify(data);
+        return Buffer.from(json).toString('hex');
     }
 }
