@@ -260,6 +260,7 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
         : `$HOME/${serverDataFolderName}`;
     return `
+#!/usr/bin/env sh
 # Server installation script
 
 TMP_DIR="\${XDG_RUNTIME_DIR:-"/tmp"}"
