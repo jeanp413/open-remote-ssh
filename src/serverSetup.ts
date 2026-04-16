@@ -446,8 +446,12 @@ fi
 
 # Make sure the commits match
 if ${modifyMatchingCommit ? 'true' : 'false'}; then
-    echo "Will modify product.json on remote to match the commit value"
-    sed -i -E 's/"commit": "[0-9a-f]+",/"commit": "'"$DISTRO_COMMIT"'",/' "$SERVER_DIR/product.json"
+    if command -v sed >/dev/null 2>&1; then
+        echo "Will modify product.json on remote to match the commit value"
+        sed -i -E 's/"commit": "[0-9a-f]+",/"commit": "'"$DISTRO_COMMIT"'",/' "$SERVER_DIR/product.json";
+    else
+        echo "Cannot find the 'sed' command, make sure it is installed to modify product.json with the matching commit."
+    fi
 fi
 
 # Try to find if server is already running
