@@ -305,6 +305,11 @@ print_install_results_and_exit() {
 }
 
 # Check if platform is supported
+if ! command -v uname; then
+    echo "Error 'uname' command not found, could not get platform/arch data."
+    print_install_results_and_exit 1
+fi
+        
 KERNEL="$(uname -s)"
 case $KERNEL in
     Darwin)
@@ -318,6 +323,10 @@ case $KERNEL in
         ;;
     DragonFly)
         PLATFORM="dragonfly"
+        ;;
+    "")
+        echo "Error uname -s yields empty result"
+        print_install_results_and_exit 1
         ;;
     *)
         echo "Error platform not supported: $KERNEL"
@@ -406,12 +415,14 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     if (( $? > 0 )); then
         echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+        rm -rf vscode-server.tar.gz
         print_install_results_and_exit 1
     fi
 
     tar -xf vscode-server.tar.gz --strip-components 1
     if (( $? > 0 )); then
         echo "Error while extracting server contents"
+        rm -rf vscode-server.tar.gz
         print_install_results_and_exit 1
     fi
 
