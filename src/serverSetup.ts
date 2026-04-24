@@ -245,6 +245,11 @@ print_install_results_and_exit() {
 }
 
 # Check if platform is supported
+if ! command -v uname; then
+    echo "Error 'uname' command not found, could not get platform/arch data."
+    print_install_results_and_exit 1
+fi
+        
 KERNEL="$(uname -s)"
 case $KERNEL in
     Darwin)
@@ -260,11 +265,7 @@ case $KERNEL in
         PLATFORM="dragonfly"
         ;;
     "")
-        if ! command -v uname; then
-            echo "Error 'uname' command not found, could not get platform/arch data."
-        else
-            echo "Error uname -s yields empty result"
-        fi
+        echo "Error uname -s yields empty result"
         print_install_results_and_exit 1
         ;;
     *)
