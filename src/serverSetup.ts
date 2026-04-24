@@ -405,17 +405,20 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     fi
 
     if (( $? > 0 )); then
-        echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+        rm -rf vscode-server.tar.gz
+		echo "Error downloading server from $SERVER_DOWNLOAD_URL"
         print_install_results_and_exit 1
     fi
 
     tar -xf vscode-server.tar.gz --strip-components 1
     if (( $? > 0 )); then
-        echo "Error while extracting server contents"
+        rm -rf vscode-server.tar.gz
+		echo "Error while extracting server contents"
         print_install_results_and_exit 1
     fi
 
     if [[ ! -f $SERVER_SCRIPT ]]; then
+        rm -rf $SERVER_DIR/*
         echo "Error server contents are corrupted"
         print_install_results_and_exit 1
     fi
