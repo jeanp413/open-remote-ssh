@@ -30,6 +30,7 @@ function isIncludeDirective(line: Line): line is Section {
 const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'host': 'Host',
     'hostname': 'HostName',
+    'hostkeyalias': 'HostKeyAlias',
     'user': 'User',
     'port': 'Port',
     'identityagent': 'IdentityAgent',
@@ -90,6 +91,25 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     return config;
 }
 
+export type HostConfiguration = {
+    // https://github.com/jeanp413/ssh-config/blob/8d187bb8f1d83a51ff2b1d127e6b6269d24092b5/src/ssh-config.ts#L9
+    GlobalKnownHostsFile?: string[];
+    Host?: string[];
+    IPQoS?: string[];
+    SendEnv?: string[];
+    UserKnownHostsFile?: string[];
+    ProxyCommand?: string[];
+    Match?: string[];
+    // https://github.com/jeanp413/ssh-config/blob/8d187bb8f1d83a51ff2b1d127e6b6269d24092b5/src/ssh-config.ts#L72-L78
+    IdentityFile?: string[];
+    LocalForward?: string[];
+    RemoteForward?: string[];
+    DynamicForward?: string[];
+    CertificateFile?: string[];
+} & {
+    [key: string]: string;
+};
+
 export default class SSHConfiguration {
 
     static async loadFromFS(): Promise<SSHConfiguration> {
@@ -106,10 +126,12 @@ export default class SSHConfiguration {
         const hosts = new Set<string>();
         for (const line of this.sshConfig) {
             if (isHostSection(line)) {
-                const value = Array.isArray(line.value) ? line.value[0] : line.value;
-                const isPattern = /^!/.test(value) || /[?*]/.test(value);
-                if (!isPattern) {
-                    hosts.add(value);
+                const values = Array.isArray(line.value) ? line.value : [line.value];
+                for (const value of values) {
+                    const isPattern = /^!/.test(value) || /[?*]/.test(value);
+                    if (!isPattern) {
+                        hosts.add(value);
+                    }
                 }
             }
         }
@@ -117,9 +139,23 @@ export default class SSHConfiguration {
         return [...hosts.keys()];
     }
 
-    getHostConfiguration(host: string): Record<string, string> {
-        // Only a few directives return an array
-        // https://github.com/jeanp413/ssh-config/blob/8d187bb8f1d83a51ff2b1d127e6b6269d24092b5/src/ssh-config.ts#L9C1-L9C118
-        return this.sshConfig.compute(host) as Record<string, string>;
+    getHostConfiguration(host: string): HostConfiguration {
+        return this.sshConfig.compute(host) as HostConfiguration;
+    }
+
+    static interpolate(str: string, values: Record<string, string>): string {
+        const results: string[] = [];
+        for (let i = 0; i < str.length; i++) {
+            if (str[i] === '%' && i + 1 < str.length) {
+                const next = str[i + 1];
+                if (next in values) {
+                    results.push(values[next]);
+                    i++;
+                    continue;
+                }
+            }
+            results.push(str[i]);
+        }
+        return results.join('');
     }
 }
