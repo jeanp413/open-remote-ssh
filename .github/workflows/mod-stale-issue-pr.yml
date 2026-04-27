@@ -1,0 +1,28 @@
+name: Moderation - Stale Issues & PR
+
+on:
+  schedule:
+    - cron: 0 1 * * *
+
+permissions:
+  issues: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@b5d41d4e1d5dceea10e7104786b73624c18a190f # v10.2.0
+        with:
+          days-before-stale: 180
+          days-before-close: 60
+          operations-per-run: 1024
+          stale-issue-message: This issue has been automatically marked as stale. **If this issue is still affecting you, please leave any comment**, and we'll keep it open. If you have any new additional information, please include it with your comment!
+          close-issue-message: This issue has been closed due to inactivity, and will not be monitored. If this is a bug and you can reproduce this issue, please open a new issue.
+          stale-issue-label: S-stale
+          close-issue-label: S-abandoned
+          exempt-issue-labels: M-prevent-stale
+          stale-pr-message: This PR has been automatically marked as stale.
+          close-pr-message: This PR has been closed due to inactivity, and will not be monitored.
+          stale-pr-label: S-stale
+          close-pr-label: S-abandoned
+          exempt-pr-labels: M-prevent-stale

@@ -1,4 +1,6 @@
+import { isPrimitive, isRecord, isString } from '@zokugun/is-it-type';
 import * as vscode from 'vscode';
+import { inspect } from 'node:util';
 
 type LogLevel = 'Trace' | 'Info' | 'Error';
 
@@ -9,32 +11,22 @@ export default class Log {
 		this.output = vscode.window.createOutputChannel(name);
 	}
 
-	private data2String(data: any): string {
-		if (data instanceof Error) {
-			return data.stack || data.message;
-		}
-		if (data.success === false && data.message) {
-			return data.message;
-		}
-		return data.toString();
-	}
-
-	public trace(message: string, data?: any): void {
+	public trace(message: string, data?: unknown): void {
 		this.logLevel('Trace', message, data);
 	}
 
-	public info(message: string, data?: any): void {
+	public info(message: string, data?: unknown): void {
 		this.logLevel('Info', message, data);
 	}
 
-	public error(message: string, data?: any): void {
+	public error(message: string, data?: unknown): void {
 		this.logLevel('Error', message, data);
 	}
 
-	public logLevel(level: LogLevel, message: string, data?: any): void {
+	public logLevel(level: LogLevel, message: string, data?: unknown): void {
 		this.output.appendLine(`[${level}  - ${this.now()}] ${message}`);
 		if (data) {
-			this.output.appendLine(this.data2String(data));
+			this.output.appendLine(toString(data));
 		}
 	}
 
@@ -56,4 +48,20 @@ export default class Log {
 
 function padLeft(s: string, n: number, pad = ' ') {
 	return pad.repeat(Math.max(0, n - s.length)) + s;
+}
+
+function toString(value: unknown): string {
+	if (isPrimitive(value)) {
+		return `${value}`;
+	}
+	else if (value instanceof Error) {
+		return value.stack || value.message;
+	}
+	else if (isRecord(value)) {
+		if (value.success === false && isString(value.message)) {
+			return value.message;
+		}
+	}
+
+	return inspect(value, { depth: null, compact: true, breakLength: Infinity });
 }

@@ -24,9 +24,9 @@ function matchHostnamePattern(hostname: string, pattern: string): number {
 	const regexPattern = pattern
 		.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
 		.replace(/\*/g, '.*');
-	
+
 	const regex = new RegExp(`^${regexPattern}$`);
-	
+
 	if (regex.test(hostname)) {
 		// Calculate specificity based on the number of non-wildcard characters
 		// More specific patterns (more characters) get higher scores
@@ -46,7 +46,7 @@ export function findServerInstallPath(hostname: string, pathMap: Record<string, 
 
 	for (const [pattern, path] of Object.entries(pathMap)) {
 		const score = matchHostnamePattern(hostname, pattern);
-		
+
 		if (score > 0) {
 			if (!bestMatch || score > bestMatch.score) {
 				bestMatch = { pattern, path, score };
@@ -81,7 +81,7 @@ export interface ServerInstallResult {
     arch: string;
     platform: string;
     tmpDir: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export class ServerInstallError extends Error {
@@ -149,9 +149,12 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         const installDir = `$HOME\\${vscodeServerConfig.serverDataFolderName}\\install`;
         const installScript = `${installDir}\\${vscodeServerConfig.commit}.ps1`;
         const endRegex = new RegExp(`${scriptId}: end`);
+
         // investigate if it's possible to use `-EncodedCommand` flag
         // https://devblogs.microsoft.com/powershell/invoking-powershell-with-complex-expressions-using-scriptblocks/
+		// eslint-disable-next-line no-useless-assignment
         let command = '';
+
         if (shell === 'powershell') {
             command = `md -Force ${installDir}; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
         } else if (shell === 'bash') {
@@ -309,7 +312,7 @@ if ! command -v uname; then
     echo "Error 'uname' command not found, could not get platform/arch data."
     print_install_results_and_exit 1
 fi
-        
+
 KERNEL="$(uname -s)"
 case $KERNEL in
     Darwin)

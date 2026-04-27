@@ -17,6 +17,7 @@ import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
+import { isNullable } from '@zokugun/is-it-type';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -198,8 +199,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, customInstallPath, this.logger);
 
                 for (const key of Object.keys(envVariables)) {
-                    if (installResult[key] !== undefined) {
-                        envVariables[key] = installResult[key];
+                    if (!isNullable(installResult[key])) {
+                        envVariables[key] = String(installResult[key]);
                     }
                 }
 
@@ -366,6 +367,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!await fileExists(identityKey.filename)) {
                     // Try next identity file
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 
@@ -388,6 +390,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!result || result instanceof Error) {
                     // Try next identity file
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 

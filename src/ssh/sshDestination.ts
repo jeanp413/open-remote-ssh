@@ -44,7 +44,9 @@ export default class SSHDestination {
             const data = JSON.parse(Buffer.from(dest, 'hex').toString());
             return new SSHDestination(data.hostName, data.user, data.port);
         } catch {
+			// ignore
         }
+
         return SSHDestination.parse(dest.replace(/\\x([0-9a-f]{2})/g, (_, charCode) => String.fromCharCode(parseInt(charCode, 16))));
     }
 

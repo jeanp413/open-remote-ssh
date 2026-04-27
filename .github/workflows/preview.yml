@@ -1,0 +1,88 @@
+name: Preview
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # Release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Get Version
+        run: |
+          # Get the latest tag
+          LATEST_TAG=$(git tag --sort=-v:refname | head -n1)
+          LATEST_TAG=${LATEST_TAG%-*}
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tags found in the repository"
+            exit 1
+          fi
+
+          echo "VERSION=$LATEST_TAG" >> $GITHUB_ENV
+          echo "Using version: $LATEST_TAG"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Update package.json
+        run: |
+          TIME_PATCH="$(date +%-y)$(printf "%04d" $(($(date +%-j) * 24 + $(date +%-H))))"
+          VERSION="${VERSION#v}-$TIME_PATCH"
+          echo "Using version: $VERSION"
+
+          jq --arg version "$VERSION" '.version = $version | .preview = true' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+          jq -r '"version: \(.version)\npreview: \(.preview)"' package.json
+
+          echo "RELEASE_TAG=v$VERSION" >> $GITHUB_ENV
+
+      - name: Build
+        run: |
+          npm ci
+          npm install -g @vscode/vsce
+          npm run package
+
+          VSIX_NAME=$(ls *.vsix)
+          CHECKSUM=$(sha256sum $VSIX_NAME | cut -d ' ' -f 1)
+
+          echo "VSIX_NAME=$VSIX_NAME" >> $GITHUB_ENV
+          echo "CHECKSUM=$CHECKSUM" >> $GITHUB_ENV
+          echo "$CHECKSUM" > "$VSIX_NAME.sha256"
+
+      - name: Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          files: |
+            ${{ env.VSIX_NAME }}
+            ${{ env.VSIX_NAME }}.sha256
+          name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          prerelease: true
+          body: |
+            Release ${{ env.RELEASE_TAG }}
+
+            ## What's Changed
+
+            ## Installation
+            1. [Download the .vsix file](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.VERSION }}/${{ env.VSIX_NAME }})
+            2. In your editor, open the Command Palette (<kbd>Meta</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>)
+            3. Type `Install from VSIX` and select the downloaded file
+
+            ## Checksum (SHA-256)
+            ```
+            ${{ env.CHECKSUM }}
+            ```
