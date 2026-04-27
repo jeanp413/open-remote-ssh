@@ -7,3 +7,5 @@ package.insiders.json
 vscode.d.ts
 vscode.proposed.*.d.ts
 *.ignore.ts
+tsconfig.tsbuildinfo
+lib/
