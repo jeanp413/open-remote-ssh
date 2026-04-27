@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import SSHConfig, { Directive, Line, Section } from '@jeanp413/ssh-config';
+import SSHConfig, { Directive, Line, Section } from 'ssh-config';
 import * as vscode from 'vscode';
 import { exists as fileExists, normalizeToSlash, untildify } from '../common/files';
 import { isWindows } from '../common/platform';
@@ -106,7 +106,7 @@ export default class SSHConfiguration {
         const hosts = new Set<string>();
         for (const line of this.sshConfig) {
             if (isHostSection(line)) {
-                const value = Array.isArray(line.value) ? line.value[0] : line.value;
+                const value = Array.isArray(line.value) ? line.value[0].val : line.value;
                 const isPattern = /^!/.test(value) || /[?*]/.test(value);
                 if (!isPattern) {
                     hosts.add(value);
