@@ -427,6 +427,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     fi
 
     if [[ ! -f $SERVER_SCRIPT ]]; then
+        rm -rf $SERVER_DIR/*
         echo "Error server contents are corrupted"
         print_install_results_and_exit 1
     fi
