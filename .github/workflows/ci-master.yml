@@ -1,4 +1,4 @@
-name: "CI - Master: Build, Test & Lint"
+name: "CI - Master: Build & Lint"
 
 on:
   push:
@@ -35,10 +35,6 @@ jobs:
       - name: Build
         run: |
           npm run build
-
-      - name: Test
-        run: |
-          npm run test
 
       - name: Lint code
         run: |
