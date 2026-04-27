@@ -1,0 +1,43 @@
+{
+	"finalNewLine": true,
+	"required": [
+		"dependencies"
+	],
+	"sortToTop": [
+		"name",
+		"displayName",
+		"description",
+		"version",
+		"since",
+		"private",
+		"author",
+		"publisher",
+		"license",
+		"homepage",
+		"repository",
+		"bugs",
+		"engines",
+		"type",
+		"bin",
+		"exports",
+		"main",
+		"browser",
+		"module",
+		"types",
+		"typesVersions",
+		"scripts",
+		"dependencies",
+		"devDependencies",
+		"optionalDependencies",
+		"extensionDependencies",
+		"activationEvents",
+		"capabilities",
+		"contributes",
+		"icon",
+		"galleryBanner",
+		"categories",
+		"peerDependencies",
+		"overrides",
+		"keywords"
+	]
+}

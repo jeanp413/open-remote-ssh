@@ -17,7 +17,8 @@ export class RemoteLocationHistory {
     }
 
     async addLocation(host: string, path: string) {
-        let hostLocations = this.remoteLocationHistory[host] || [];
+        const hostLocations = this.remoteLocationHistory[host] || [];
+
         if (!hostLocations.includes(path)) {
             hostLocations.unshift(path);
             this.remoteLocationHistory[host] = hostLocations;

@@ -3,7 +3,7 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
 // import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import jsdoc from 'eslint-plugin-jsdoc';
-import tsParser from '@typescript-eslint/parser';
+// import tsParser from '@typescript-eslint/parser';
 import stylistic from '@stylistic/eslint-plugin';
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
