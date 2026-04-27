@@ -7,9 +7,10 @@ You can connect to a running SSH server on the following platforms.
 
 **Supported**:
 
-- x86_64 Debian 8+, Ubuntu 16.04+, CentOS / RHEL 7+ Linux.
-- ARMv7l (AArch32) Raspbian Stretch/9+ (32-bit).
-- ARMv8l (AArch64) Ubuntu 18.04+ (64-bit).
+- x86_64 Debian 8+, Ubuntu 16.04+, CentOS / RHEL 7+ Linux
+- ARMv7l (AArch32) Raspbian Stretch/9+ (32-bit)
+- ARMv8l (AArch64) Ubuntu 18.04+ (64-bit)
+- IBM Z (s390x) Debian 13, RHEL 8+, Ubuntu 22.04+, SLES 15+
 - macOS 10.14+ (Mojave)
 - Windows 10+
 - FreeBSD 13+ (Requires custom serverDownloadUrlTemplate setting)
