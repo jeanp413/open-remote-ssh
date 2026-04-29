@@ -1,3 +1,6 @@
+## 0.0.49
+- Fixed parsing errors when the remote hostname contains uppercase letters
+
 ## 0.0.48
 - Support `%n` in ProxyCommand
 - fix: add missing direct @types/ssh2-stream dependency (#177)
