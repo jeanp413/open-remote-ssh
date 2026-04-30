@@ -1,13 +1,70 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { getRemoteAuthority } from './authResolver';
-import { getSSHConfigPath } from './ssh/sshConfig';
+import SSHConfiguration, { getSSHConfigPath } from './ssh/sshConfig';
 import { exists as fileExists } from './common/files';
 import SSHDestination from './ssh/sshDestination';
 
+const ENTER_HOST_MANUALLY_LABEL = 'Enter host manually...';
+
 export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
+    const sshConfig = await SSHConfiguration.loadFromFS();
+    const hosts = sshConfig.getAllConfiguredHosts();
+
+    if (hosts.length === 0) {
+        // No configured hosts, fall back to input box
+        return promptManualHostEntry(reuseWindow);
+    }
+
+    const hostItems: vscode.QuickPickItem[] = hosts.map(host => {
+        const config = sshConfig.getHostConfiguration(host);
+        const hostName = config['HostName'];
+        const user = config['User'];
+        const port = config['Port'];
+        const details: string[] = [];
+        if (hostName && hostName !== host) {
+            details.push(hostName);
+        }
+        if (user) {
+            details.push(`user: ${user}`);
+        }
+        if (port && port !== '22') {
+            details.push(`port: ${port}`);
+        }
+        return {
+            label: host,
+            description: details.join('  ·  '),
+            iconPath: new vscode.ThemeIcon('vm'),
+        };
+    });
+
+    const items: vscode.QuickPickItem[] = [
+        ...hostItems,
+        { label: '', kind: vscode.QuickPickItemKind.Separator },
+        { label: ENTER_HOST_MANUALLY_LABEL, iconPath: new vscode.ThemeIcon('terminal') },
+    ];
+
+    const selected = await vscode.window.showQuickPick(items, {
+        title: 'Select an SSH host to connect to',
+        placeHolder: 'Choose a configured host or enter one manually',
+    });
+
+    if (!selected) {
+        return;
+    }
+
+    if (selected.label === ENTER_HOST_MANUALLY_LABEL) {
+        return promptManualHostEntry(reuseWindow);
+    }
+
+    const sshDest = new SSHDestination(selected.label);
+    openRemoteSSHWindow(sshDest.toEncodedString(), reuseWindow);
+}
+
+async function promptManualHostEntry(reuseWindow: boolean) {
     const host = await vscode.window.showInputBox({
-        title: 'Enter [user@]hostname[:port]'
+        title: 'Enter [user@]hostname[:port]',
+        placeHolder: 'e.g. user@example.com',
     });
 
     if (!host) {
