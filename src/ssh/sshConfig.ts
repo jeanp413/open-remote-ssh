@@ -18,7 +18,7 @@ export type HostConfiguration = {
 	ProxyCommand?: string | string[];
 	SendEnv?: string | string[];
 	UserKnownHostsFile?: string | string[];
-} & Record<string, string>
+} & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
 const defaultSSHConfigPath = path.resolve(os.homedir(), '.ssh/config');
