@@ -1,3 +1,6 @@
+## 0.1.1
+- don't assume `ProxyCommand` value's type (#270)
+
 ## 0.1.0
 - replace `which` with `command -v` (#215)
 - allow automatic download of remote extension host on FreeBSD (#244)
