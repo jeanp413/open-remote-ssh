@@ -9,7 +9,7 @@ try {
 
 	// Regular expression to match a version section with the date
 	// Matches from "## 0.0.48" until the next ## or end of file
-	const versionRegex = new RegExp(`## ${version}([^#]|#(?!#))*(?=## |$)`, 's');
+	const versionRegex = new RegExp(`## ${version.slice(1)}([^#]|#(?!#))*(?=## |$)`, 's');
 
 	const match = changelog.match(versionRegex);
 
