@@ -35,7 +35,7 @@ export async function getVSCodeServerConfig(logger: Log): Promise<IServerConfig>
     // Get release, if the option is provided or fetch it from the github releases
     const version = vscode.version.replace('-insider','');
     let customRelease = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('vscodiumReleaseNumber', '');
-    customRelease = customRelease || productJson.release;
+    customRelease = customRelease || productJson.release as string;
     if (!customRelease) {
         customRelease = await fetchRelease(version, logger);
     }
