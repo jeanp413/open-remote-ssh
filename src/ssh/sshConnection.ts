@@ -74,7 +74,7 @@ export default class SSHConnection extends EventEmitter {
     /**
       * Emit message on this channel
       */
-    override emit(channel: string, status: string, payload?: any): boolean {
+    override emit(channel: string, status: string, payload?: unknown): boolean {
         super.emit(channel, status, this, payload);
         return super.emit(`${channel}:${status}`, this, payload);
     }
@@ -114,7 +114,7 @@ export default class SSHConnection extends EventEmitter {
             });
         });
     }
-    
+
     /**
      * Exec a command
      */
@@ -135,18 +135,18 @@ export default class SSHConnection extends EventEmitter {
                         }
                     }).on('data', function (data: Buffer | string) {
                         stdout += data.toString();
-                        
+
                         if (tester(stdout, stderr)) {
                             resolved = true;
-                            
+
                             return resolve({ stdout, stderr });
                         }
                     }).stderr.on('data', function (data: Buffer | string) {
                         stderr += data.toString();
-                        
+
                         if (tester(stdout, stderr)) {
                             resolved = true;
-                        
+
                             return resolve({ stdout, stderr });
                         }
                     });
@@ -270,7 +270,7 @@ export default class SSHConnection extends EventEmitter {
                 let server: net.Server;
                 if (SSHTunnelConfig.socks) {
                     server = createSocksServer({
-                        connectionFilter: (destination: SocksConnectionInfo, origin: SocksConnectionInfo, callback: (err?: any, dest?: stream.Duplex) => void) => {
+                        connectionFilter: (destination: SocksConnectionInfo, origin: SocksConnectionInfo, callback: (err?: unknown, dest?: stream.Duplex) => void) => {
                             this.connect().then(() => {
                                 this.sshConnection!.forwardOut(
                                     origin.address,
@@ -286,7 +286,7 @@ export default class SSHConnection extends EventEmitter {
                                     });
                             });
                         }
-                    }).on('proxyError', (err: any) => {
+                    }).on('proxyError', (err: unknown) => {
                         this.emit(SSHConstants.CHANNEL.TUNNEL, SSHConstants.STATUS.DISCONNECT, { SSHTunnelConfig: SSHTunnelConfig, err: err });
                     });
                 } else {
@@ -322,7 +322,7 @@ export default class SSHConnection extends EventEmitter {
                     this.activeTunnels[SSHTunnelConfig.name!] = Object.assign({}, { server }, SSHTunnelConfig);
                     this.emit(SSHConstants.CHANNEL.TUNNEL, SSHConstants.STATUS.CONNECT, { SSHTunnelConfig: SSHTunnelConfig });
                     resolve(this.activeTunnels[SSHTunnelConfig.name!]);
-                }).on('error', (err: any) => {
+                }).on('error', (err: unknown) => {
                     this.emit(SSHConstants.CHANNEL.TUNNEL, SSHConstants.STATUS.DISCONNECT, { SSHTunnelConfig: SSHTunnelConfig, err: err });
                     server.close();
                     reject(err);

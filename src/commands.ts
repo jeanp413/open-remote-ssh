@@ -48,7 +48,8 @@ export async function addNewHost() {
         });
     }
 
-    let snippet = '\nHost ${1:dev}\n\tHostName ${2:dev.example.com}\n\tUser ${3:john}';
+    const snippet = '\nHost ${1:dev}\n\tHostName ${2:dev.example.com}\n\tUser ${3:john}';
+
     await textEditor.insertSnippet(
         new vscode.SnippetString(snippet),
         new vscode.Position(textDocument.lineCount, 0)

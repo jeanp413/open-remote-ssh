@@ -14,9 +14,10 @@ import { gatherIdentityFiles } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer, ServerInstallError } from './serverSetup';
+import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
+import { isNullable } from '@zokugun/is-it-type';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -72,7 +73,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             throw new Error(`Invalid authority type for SSH resolver: ${type}`);
         }
 
-        this.logger.info(`Resolving ssh remote authority '${authority}' (attemp #${context.resolveAttempt})`);
+        this.logger.info(`Resolving ssh remote authority '${authority}' (attempt #${context.resolveAttempt})`);
 
         const sshDest = SSHDestination.parseEncoded(dest);
 
@@ -86,6 +87,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
+        const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
 
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${sshDest.hostname}`,
@@ -152,7 +154,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
-                    let proxyArgs = (sshHostConfig['ProxyCommand'] as unknown as string[])
+                    let proxyArgs = ([] as string[])
+						.concat(sshHostConfig['ProxyCommand'])
                         .map((arg) => arg.replace('%h', sshHostName).replace('%n', sshDest.hostname).replace('%p', sshPort.toString()).replace('%r', sshUser));
                     let proxyCommand = proxyArgs.shift()!;
 
@@ -191,11 +194,14 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     envVariables['SSH_AUTH_SOCK'] = null;
                 }
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, this.logger);
+                // Find the custom install path for this hostname (supports wildcards)
+                const customInstallPath = findServerInstallPath(sshDest.hostname, serverInstallPathMap);
+
+                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, customInstallPath, this.logger);
 
                 for (const key of Object.keys(envVariables)) {
-                    if (installResult[key] !== undefined) {
-                        envVariables[key] = installResult[key];
+                    if (!isNullable(installResult[key])) {
+                        envVariables[key] = String(installResult[key]);
                     }
                 }
 
@@ -362,6 +368,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!await fileExists(identityKey.filename)) {
                     // Try next identity file
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 
@@ -384,6 +391,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!result || result instanceof Error) {
                     // Try next identity file
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 

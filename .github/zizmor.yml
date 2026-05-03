@@ -1,0 +1,6 @@
+rules:
+  superfluous-actions:
+    ignore:
+      # allows `softprops/action-gh-release` action
+      - preview.yml:67
+      - publish.yml:106

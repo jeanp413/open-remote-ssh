@@ -14,7 +14,7 @@ export abstract class Disposable {
 
 	protected _disposables: vscode.Disposable[] = [];
 
-	public dispose(): any {
+	public dispose(): void {
 		if (this._isDisposed) {
 			return;
 		}

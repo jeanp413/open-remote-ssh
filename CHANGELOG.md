@@ -1,3 +1,17 @@
+## 0.1.1
+- don't assume `ProxyCommand` value's type (#270)
+
+## 0.1.0
+- replace `which` with `command -v` (#215)
+- allow automatic download of remote extension host on FreeBSD (#244)
+- add remote.SSH.serverInstallPath option (#259)
+- cleanup on errors (#172)
+- typo `attemp` -> `attempt` (#185)
+- use original ssh-config dependency (#267)
+
+## 0.0.49
+- remove default `remote.SSH.serverDownloadUrlTemplate`
+
 ## 0.0.48
 - Support `%n` in ProxyCommand
 - fix: add missing direct @types/ssh2-stream dependency (#177)

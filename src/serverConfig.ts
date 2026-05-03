@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
-let vscodeProductJson: any;
+let vscodeProductJson: Record<string, unknown>;
+
 async function getVSCodeProductJson() {
     if (!vscodeProductJson) {
         const productJsonStr = await fs.promises.readFile(path.join(vscode.env.appRoot, 'product.json'), 'utf8');
@@ -29,11 +30,11 @@ export async function getVSCodeServerConfig(): Promise<IServerConfig> {
 
     return {
         version: vscode.version.replace('-insider',''),
-        commit: productJson.commit,
-        quality: productJson.quality,
-        release: productJson.release,
-        serverApplicationName: customServerBinaryName || productJson.serverApplicationName,
-        serverDataFolderName: productJson.serverDataFolderName,
-        serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate
+        commit: productJson.commit as string,
+        quality: productJson.quality as string,
+        release: productJson.release as string,
+        serverApplicationName: customServerBinaryName || productJson.serverApplicationName as string,
+        serverDataFolderName: productJson.serverDataFolderName as string,
+        serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate as string
     };
 }

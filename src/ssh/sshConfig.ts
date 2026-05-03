@@ -1,11 +1,24 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import SSHConfig, { Directive, Line, Section } from '@jeanp413/ssh-config';
+import SSHConfig, { Directive, Line, Section } from 'ssh-config';
 import * as vscode from 'vscode';
 import { exists as fileExists, normalizeToSlash, untildify } from '../common/files';
 import { isWindows } from '../common/platform';
 import { glob } from 'glob';
+
+// Only a few directives might return an array
+// https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L10
+export type HostConfiguration = {
+	CanonicalDomains?: string | string[];
+	GlobalKnownHostsFile?: string | string[];
+	Host?: string | string[];
+	IPQoS?: string | string[];
+	Match?: string | string[];
+	ProxyCommand?: string | string[];
+	SendEnv?: string | string[];
+	UserKnownHostsFile?: string | string[];
+} & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
 const defaultSSHConfigPath = path.resolve(os.homedir(), '.ssh/config');
@@ -106,7 +119,7 @@ export default class SSHConfiguration {
         const hosts = new Set<string>();
         for (const line of this.sshConfig) {
             if (isHostSection(line)) {
-                const value = Array.isArray(line.value) ? line.value[0] : line.value;
+                const value = Array.isArray(line.value) ? line.value[0].val : line.value;
                 const isPattern = /^!/.test(value) || /[?*]/.test(value);
                 if (!isPattern) {
                     hosts.add(value);
@@ -117,9 +130,7 @@ export default class SSHConfiguration {
         return [...hosts.keys()];
     }
 
-    getHostConfiguration(host: string): Record<string, string> {
-        // Only a few directives return an array
-        // https://github.com/jeanp413/ssh-config/blob/8d187bb8f1d83a51ff2b1d127e6b6269d24092b5/src/ssh-config.ts#L9C1-L9C118
-        return this.sshConfig.compute(host) as Record<string, string>;
+    getHostConfiguration(host: string): HostConfiguration {
+        return this.sshConfig.compute(host) as HostConfiguration;
     }
 }

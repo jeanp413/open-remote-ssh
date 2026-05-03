@@ -3,6 +3,60 @@ import Log from './common/logger';
 import { getVSCodeServerConfig } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
 
+/**
+ * Matches a hostname against a pattern that may contain wildcards.
+ * Returns a specificity score: higher scores indicate more specific matches.
+ * Returns -1 if no match.
+ */
+function matchHostnamePattern(hostname: string, pattern: string): number {
+	// Exact match has highest priority
+	if (hostname === pattern) {
+		return 1000;
+	}
+
+	// Catch-all wildcard has lowest priority
+	if (pattern === '*') {
+		return 1;
+	}
+
+	// Convert wildcard pattern to regex
+	// Escape special regex characters except *
+	const regexPattern = pattern
+		.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+		.replace(/\*/g, '.*');
+
+	const regex = new RegExp(`^${regexPattern}$`);
+
+	if (regex.test(hostname)) {
+		// Calculate specificity based on the number of non-wildcard characters
+		// More specific patterns (more characters) get higher scores
+		const nonWildcardChars = pattern.replace(/\*/g, '').length;
+		return 10 + nonWildcardChars;
+	}
+
+	return -1;
+}
+
+/**
+ * Finds the best matching path for a hostname from a map of patterns to paths.
+ * Supports wildcards with priority: exact match > specific wildcard > general wildcard.
+ */
+export function findServerInstallPath(hostname: string, pathMap: Record<string, string>): string | undefined {
+	let bestMatch: { pattern: string; path: string; score: number } | undefined;
+
+	for (const [pattern, path] of Object.entries(pathMap)) {
+		const score = matchHostnamePattern(hostname, pattern);
+
+		if (score > 0) {
+			if (!bestMatch || score > bestMatch.score) {
+				bestMatch = { pattern, path, score };
+			}
+		}
+	}
+
+	return bestMatch?.path;
+}
+
 export interface ServerInstallOptions {
     id: string;
     quality: string;
@@ -15,6 +69,7 @@ export interface ServerInstallOptions {
     serverApplicationName: string;
     serverDataFolderName: string;
     serverDownloadUrlTemplate: string;
+    customInstallPath?: string;
 }
 
 export interface ServerInstallResult {
@@ -26,7 +81,7 @@ export interface ServerInstallResult {
     arch: string;
     platform: string;
     tmpDir: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export class ServerInstallError extends Error {
@@ -37,7 +92,7 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, customInstallPath: string | undefined, logger: Log): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
     // detect platform and shell for windows
@@ -82,6 +137,7 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
         serverDownloadUrlTemplate: serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE,
+        customInstallPath,
     };
 
     let commandOutput: { stdout: string; stderr: string };
@@ -93,9 +149,12 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
         const installDir = `$HOME\\${vscodeServerConfig.serverDataFolderName}\\install`;
         const installScript = `${installDir}\\${vscodeServerConfig.commit}.ps1`;
         const endRegex = new RegExp(`${scriptId}: end`);
+
         // investigate if it's possible to use `-EncodedCommand` flag
         // https://devblogs.microsoft.com/powershell/invoking-powershell-with-complex-expressions-using-scriptblocks/
+		// eslint-disable-next-line no-useless-assignment
         let command = '';
+
         if (shell === 'powershell') {
             command = `md -Force ${installDir}; echo @'\n${installServerScript}\n'@ | Set-Content ${installScript}; powershell -ExecutionPolicy ByPass -File "${installScript}"`;
         } else if (shell === 'bash') {
@@ -198,8 +257,11 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
+    const serverDataDir = customInstallPath
+        ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
+        : `$HOME/${serverDataFolderName}`;
     return `
 # Server installation script
 
@@ -213,7 +275,8 @@ DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
 SERVER_APP_NAME="${serverApplicationName}"
 SERVER_INITIAL_EXTENSIONS="${extensions}"
 SERVER_LISTEN_FLAG="${useSocketPath ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"` : '--port=0'}"
-SERVER_DATA_DIR="$HOME/${serverDataFolderName}"
+SERVER_DATA_DIR="${serverDataDir}"
+SERVER_DATA_DIR_FLAG="${customInstallPath ? '--server-data-dir="$SERVER_DATA_DIR"' : ''}"
 SERVER_DIR="$SERVER_DATA_DIR/bin/$DISTRO_COMMIT"
 SERVER_SCRIPT="$SERVER_DIR/bin/$SERVER_APP_NAME"
 SERVER_LOGFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.log"
@@ -252,6 +315,11 @@ flock -x -w 30 42 || print_install_results_and_exit 1
 trap 'flock -u 42' EXIT
 
 # Check if platform is supported
+if ! command -v uname; then
+    echo "Error 'uname' command not found, could not get platform/arch data."
+    print_install_results_and_exit 1
+fi
+
 KERNEL="$(uname -s)"
 case $KERNEL in
     Darwin)
@@ -265,6 +333,10 @@ case $KERNEL in
         ;;
     DragonFly)
         PLATFORM="dragonfly"
+        ;;
+    "")
+        echo "Error uname -s yields empty result"
+        print_install_results_and_exit 1
         ;;
     *)
         echo "Error platform not supported: $KERNEL"
@@ -330,7 +402,7 @@ SERVER_DOWNLOAD_URL="$(echo "${serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
     case "$PLATFORM" in
-        darwin | linux | alpine )
+        darwin | linux | alpine | freebsd )
             ;;
         *)
             echo "Error '$PLATFORM' needs manual installation of remote extension host"
@@ -340,10 +412,12 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     pushd $SERVER_DIR > /dev/null
 
-    if [[ ! -z $(which wget) ]]; then
+    if command -v wget >/dev/null 2>&1; then
         wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
-    elif [[ ! -z $(which curl) ]]; then
+    elif command -v curl >/dev/null 2>&1; then
         curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    elif command -v fetch >/dev/null 2>&1; then
+        fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
     else
         echo "Error no tool to download server binary"
         print_install_results_and_exit 1
@@ -351,16 +425,19 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     if (( $? > 0 )); then
         echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+        rm -rf vscode-server.tar.gz
         print_install_results_and_exit 1
     fi
 
     tar -xf vscode-server.tar.gz --strip-components 1
     if (( $? > 0 )); then
         echo "Error while extracting server contents"
+        rm -rf vscode-server.tar.gz
         print_install_results_and_exit 1
     fi
 
     if [[ ! -f $SERVER_SCRIPT ]]; then
+        rm -rf $SERVER_DIR/*
         echo "Error server contents are corrupted"
         print_install_results_and_exit 1
     fi
@@ -393,7 +470,7 @@ if [[ -z $SERVER_RUNNING_PROCESS ]]; then
     SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
     echo $SERVER_CONNECTION_TOKEN > $SERVER_TOKENFILE
 
-    $SERVER_SCRIPT --start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms &> $SERVER_LOGFILE &
+    $SERVER_SCRIPT --start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms &> $SERVER_LOGFILE &
     echo $! > $SERVER_PIDFILE
 else
     echo "Server script is already running $SERVER_SCRIPT"
@@ -429,7 +506,7 @@ print_install_results_and_exit 0
 `;
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate }: ServerInstallOptions) {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -438,6 +515,9 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         .replace(/\$\{os\}/g, 'win32')
         .replace(/\$\{arch\}/g, 'x64')
         .replace(/\$\{release\}/g, release ?? '');
+    const serverDataDir = customInstallPath
+        ? customInstallPath.replace(/^~(?=[\\/]|$)/, '$(Resolve-Path ~)')
+        : `$(Resolve-Path ~)\\${serverDataFolderName}`;
 
     return `
 # Server installation script
@@ -453,7 +533,8 @@ $DISTRO_VSCODIUM_RELEASE="${release ?? ''}"
 $SERVER_APP_NAME="${serverApplicationName}"
 $SERVER_INITIAL_EXTENSIONS="${extensions}"
 $SERVER_LISTEN_FLAG="${useSocketPath ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"` : '--port=0'}"
-$SERVER_DATA_DIR="$(Resolve-Path ~)\\${serverDataFolderName}"
+$SERVER_DATA_DIR="${serverDataDir}"
+$SERVER_DATA_DIR_FLAG="${customInstallPath ? '--server-data-dir=""$SERVER_DATA_DIR""' : ''}"
 $SERVER_DIR="$SERVER_DATA_DIR\\bin\\$DISTRO_COMMIT"
 $SERVER_SCRIPT="$SERVER_DIR\\bin\\$SERVER_APP_NAME.cmd"
 $SERVER_LOGFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.log"
@@ -559,7 +640,7 @@ else {
     $SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
     [System.IO.File]::WriteAllLines($SERVER_TOKENFILE, $SERVER_CONNECTION_TOKEN)
 
-    $SCRIPT_ARGUMENTS="--start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms *> '$SERVER_LOGFILE'"
+    $SCRIPT_ARGUMENTS="--start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms *> '$SERVER_LOGFILE'"
 
     $START_ARGUMENTS = @{
         FilePath = "powershell.exe"
