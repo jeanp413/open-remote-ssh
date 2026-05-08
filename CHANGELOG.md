@@ -1,3 +1,6 @@
+## 0.1.2
+- fix: split ProxyCommand into argv tokens before spawn (#274)
+
 ## 0.1.1
 - don't assume `ProxyCommand` value's type (#270)
 
