@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import Log from './common/logger';
 import { getVSCodeServerConfig } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
+import { fetchRelease, IRelease } from './fetchRelease';
 
 /**
  * Matches a hostname against a pattern that may contain wildcards.
@@ -93,7 +94,17 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, customInstallPath: string | undefined, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(
+    conn: SSHConnection,
+    serverDownloadUrlTemplate: string | undefined,
+    serverVersion: string,
+    extensionIds: string[],
+    envVariables: string[],
+    platform: string | undefined,
+    useSocketPath: boolean,
+    customInstallPath: string | undefined,
+    logger: Log
+): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
     // detect platform and shell for windows
@@ -125,19 +136,24 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
-    const vscodeServerConfig = await getVSCodeServerConfig(logger);
+    const vscodeServerConfig = await getVSCodeServerConfig();
+
+    // Get the version and release
+    const serverDownloadUrlTemplateFinal = serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE;
+    const bestRelease: IRelease = await fetchRelease(serverDownloadUrlTemplateFinal, vscodeServerConfig.version, vscodeServerConfig.release, serverVersion, logger);
+
     const installOptions: ServerInstallOptions = {
         id: scriptId,
-        version: vscodeServerConfig.version,
+        version: bestRelease.version,
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
-        release: vscodeServerConfig.release,
+        release: bestRelease.release,
         extensionIds,
         envVariables,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-        serverDownloadUrlTemplate: serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE,
+        serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
         customInstallPath,
         modifyMatchingCommit: vscodeServerConfig.modifyMatchingCommit,
     };

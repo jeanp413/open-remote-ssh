@@ -158,15 +158,15 @@
 					"scope": "application",
 					"default": ""
 				},
-				"remote.SSH.experimental.vscodiumReleaseNumber": {
+				"remote.SSH.serverVersion": {
 					"type": "string",
-					"description": "**Experimental:** The VSCodium specific release number to use with serverDownloadUrlTemplate, automatic if left empty.",
+					"description": "The version number of the remote VSCodium server. Can take the values: 'match' (default), 'latest', 'closest' or a specific version (e.g. '1.117.0').",
 					"scope": "application",
 					"default": ""
 				},
-				"remote.SSH.experimental.modifyMatchingCommit": {
+				"remote.SSH.modifyMatchingCommit": {
 					"type": "boolean",
-					"description": "**Experimental:** When true, modify the commit value of the remote server to match the local host.",
+					"description": "When true, modify the commit value of the remote server to match the local host.",
 					"scope": "application",
 					"default": false
 				}
