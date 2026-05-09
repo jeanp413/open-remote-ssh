@@ -164,9 +164,9 @@
 					"scope": "application",
 					"default": ""
 				},
-				"remote.SSH.modifyMatchingCommit": {
+				"remote.SSH.skipServerValidation": {
 					"type": "boolean",
-					"description": "When true, modify the commit value of the remote server to match the local host.",
+					"description": "When true, skip the server validation by modifying the commit value in 'product.json' of the remote server to match the value on the local host.",
 					"scope": "application",
 					"default": false
 				}

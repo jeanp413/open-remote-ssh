@@ -21,14 +21,14 @@ export interface IServerConfig {
     serverApplicationName: string;
     serverDataFolderName: string;
     serverDownloadUrlTemplate?: string;
-    modifyMatchingCommit: boolean;
+    skipServerValidation: boolean;
 }
 
 export async function getVSCodeServerConfig(): Promise<IServerConfig> {
     const productJson = await getVSCodeProductJson();
 
     const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('serverBinaryName', '');
-    const customModifyMatchingCommit = vscode.workspace.getConfiguration('remote.SSH').get<boolean>('modifyMatchingCommit', false);
+    const skipServerValidation = vscode.workspace.getConfiguration('remote.SSH').get<boolean>('skipServerValidation', false);
 
     return {
         version: vscode.version.replace('-insider',''),
@@ -38,6 +38,6 @@ export async function getVSCodeServerConfig(): Promise<IServerConfig> {
         serverApplicationName: customServerBinaryName || productJson.serverApplicationName as string,
         serverDataFolderName: productJson.serverDataFolderName as string,
         serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate as string,
-        modifyMatchingCommit: customModifyMatchingCommit,
+        skipServerValidation: skipServerValidation,
     };
 }

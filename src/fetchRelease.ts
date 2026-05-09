@@ -43,7 +43,7 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
 
     const repoRegex = new RegExp("/(?P<owner>[\w,\-,\_]+)/(?P<repo>[\w,\-,\_]+)/");
     const matches = downloadUrl.pathname.match(repoRegex);
-    const apiUrl = `https://api.github.com/repos/${matches.group(1)}/${matches.group(1)}/releases`;
+    const apiUrl = `https://api.github.com/repos/${matches.group(1)}/${matches.group(2)}/releases`;
 
     let currentVersion = '';
     let currentRelease = '';
