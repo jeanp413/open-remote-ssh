@@ -162,7 +162,7 @@
 					"type": "string",
 					"description": "The version number of the remote VSCodium server. Can take the values: 'match' (default), 'latest', 'closest' or a specific version (e.g. '1.117.0').",
 					"scope": "application",
-					"default": ""
+					"default": "match"
 				},
 				"remote.SSH.skipServerValidation": {
 					"type": "boolean",
