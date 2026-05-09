@@ -10,8 +10,6 @@ export interface IRelease {
     release: string;
 }
 
-const VSCODIUM_URL = "https://api.github.com/repos/VSCodium/vscodium/releases";
-
 
 export function splitRelease(release: string): IRelease {
     const parts = release.split(".");
@@ -41,9 +39,13 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
     // Fetch github releases following: https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28
     logger.info('Fetch the last release number of VSCodium corresponding to version ' + version);
 
-    const repoRegex = new RegExp("/(?P<owner>[\w,\-,\_]+)/(?P<repo>[\w,\-,\_]+)/");
-    const matches = downloadUrl.pathname.match(repoRegex);
-    const apiUrl = `https://api.github.com/repos/${matches.group(1)}/${matches.group(2)}/releases`;
+    const repoRegex = new RegExp("/(?<owner>[\w,\-,\_]+)/(?<repo>[\w,\-,\_]+)/");
+    const matches: RegExpMatchArray | null = downloadUrl.pathname.match(repoRegex);
+    if (matches === null || matches === undefined) {
+        logger.info('Cannot parse the Github repository from the url template: ' + downloadUrl);
+        return {version, release};
+    }
+    const apiUrl = `https://api.github.com/repos/${matches[1]}/${matches[2]}/releases`;
 
     let currentVersion = '';
     let currentRelease = '';
