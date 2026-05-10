@@ -13,20 +13,20 @@ export interface IRelease {
 
 
 export function splitRelease(release: string): IRelease {
-    const parts = release.split(".");
+    const parts = release.split('.');
     if (parts.length === 4) {
         // Pre-1.99 release scheme
-        return {version: parts.slice(0, 3).join("."), release: parts[3]}
+        return {version: parts.slice(0, 3).join('.'), release: parts[3]};
     }
     // Release scheme starting with 1.99
     const versionParts = [parts[0], parts[1], parts[2].slice(0, 1)];
-    return {version: versionParts.join("."), release: parts[2].slice(1)}
+    return {version: versionParts.join('.'), release: parts[2].slice(1)};
 }
 
 
 export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, release: string, objective: string, logger: Log): Promise<IRelease> {
     // Just match the given version/release
-    if (objective == 'match') {
+    if (objective === 'match') {
         return {version, release};
     }
 
@@ -40,7 +40,7 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
     // Fetch github releases following: https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28
     logger.info(`Fetch the VSCodium release corresponding to the ${objective} release with reference to ${version}`);
 
-    const parts = downloadUrl.pathname.split("/");
+    const parts = downloadUrl.pathname.split('/');
     if (parts.length < 3) {
         console.info('Cannot parse the Github repository from the url template: ' + downloadUrl);
         return {version, release};
@@ -50,11 +50,11 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
     let found: IRelease | undefined;
     try {
         const response = await fetch(apiUrl, {
-            method: "GET",
+            method: 'GET',
             headers: {
-                "Content-Type": "application/json",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
+                'Content-Type': 'application/json',
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
             },
         });
         const data = await response.json() as Array<githubReleasesData>;
