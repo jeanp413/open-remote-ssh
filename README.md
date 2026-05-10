@@ -57,23 +57,27 @@ If you are using VSCode-OSS instead of VSCodium, you need some extra steps to ma
 Modify the following entries in the plugin settings:
 
 ```
-"remote.SSH.experimental.vscodiumReleaseNumber": "",
-"remote.SSH.experimental.modifyMatchingCommit": true,
 "remote.SSH.experimental.serverBinaryName": "codium-server",
 "remote.SSH.serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${release}/vscodium-reh-${os}-${arch}-${version}${release}.tar.gz",
+"remote.SSH.serverVersion": "latest",
+"remote.SSH.serverValidation": "force",
 ```
 
 VSCodium versions have an extra `release` part that do not have equivalent for VSCode-OSS.
-The plugin will use the latest release of the corresponding version if `vscodiumReleaseNumber` is left empty.
-If you need to use another VSCodium release, look for the release numbers associated with your VSCode version
-in the [release page](https://github.com/VSCodium/vscodium/releases/).
-For instance, for VSCode version "1.96.0", the (last) VSCodium release number is "24352".
+The plugin will install the latest release of VSCodium if `serverVersion` is set to "latest".
+If you need to match the VSCode-OSS version, set `serverVersion` to "closest", to
+automatically fetch the last release of VSCodium for this version.
 
-In the plugin settings, modify the following entry to specify a particular release:
+You can look for the release numbers associated with your VSCode version in the
+[release page](https://github.com/VSCodium/vscodium/releases/). For instance, for VSCode
+version "1.96.0", the (last) VSCodium release number is "24352".
 
-```
-"remote.SSH.experimental.vscodiumReleaseNumber": "<vscodium-release>",
-```
+You can also set `serverVersion` to a specic version (e.g. "1.116.0") or a specific
+version-release (e.g. "1.116.02821").
+
+If the local and remote VSCodium versions don't match, which will be the case on VSCode-OSS,
+remote server validation needs to be bypassed. Setting `serverValidation` to "force" will
+modify the commit of the remote server to make it matche your local VSCode commit.
 
 Starting with VSCodium version 1.99.0, the `release` number is not separated from the `version` by a dot `.` anymore.
 Therefore `serverDownloadUrlTemplate` needs to be filled with the new scheme (as shown above).
