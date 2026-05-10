@@ -166,11 +166,11 @@
 					"scope": "application",
 					"default": "match"
 				},
-				"remote.SSH.skipServerValidation": {
-					"type": "boolean",
-					"description": "When true, skip the server validation by modifying the commit value in 'product.json' of the remote server to match the value on the local host.",
+				"remote.SSH.serverValidation": {
+					"type": "string",
+					"description": "Type of server validation: 'strict' (default) enforces that the remote and local server are the same version by matching the commit, 'force' modifies the remote commit to match the local server, 'skip' skips validation all together.",
 					"scope": "application",
-					"default": false
+					"default": "strict"
 				}
 			}
 		},
