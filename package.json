@@ -42,6 +42,8 @@
 	"dependencies": {
 		"@zokugun/is-it-type": "0.8.1",
 		"glob": "13.0.6",
+		"node-fetch": "^3.3.2",
+		"semver": "^7.4.0",
 		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
 		"socks": "2.8.7",
 		"ssh-config": "5.1.0",
@@ -53,6 +55,7 @@
 		"@eslint/js": "10.0.1",
 		"@stylistic/eslint-plugin": "5.10.0",
 		"@types/node": "20.19.39",
+		"@types/semver": "^7.7.1",
 		"@types/ssh2": "0.5.52",
 		"@types/ssh2-streams": "0.1.13",
 		"@types/webpack": "5.28.5",
@@ -156,6 +159,18 @@
 					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.serverVersion": {
+					"type": "string",
+					"description": "The version number of the remote VSCodium server. Can take the values: 'match' (default), 'latest', 'closest' or a specific version (e.g. '1.117.0').",
+					"scope": "application",
+					"default": "match"
+				},
+				"remote.SSH.serverValidation": {
+					"type": "string",
+					"description": "Type of server validation: 'strict' (default) enforces that the remote and local server are the same version by matching the commit, 'force' modifies the remote commit to match the local server, 'skip' skips validation all together.",
+					"scope": "application",
+					"default": "strict"
 				}
 			}
 		},
