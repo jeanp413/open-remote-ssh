@@ -461,7 +461,7 @@ else
     echo "Server script already installed in $SERVER_SCRIPT"
 fi
 
-# Make sure the commits match
+# Modify the commit in the remote server to match the local value
 if ${serverValidation === 'force' ? 'true' : 'false'}; then
     if command -v sed >/dev/null 2>&1; then
         echo "Will modify product.json on remote to match the commit value"
@@ -644,7 +644,7 @@ else {
     "Server script already installed in $SERVER_SCRIPT"
 }
 
-# Make sure the commits match
+# Modify the commit in the remote server to match the local value
 if(${serverValidation === 'force' ? '$true' : '$false'}) {
     echo "Will modify product.json on remote to match the commit value"
     (Get-Content -Raw "$SERVER_DIR\\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",') |

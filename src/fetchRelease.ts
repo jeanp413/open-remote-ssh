@@ -48,7 +48,7 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
     }
 
     // Fetch github releases following: https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28
-    logger.info(`Fetch the VSCodium release corresponding to the ${objective} release, with local version ${ {version, build } }`);
+    logger.info(`Fetch the VSCodium release corresponding to the ${objective} release, with local version ${version}-${build}`);
 
     const parts = downloadUrl.pathname.split('/');
     if (parts.length < 3) {
@@ -103,10 +103,10 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
     }
 
     if (found) {
-        logger.info(`Found release for "${objective}": ${found.version} (${found.build})`);
+        logger.info(`Found release for "${objective}": ${found.version}-${found.build}`);
         return found;
     }
 
-    logger.info(`No matching release found for "${objective}", falling back to the local version ${ {version, build} }`);
+    logger.info(`No matching release found for "${objective}", falling back to the local version ${version}-${build}`);
     return {version, build};
 }
