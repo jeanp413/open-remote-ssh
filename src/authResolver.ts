@@ -18,6 +18,7 @@ import { installCodeServer, ServerInstallError, findServerInstallPath } from './
 import { isWindows } from './common/platform';
 import * as os from 'os';
 import { isNullable } from '@zokugun/is-it-type';
+import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -137,7 +138,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
         const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate');
-        const serverVersion = remoteSSHconfig.get<string>('serverVersion', 'match');
+        const serverVersion = remoteSSHconfig.get<ServerVersion>('serverVersion', 'match');
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;

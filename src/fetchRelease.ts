@@ -1,16 +1,16 @@
 import fetch from 'node-fetch';
 import Log from './common/logger';
 import * as semver from 'semver';
+import { ServerVersion } from './serverConfig';
 
-interface githubReleasesData {
+type githubReleasesData = {
     name: string;
-}
+};
 
-export interface IRelease {
+export type IRelease = {
     version: string;
     release: string;
-}
-
+};
 
 export function splitRelease(release: string): IRelease {
     const parts = release.split('.');
@@ -23,8 +23,7 @@ export function splitRelease(release: string): IRelease {
     return {version: versionParts.join('.'), release: parts[2].slice(1)};
 }
 
-
-export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, release: string, objective: string, logger: Log): Promise<IRelease> {
+export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, release: string, objective: ServerVersion, logger: Log): Promise<IRelease> {
     // Just match the given version/release
     if (objective === 'match') {
         return {version, release};

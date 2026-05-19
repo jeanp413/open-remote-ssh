@@ -13,7 +13,10 @@ async function getVSCodeProductJson() {
     return vscodeProductJson;
 }
 
-export interface IServerConfig {
+export type ServerVersion = 'closest' | 'latest' | 'match' | string;
+export type ServerValidation = 'force' | 'skip' | 'strict';
+
+export type IServerConfig = {
     version: string;
     commit: string;
     quality: string;
@@ -21,14 +24,14 @@ export interface IServerConfig {
     serverApplicationName: string;
     serverDataFolderName: string;
     serverDownloadUrlTemplate?: string;
-    serverValidation: string;
-}
+    serverValidation: ServerValidation;
+};
 
 export async function getVSCodeServerConfig(): Promise<IServerConfig> {
     const productJson = await getVSCodeProductJson();
 
     const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('serverBinaryName', '');
-    const serverValidation = vscode.workspace.getConfiguration('remote.SSH').get<string>('serverValidation', 'strict');
+    const serverValidation = vscode.workspace.getConfiguration('remote.SSH').get<ServerValidation>('serverValidation', 'strict');
 
     return {
         version: vscode.version.replace('-insider',''),
@@ -38,6 +41,6 @@ export async function getVSCodeServerConfig(): Promise<IServerConfig> {
         serverApplicationName: customServerBinaryName || productJson.serverApplicationName as string,
         serverDataFolderName: productJson.serverDataFolderName as string,
         serverDownloadUrlTemplate: productJson.serverDownloadUrlTemplate as string,
-        serverValidation: serverValidation,
+        serverValidation,
     };
 }

@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import Log from './common/logger';
-import { getVSCodeServerConfig } from './serverConfig';
+import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 
@@ -58,7 +58,7 @@ export function findServerInstallPath(hostname: string, pathMap: Record<string, 
 	return bestMatch?.path;
 }
 
-export interface ServerInstallOptions {
+export type ServerInstallOptions = {
     id: string;
     quality: string;
     commit: string;
@@ -71,10 +71,10 @@ export interface ServerInstallOptions {
     serverDataFolderName: string;
     serverDownloadUrlTemplate: string;
     customInstallPath?: string;
-    serverValidation: string;
-}
+    serverValidation: ServerValidation;
+};
 
-export interface ServerInstallResult {
+export type ServerInstallResult = {
     exitCode: number;
     listeningOn: number | string;
     connectionToken: string;
@@ -84,7 +84,7 @@ export interface ServerInstallResult {
     platform: string;
     tmpDir: string;
     [key: string]: unknown;
-}
+};
 
 export class ServerInstallError extends Error {
     constructor(message: string) {
@@ -97,7 +97,7 @@ const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/rele
 export async function installCodeServer(
     conn: SSHConnection,
     serverDownloadUrlTemplate: string | undefined,
-    serverVersion: string,
+    serverVersion: ServerVersion,
     extensionIds: string[],
     envVariables: string[],
     platform: string | undefined,
@@ -303,6 +303,7 @@ SERVER_TOKENFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.token"
 SERVER_ARCH=
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
+SERVER_VALIDATION_FLAG="${serverValidation === 'skip' ? '--disable-client-validation' : ''}"
 
 LISTENING_ON=
 OS_RELEASE_ID=
@@ -491,7 +492,7 @@ if [[ -z $SERVER_RUNNING_PROCESS ]]; then
     SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
     echo $SERVER_CONNECTION_TOKEN > $SERVER_TOKENFILE
 
-    $SERVER_SCRIPT --start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms &> $SERVER_LOGFILE &
+    $SERVER_SCRIPT --start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_VALIDATION_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms &> $SERVER_LOGFILE &
     echo $! > $SERVER_PIDFILE
 else
     echo "Server script is already running $SERVER_SCRIPT"
