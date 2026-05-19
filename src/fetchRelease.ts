@@ -9,40 +9,51 @@ type githubReleasesData = {
 
 export type IRelease = {
     version: string;
-    release: string;
+    build: string;
 };
 
 export function splitRelease(release: string): IRelease {
-    const parts = release.split('.');
-    if (parts.length === 4) {
-        // Pre-1.99 release scheme
-        return {version: parts.slice(0, 3).join('.'), release: parts[3]};
+    const regex = /(\d+)\.(\d+)\.(?:(\d+)\.(\d+)|(\d)(\d*))/;
+
+    const match = release.match(regex);
+    if (!match) {
+        return {version: release, build: ''};
     }
+
+    const [, major, minor, patch4, build4, patchFused, buildFused] = match;
+
+    // Pre-1.99 release scheme
+    // 4-part format: 1.96.4.25026 => patch=4, build=25026
+    if (patch4 !== undefined && build4 !== undefined) {
+        return {version: `${major}.${minor}.${patch4}`, build: build4};
+    }
+
     // Release scheme starting with 1.99
-    const versionParts = [parts[0], parts[1], parts[2].slice(0, 1)];
-    return {version: versionParts.join('.'), release: parts[2].slice(1)};
+    // 3-part fused format: 1.112.02593 => patch=0, build=2593
+    // Can also catch version without build: 1.112.0 => patch=0, build=''
+    return {version: `${major}.${minor}.${patchFused}`, build: buildFused ?? ''};
 }
 
-export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, release: string, objective: ServerVersion, logger: Log): Promise<IRelease> {
-    // Just match the given version/release
+export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, build: string, objective: ServerVersion, logger: Log): Promise<IRelease> {
+    // Just match the given version/build
     if (objective === 'match') {
-        return {version, release};
+        return {version, build};
     }
 
     const downloadUrl = new URL(serverDownloadUrlTemplate);
     const hostname = downloadUrl.hostname;
     if (hostname !== 'github.com') {
         logger.info('Can only fetch releases on github repositories');
-        return {version, release};
+        return {version, build};
     }
 
     // Fetch github releases following: https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28
-    logger.info(`Fetch the VSCodium release corresponding to the ${objective} release with reference to ${version}`);
+    logger.info(`Fetch the VSCodium release corresponding to the ${objective} release, with local version ${ {version, build } }`);
 
     const parts = downloadUrl.pathname.split('/');
     if (parts.length < 3) {
         console.info('Cannot parse the Github repository from the url template: ' + downloadUrl);
-        return {version, release};
+        return {version, build};
     }
     const apiUrl = `https://api.github.com/repos/${parts[1]}/${parts[2]}/releases`;
 
@@ -62,10 +73,10 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
         // using hyphen to separate the version from the build/release number.
         const releases = data
             .map(releaseInfo => splitRelease(releaseInfo.name))
-            .filter(r => semver.valid(`${r.version}-${r.release}`))
+            .filter(r => semver.valid(`${r.version}-${r.build}`))
             .sort((a, b) => semver.rcompare(
-                `${a.version}-${a.release}`,
-                `${b.version}-${b.release}`
+                `${a.version}-${a.build}`,
+                `${b.version}-${b.build}`
             ));
 
         if (objective === 'latest') {
@@ -77,9 +88,14 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
         } else {
             // Specific version+release or version match
             found = releases.find(r =>
-                `${r.version}${r.release}` === objective ||
+                `${r.version}${r.build}` === objective ||
                 (r.version === objective)
             );
+        }
+
+        // Add error message to help debugging
+        if (!found) {
+            logger.info(`Cannot find the ${objective} release from the list of existing releases: ${releases}`);
         }
 
     } catch (error) {
@@ -87,10 +103,10 @@ export async function fetchRelease(serverDownloadUrlTemplate: string, version: s
     }
 
     if (found) {
-        logger.info(`Found release for "${objective}": ${found.version} (${found.release})`);
+        logger.info(`Found release for "${objective}": ${found.version} (${found.build})`);
         return found;
     }
 
-    logger.info(`No matching release found for "${objective}", falling back to input ${ {version, release} }`);
-    return {version, release};
+    logger.info(`No matching release found for "${objective}", falling back to the local version ${ {version, build} }`);
+    return {version, build};
 }

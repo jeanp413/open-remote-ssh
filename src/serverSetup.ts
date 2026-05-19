@@ -147,7 +147,7 @@ export async function installCodeServer(
         version: bestRelease.version,
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
-        release: bestRelease.release,
+        release: bestRelease.build,
         extensionIds,
         envVariables,
         useSocketPath,
