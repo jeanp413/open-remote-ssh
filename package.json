@@ -153,9 +153,9 @@
 						"type": "string"
 					}
 				},
-				"remote.SSH.experimental.serverBinaryName": {
+				"remote.SSH.serverBinaryName": {
 					"type": "string",
-					"description": "**Experimental:** The name of the server binary, use this **only if** you are using a client without a corresponding server release",
+					"description": "The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
 				},
