@@ -37,16 +37,28 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
+      # - name: Update package.json
+      #   run: |
+      #     TIME_PATCH="$(date +%-y)$(printf "%04d" $(($(date +%-j) * 24 + $(date +%-H))))"
+      #     VERSION="${VERSION#v}-$TIME_PATCH"
+      #     echo "Using version: $VERSION"
+
+      #     jq --arg version "$VERSION" '.version = $version | .preview = true' package.json > package.json.tmp
+      #     mv package.json.tmp package.json
+
+      #     jq -r '"version: \(.version)\npreview: \(.preview)"' package.json
+
+      #     echo "RELEASE_TAG=v$VERSION" >> $GITHUB_ENV
       - name: Update package.json
         run: |
-          TIME_PATCH="$(date +%-y)$(printf "%04d" $(($(date +%-j) * 24 + $(date +%-H))))"
-          VERSION="${VERSION#v}-$TIME_PATCH"
-          echo "Using version: $VERSION"
-
-          jq --arg version "$VERSION" '.version = $version | .preview = true' package.json > package.json.tmp
+          jq '.preview = true' package.json > package.json.tmp
           mv package.json.tmp package.json
 
+          npx bumpp --no-push prerelease --yes --current-version "$VERSION" || true
+
           jq -r '"version: \(.version)\npreview: \(.preview)"' package.json
+
+          VERSION="$(jq -r .version package.json)"
 
           echo "RELEASE_TAG=v$VERSION" >> $GITHUB_ENV
 
