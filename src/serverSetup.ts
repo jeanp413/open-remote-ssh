@@ -1,7 +1,8 @@
 import * as crypto from 'crypto';
 import Log from './common/logger';
-import { getVSCodeServerConfig } from './serverConfig';
+import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
+import { fetchRelease, IRelease } from './fetchRelease';
 
 /**
  * Matches a hostname against a pattern that may contain wildcards.
@@ -57,12 +58,12 @@ export function findServerInstallPath(hostname: string, pathMap: Record<string, 
 	return bestMatch?.path;
 }
 
-export interface ServerInstallOptions {
+export type ServerInstallOptions = {
     id: string;
     quality: string;
     commit: string;
     version: string;
-    release?: string; // vscodium specific
+    release?: string;
     extensionIds: string[];
     envVariables: string[];
     useSocketPath: boolean;
@@ -70,9 +71,10 @@ export interface ServerInstallOptions {
     serverDataFolderName: string;
     serverDownloadUrlTemplate: string;
     customInstallPath?: string;
-}
+    serverValidation: ServerValidation;
+};
 
-export interface ServerInstallResult {
+export type ServerInstallResult = {
     exitCode: number;
     listeningOn: number | string;
     connectionToken: string;
@@ -82,7 +84,7 @@ export interface ServerInstallResult {
     platform: string;
     tmpDir: string;
     [key: string]: unknown;
-}
+};
 
 export class ServerInstallError extends Error {
     constructor(message: string) {
@@ -92,7 +94,17 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, customInstallPath: string | undefined, logger: Log): Promise<ServerInstallResult> {
+export async function installCodeServer(
+    conn: SSHConnection,
+    serverDownloadUrlTemplate: string | undefined,
+    serverVersion: ServerVersion,
+    extensionIds: string[],
+    envVariables: string[],
+    platform: string | undefined,
+    useSocketPath: boolean,
+    customInstallPath: string | undefined,
+    logger: Log
+): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
     // detect platform and shell for windows
@@ -125,19 +137,25 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
     const scriptId = crypto.randomBytes(12).toString('hex');
 
     const vscodeServerConfig = await getVSCodeServerConfig();
+
+    // Get the version and release
+    const serverDownloadUrlTemplateFinal = serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE;
+    const bestRelease: IRelease = await fetchRelease(serverDownloadUrlTemplateFinal, vscodeServerConfig.version, vscodeServerConfig.release, serverVersion, logger);
+
     const installOptions: ServerInstallOptions = {
         id: scriptId,
-        version: vscodeServerConfig.version,
+        version: bestRelease.version,
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
-        release: vscodeServerConfig.release,
+        release: bestRelease.build,
         extensionIds,
         envVariables,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-        serverDownloadUrlTemplate: serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE,
+        serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
         customInstallPath,
+        serverValidation: vscodeServerConfig.serverValidation,
     };
 
     let commandOutput: { stdout: string; stderr: string };
@@ -257,7 +275,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath }: ServerInstallOptions) {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -285,6 +303,7 @@ SERVER_TOKENFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.token"
 SERVER_ARCH=
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
+SERVER_VALIDATION_FLAG="${serverValidation === 'skip' ? '--disable-client-validation' : ''}"
 
 LISTENING_ON=
 OS_RELEASE_ID=
@@ -442,6 +461,16 @@ else
     echo "Server script already installed in $SERVER_SCRIPT"
 fi
 
+# Modify the commit in the remote server to match the local value
+if ${serverValidation === 'force' ? 'true' : 'false'}; then
+    if command -v sed >/dev/null 2>&1; then
+        echo "Will modify product.json on remote to match the commit value"
+        sed -i -E 's/"commit": "[0-9a-f]+",/"commit": "'"$DISTRO_COMMIT"'",/' "$SERVER_DIR/product.json";
+    else
+        echo "Cannot find the 'sed' command, make sure it is installed to modify product.json with the matching commit."
+    fi
+fi
+
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
     SERVER_PID="$(cat $SERVER_PIDFILE)"
@@ -463,7 +492,7 @@ if [[ -z $SERVER_RUNNING_PROCESS ]]; then
     SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
     echo $SERVER_CONNECTION_TOKEN > $SERVER_TOKENFILE
 
-    $SERVER_SCRIPT --start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms &> $SERVER_LOGFILE &
+    $SERVER_SCRIPT --start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_VALIDATION_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms &> $SERVER_LOGFILE &
     echo $! > $SERVER_PIDFILE
 else
     echo "Server script is already running $SERVER_SCRIPT"
@@ -499,7 +528,7 @@ print_install_results_and_exit 0
 `;
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath }: ServerInstallOptions) {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions) {
     const extensions = extensionIds.map(id => '--install-extension ' + id).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -536,6 +565,7 @@ $SERVER_TOKENFILE="$SERVER_DATA_DIR\\.$DISTRO_COMMIT.token"
 $SERVER_ARCH=
 $SERVER_CONNECTION_TOKEN=
 $SERVER_DOWNLOAD_URL=
+$SERVER_VALIDATION_FLAG="${serverValidation === 'skip' ? '--disable-client-validation' : ''}"
 
 $LISTENING_ON=
 $OS_RELEASE_ID=
@@ -615,6 +645,13 @@ else {
     "Server script already installed in $SERVER_SCRIPT"
 }
 
+# Modify the commit in the remote server to match the local value
+if(${serverValidation === 'force' ? '$true' : '$false'}) {
+    echo "Will modify product.json on remote to match the commit value"
+    (Get-Content -Raw "$SERVER_DIR\\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",') |
+        Set-Content -NoNewLine "$SERVER_DIR\\product.json"
+}
+
 # Try to find if server is already running
 if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SERVER_DIR\\*") {
     echo "Server script is already running $SERVER_SCRIPT"
@@ -633,7 +670,7 @@ else {
     $SERVER_CONNECTION_TOKEN="${crypto.randomUUID()}"
     [System.IO.File]::WriteAllLines($SERVER_TOKENFILE, $SERVER_CONNECTION_TOKEN)
 
-    $SCRIPT_ARGUMENTS="--start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms *> '$SERVER_LOGFILE'"
+    $SCRIPT_ARGUMENTS="--start-server --host=127.0.0.1 $SERVER_LISTEN_FLAG $SERVER_DATA_DIR_FLAG $SERVER_VALIDATION_FLAG $SERVER_INITIAL_EXTENSIONS --connection-token-file $SERVER_TOKENFILE --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms *> '$SERVER_LOGFILE'"
 
     $START_ARGUMENTS = @{
         FilePath = "powershell.exe"

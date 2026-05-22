@@ -18,6 +18,7 @@ import { installCodeServer, ServerInstallError, findServerInstallPath } from './
 import { isWindows } from './common/platform';
 import * as os from 'os';
 import { isNullable } from '@zokugun/is-it-type';
+import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -137,6 +138,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
         const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate');
+        const serverVersion = remoteSSHconfig.get<ServerVersion>('serverVersion', 'match');
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
@@ -250,7 +252,17 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 // Find the custom install path for this hostname (supports wildcards)
                 const customInstallPath = findServerInstallPath(sshDest.hostname, serverInstallPathMap);
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, customInstallPath, this.logger);
+                const installResult = await installCodeServer(
+                    this.sshConnection,
+                    serverDownloadUrlTemplate,
+                    serverVersion,
+                    defaultExtensions,
+                    Object.keys(envVariables),
+                    remotePlatformMap[sshDest.hostname],
+                    remoteServerListenOnSocket,
+                    customInstallPath,
+                    this.logger
+                );
 
                 for (const key of Object.keys(envVariables)) {
                     if (!isNullable(installResult[key])) {
