@@ -30,7 +30,7 @@ export type IServerConfig = {
 export async function getVSCodeServerConfig(): Promise<IServerConfig> {
     const productJson = await getVSCodeProductJson();
 
-    const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('serverBinaryName', '');
+    const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH').get<string>('serverBinaryName', '');
     const serverValidation = vscode.workspace.getConfiguration('remote.SSH').get<ServerValidation>('serverValidation', 'strict');
 
     return {
