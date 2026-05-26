@@ -1,0 +1,7 @@
+package: "@daiyam/default"
+resources:
+  - labels
+migrate:
+  labels:
+    bug: T-bug
+    enhancement: T-improvement
