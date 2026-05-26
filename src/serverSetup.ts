@@ -6,9 +6,18 @@ import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './server
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 
-// Scripts live in <extension-root>/scripts/ and are read from disk at runtime.
-// __dirname resolves to the lib/ output folder, so we step up one level.
-const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+/**
+ * Reads a script template from <extensionPath>/scripts/<templateName> and
+ * replaces every %%KEY%% occurrence with the matching value from `variables`.
+ */
+function compileTemplate(templateName: string, variables: Record<string, string>, extensionPath: string): string {
+    const templatePath = path.join(extensionPath, 'scripts', templateName);
+    let content = fs.readFileSync(templatePath, 'utf8');
+    for (const [key, value] of Object.entries(variables)) {
+        content = content.replace(new RegExp(`%%${key}%%`, 'g'), value);
+    }
+    return content;
+}
 
 /**
  * Matches a hostname against a pattern that may contain wildcards.
@@ -109,7 +118,8 @@ export async function installCodeServer(
     platform: string | undefined,
     useSocketPath: boolean,
     customInstallPath: string | undefined,
-    logger: Log
+    logger: Log,
+    extensionPath: string
 ): Promise<ServerInstallResult> {
     let shell = 'powershell';
 
@@ -166,7 +176,7 @@ export async function installCodeServer(
 
     let commandOutput: { stdout: string; stderr: string };
     if (platform === 'windows') {
-        const installServerScript = generatePowerShellInstallScript(installOptions);
+        const installServerScript = generatePowerShellInstallScript(installOptions, extensionPath);
 
         logger.trace('Server install command:', installServerScript);
 
@@ -213,7 +223,7 @@ export async function installCodeServer(
 
         commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
-        const installServerScript = generateBashInstallScript(installOptions);
+        const installServerScript = generateBashInstallScript(installOptions, extensionPath);
 
         logger.trace('Server install command:', installServerScript);
         // Fish shell does not support heredoc so let's workaround it using -c option,
@@ -281,7 +291,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions): string {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -291,26 +301,26 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         : '--port=0';
     const envVarLines = envVariables.map(envVar => `    echo "${envVar}==$${envVar}=="`).join('\n');
 
-    const template = fs.readFileSync(path.join(SCRIPTS_DIR, 'server-setup.sh'), 'utf8');
-    return template
-        .replace(/%%DISTRO_VERSION%%/g, version)
-        .replace(/%%DISTRO_COMMIT%%/g, commit)
-        .replace(/%%DISTRO_QUALITY%%/g, quality)
-        .replace(/%%DISTRO_VSCODIUM_RELEASE%%/g, release ?? '')
-        .replace(/%%SERVER_APP_NAME%%/g, serverApplicationName)
-        .replace(/%%SERVER_INITIAL_EXTENSIONS%%/g, extensions)
-        .replace(/%%SERVER_LISTEN_FLAG%%/g, listenFlag)
-        .replace(/%%SERVER_DATA_DIR%%/g, serverDataDir)
-        .replace(/%%SERVER_DATA_DIR_FLAG%%/g, customInstallPath ? '--server-data-dir="$SERVER_DATA_DIR"' : '')
-        .replace(/%%SERVER_VALIDATION_FLAG%%/g, serverValidation === 'skip' ? '--disable-client-validation' : '')
-        .replace(/%%SERVER_DOWNLOAD_URL_TEMPLATE%%/g, serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'))
-        .replace(/%%SCRIPT_ID%%/g, id)
-        .replace(/%%ENV_VAR_LINES%%/g, envVarLines)
-        .replace(/%%MODIFY_PRODUCT_JSON%%/g, serverValidation === 'force' ? 'true' : 'false')
-        .replace(/%%SERVER_CONNECTION_TOKEN%%/g, crypto.randomUUID());
+    return compileTemplate('server-setup.sh', {
+        DISTRO_VERSION: version,
+        DISTRO_COMMIT: commit,
+        DISTRO_QUALITY: quality,
+        DISTRO_VSCODIUM_RELEASE: release ?? '',
+        SERVER_APP_NAME: serverApplicationName,
+        SERVER_INITIAL_EXTENSIONS: extensions,
+        SERVER_LISTEN_FLAG: listenFlag,
+        SERVER_DATA_DIR: serverDataDir,
+        SERVER_DATA_DIR_FLAG: customInstallPath ? '--server-data-dir="$SERVER_DATA_DIR"' : '',
+        SERVER_VALIDATION_FLAG: serverValidation === 'skip' ? '--disable-client-validation' : '',
+        SERVER_DOWNLOAD_URL_TEMPLATE: serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'),
+        SCRIPT_ID: id,
+        ENV_VAR_LINES: envVarLines,
+        MODIFY_PRODUCT_JSON: serverValidation === 'force' ? 'true' : 'false',
+        SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
+    }, extensionPath);
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions): string {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -327,21 +337,21 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         : '--port=0';
     const envVarLines = envVariables.map(envVar => `    "$${envVar}==$${envVar}=="`).join('\n');
 
-    const template = fs.readFileSync(path.join(SCRIPTS_DIR, 'server-setup.ps1'), 'utf8');
-    return template
-        .replace(/%%DISTRO_VERSION%%/g, version)
-        .replace(/%%DISTRO_COMMIT%%/g, commit)
-        .replace(/%%DISTRO_QUALITY%%/g, quality)
-        .replace(/%%DISTRO_VSCODIUM_RELEASE%%/g, release ?? '')
-        .replace(/%%SERVER_APP_NAME%%/g, serverApplicationName)
-        .replace(/%%SERVER_INITIAL_EXTENSIONS%%/g, extensions)
-        .replace(/%%SERVER_LISTEN_FLAG%%/g, listenFlag)
-        .replace(/%%SERVER_DATA_DIR%%/g, serverDataDir)
-        .replace(/%%SERVER_DATA_DIR_FLAG%%/g, customInstallPath ? '--server-data-dir=""$SERVER_DATA_DIR""' : '')
-        .replace(/%%SERVER_VALIDATION_FLAG%%/g, serverValidation === 'skip' ? '--disable-client-validation' : '')
-        .replace(/%%SERVER_DOWNLOAD_URL%%/g, downloadUrl)
-        .replace(/%%SCRIPT_ID%%/g, id)
-        .replace(/%%ENV_VAR_LINES%%/g, envVarLines)
-        .replace(/%%MODIFY_PRODUCT_JSON%%/g, serverValidation === 'force' ? '$true' : '$false')
-        .replace(/%%SERVER_CONNECTION_TOKEN%%/g, crypto.randomUUID());
+    return compileTemplate('server-setup.ps1', {
+        DISTRO_VERSION: version,
+        DISTRO_COMMIT: commit,
+        DISTRO_QUALITY: quality,
+        DISTRO_VSCODIUM_RELEASE: release ?? '',
+        SERVER_APP_NAME: serverApplicationName,
+        SERVER_INITIAL_EXTENSIONS: extensions,
+        SERVER_LISTEN_FLAG: listenFlag,
+        SERVER_DATA_DIR: serverDataDir,
+        SERVER_DATA_DIR_FLAG: customInstallPath ? '--server-data-dir=""$SERVER_DATA_DIR""' : '',
+        SERVER_VALIDATION_FLAG: serverValidation === 'skip' ? '--disable-client-validation' : '',
+        SERVER_DOWNLOAD_URL: downloadUrl,
+        SCRIPT_ID: id,
+        ENV_VAR_LINES: envVarLines,
+        MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
+        SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
+    }, extensionPath);
 }
