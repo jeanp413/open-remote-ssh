@@ -310,10 +310,10 @@ print_install_results_and_exit() {
 LOCKFILE="$TMP_DIR/server_install.lock"
 
 if command -v flock >/dev/null 2>&1; then
-  exec 42>"$LOCKFILE"
+  exec {FD}<>"$LOCKFILE"
   # wait 30s to acquire lock, otherwise fail
-  flock -x -w 30 42 || print_install_results_and_exit 1
-  trap 'flock -u 42' EXIT
+  flock -x -w 30 $FD || print_install_results_and_exit 1
+  trap "flock -u $FD; trap - EXIT INT HUP; exit" EXIT INT HUP
 else
     echo "Warning: flock not available, skipping install lock" >&2
 fi
