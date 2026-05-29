@@ -472,6 +472,26 @@ else
     echo "Server script already installed in $SERVER_SCRIPT"
 fi
 
+# patching node binary for older systems
+if [ -n "${VSCODE_SERVER_PATCHELF_PATH}" ]; then
+	node_bin="${SERVER_DIR}/node"
+	if ! interp=$(${VSCODE_SERVER_PATCHELF_PATH} --print-interpreter "${node_bin}" 2>/dev/null); then
+		echo "binary is not patchable"
+        print_install_results_and_exit 1
+	fi
+
+	if [ "${interp} != "${VSCODE_SERVER_CUSTOM_GLIBC_LINKER}" ]; then
+		${VSCODE_SERVER_PATCHELF_PATH} \
+			--set-interpreter ${VSCODE_SERVER_CUSTOM_GLIBC_LINKER} \
+			--set-rpath ${VSCODE_SERVER_CUSTOM_GLIBC_PATH} \
+			${node_bin}
+		if [ $? -ne 0 ]; then
+			echo "error patching binary"
+        	print_install_results_and_exit 1
+		fi
+	fi
+fi
+
 # Modify the commit in the remote server to match the local value
 if ${serverValidation === 'force' ? 'true' : 'false'}; then
     if command -v sed >/dev/null 2>&1; then
