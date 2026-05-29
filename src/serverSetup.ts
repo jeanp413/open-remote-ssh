@@ -212,7 +212,7 @@ export async function installCodeServer(
         logger.trace('Server install command:', installServerScript);
         // Fish shell does not support heredoc so let's workaround it using -c option,
         // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
-        commandOutput = await conn.exec(`bash -c '${installServerScript.replace(/'/g, `'\\''`)}'`);
+        commandOutput = await conn.exec(`bash -lc '${installServerScript.replace(/'/g, `'\\''`)}'`);
     }
 
     if (commandOutput.stderr) {
@@ -517,7 +517,7 @@ else
 fi
 
 if [[ -f $SERVER_LOGFILE ]]; then
-    for i in {1..5}; do
+    for i in {1..35}; do
         LISTENING_ON="$(cat $SERVER_LOGFILE | grep -E 'Extension host agent listening on .+' | sed 's/Extension host agent listening on //')"
         if [[ -n $LISTENING_ON ]]; then
             break
