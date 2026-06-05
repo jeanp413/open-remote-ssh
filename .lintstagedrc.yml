@@ -1,4 +1,4 @@
-package.json:
+./package.json:
   - fixpack
   - npm audit
 .github/workflows/*.yml: zizmor
