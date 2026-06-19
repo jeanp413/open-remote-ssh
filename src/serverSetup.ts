@@ -210,9 +210,10 @@ export async function installCodeServer(
         const installServerScript = generateBashInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
-        // Fish shell does not support heredoc so let's workaround it using -c option,
-        // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
-        commandOutput = await conn.exec(`bash -lc '${installServerScript.replace(/'/g, `'\\''`)}'`);
+        // Use base64 encoding to avoid shell quoting issues across different login shells (bash, csh, tcsh, fish).
+        // csh cannot handle multi-line strings inside single quotes with -c, so piping via base64 is the most portable approach.
+        const base64Script = Buffer.from(installServerScript).toString('base64');
+        commandOutput = await conn.exec(`echo ${base64Script} | base64 -d | bash -l`);
     }
 
     if (commandOutput.stderr) {
