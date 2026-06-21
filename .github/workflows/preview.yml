@@ -64,7 +64,7 @@ jobs:
       - name: Build
         run: |
           npm ci
-          npm install -g @vscode/vsce
+
           npm run package
 
           VSIX_NAME=$(ls *.vsix)
