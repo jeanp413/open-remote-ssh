@@ -156,6 +156,44 @@ export default class SSHConnection extends EventEmitter {
     }
 
     /**
+     * Transfer a local file to the remote machine via SFTP
+     */
+    putFile(localPath: string, remotePath: string): Promise<void> {
+        return this.connect().then(() => {
+            return new Promise((resolve, reject) => {
+                this.sshConnection!.sftp((err, sftp) => {
+                    if (err) {
+                        return reject(err);
+                    }
+
+                    const readStream = fs.createReadStream(localPath);
+                    const writeStream = sftp.createWriteStream(remotePath);
+
+                    let finished = false;
+                    const finish = (error?: Error) => {
+                        if (finished) {
+                            return;
+                        }
+                        finished = true;
+                        sftp.end();
+                        if (error) {
+                            reject(error);
+                        } else {
+                            resolve();
+                        }
+                    };
+
+                    writeStream.on('close', () => finish());
+                    writeStream.on('error', (err) => finish(err));
+                    readStream.on('error', (err) => finish(err));
+
+                    readStream.pipe(writeStream);
+                });
+            });
+        });
+    }
+
+    /**
      * Forward out
      */
     forwardOut(srcIP: string, srcPort: number, destIP: string, destPort: number): Promise<ClientChannel> {
