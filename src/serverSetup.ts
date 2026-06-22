@@ -1,6 +1,9 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import Log from './common/logger';
-import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
+import { getVSCodeServerConfig, IServerConfig, ServerVersion, ServerValidation } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 
@@ -94,17 +97,15 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(
-    conn: SSHConnection,
-    serverDownloadUrlTemplate: string | undefined,
-    serverVersion: ServerVersion,
-    extensionIds: string[],
-    envVariables: string[],
-    platform: string | undefined,
-    useSocketPath: boolean,
-    customInstallPath: string | undefined,
-    logger: Log
-): Promise<ServerInstallResult> {
+export type LocalServerDownload = 'auto' | 'always' | 'never';
+
+type RemotePlatformInfo = {
+    platform: string;
+    arch: string;
+    shell: string;
+};
+
+async function detectRemotePlatform(conn: SSHConnection, platform: string | undefined, logger: Log): Promise<RemotePlatformInfo> {
     let shell = 'powershell';
 
     // detect platform and shell for windows
@@ -134,6 +135,119 @@ export async function installCodeServer(
         }
     }
 
+    let arch: string;
+    if (platform === 'windows') {
+        arch = 'x64';
+    } else {
+        const unameResult = await conn.exec('uname -m');
+        const remoteArch = unameResult.stdout.trim();
+        switch (remoteArch) {
+            case 'x86_64':
+            case 'amd64':
+                arch = 'x64';
+                break;
+            case 'armv7l':
+            case 'armv8l':
+                arch = 'armhf';
+                break;
+            case 'arm64':
+            case 'aarch64':
+                arch = 'arm64';
+                break;
+            case 'ppc64le':
+                arch = 'ppc64le';
+                break;
+            case 'riscv64':
+                arch = 'riscv64';
+                break;
+            case 'loongarch64':
+                arch = 'loong64';
+                break;
+            case 's390x':
+                arch = 's390x';
+                break;
+            default:
+                arch = remoteArch;
+                break;
+        }
+    }
+
+    return { platform: platform || 'linux', arch, shell };
+}
+
+function buildServerDownloadUrl(
+    template: string,
+    quality: string,
+    version: string,
+    commit: string,
+    platform: string,
+    arch: string,
+    release: string
+): string {
+    return template
+        .replace(/\$\{quality\}/g, quality)
+        .replace(/\$\{version\}/g, version)
+        .replace(/\$\{commit\}/g, commit)
+        .replace(/\$\{os\}/g, platform)
+        .replace(/\$\{arch\}/g, arch)
+        .replace(/\$\{release\}/g, release);
+}
+
+async function downloadServerLocally(
+    downloadUrl: string,
+    commit: string,
+    logger: Log
+): Promise<string> {
+    logger.info(`Downloading server binary locally from: ${downloadUrl}`);
+
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+        throw new Error(`Failed to download server binary: ${response.status} ${response.statusText}`);
+    }
+
+    const tmpPath = path.join(os.tmpdir(), `vscode-server-${commit}.tar.gz`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.promises.writeFile(tmpPath, buffer);
+
+    logger.info(`Server binary downloaded locally to: ${tmpPath}`);
+    return tmpPath;
+}
+
+async function uploadServerBinary(
+    conn: SSHConnection,
+    localPath: string,
+    remotePath: string,
+    logger: Log
+): Promise<void> {
+    logger.info(`Uploading server binary via SFTP to: ${remotePath}`);
+    await conn.putFile(localPath, remotePath);
+    logger.info(`Server binary uploaded successfully`);
+}
+
+function isRemoteDownloadFailure(stdout: string, stderr: string): boolean {
+    const combined = `${stdout}\n${stderr}`;
+    return combined.includes('Error downloading server from') ||
+        combined.includes('Error no tool to download server binary') ||
+        combined.includes('Error while installing the server binary');
+}
+
+export async function installCodeServer(
+    conn: SSHConnection,
+    serverDownloadUrlTemplate: string | undefined,
+    serverVersion: ServerVersion,
+    extensionIds: string[],
+    envVariables: string[],
+    platform: string | undefined,
+    useSocketPath: boolean,
+    customInstallPath: string | undefined,
+    logger: Log,
+    localServerDownload: LocalServerDownload = 'auto'
+): Promise<ServerInstallResult> {
+    const platformInfo = await detectRemotePlatform(conn, platform, logger);
+    const detectedPlatform = platformInfo.platform;
+    const shell = platformInfo.shell;
+    const remoteArch = platformInfo.arch;
+
     const scriptId = crypto.randomBytes(12).toString('hex');
 
     const vscodeServerConfig = await getVSCodeServerConfig();
@@ -158,20 +272,38 @@ export async function installCodeServer(
         serverValidation: vscodeServerConfig.serverValidation,
     };
 
-    const commandOutput = await runInstallScript(conn, platform, shell, installOptions, vscodeServerConfig, scriptId, logger);
-    return parseInstallOutput(commandOutput, scriptId, envVariables, logger);
+    let commandOutput: { stdout: string; stderr: string };
+
+    if (localServerDownload === 'always') {
+        logger.info('localServerDownload is always, downloading server binary locally and uploading via SFTP');
+        await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, remoteArch, customInstallPath, logger);
+        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger);
+    } else if (localServerDownload === 'never') {
+        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger);
+    } else {
+        // auto: try remote download first, fall back to local download + SFTP on failure
+        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger);
+
+        if (isRemoteDownloadFailure(commandOutput.stdout, commandOutput.stderr)) {
+            logger.info('Remote server download failed, falling back to local download and SFTP upload');
+            await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, remoteArch, customInstallPath, logger);
+            commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger);
+        }
+    }
+
+    return parseInstallOutput(commandOutput, logger, scriptId, envVariables);
 }
 
 async function runInstallScript(
     conn: SSHConnection,
-    platform: string | undefined,
-    shell: string,
+    detectedPlatform: string,
     installOptions: ServerInstallOptions,
-    vscodeServerConfig: { serverDataFolderName: string; commit: string },
+    shell: string,
+    vscodeServerConfig: IServerConfig,
     scriptId: string,
     logger: Log
 ): Promise<{ stdout: string; stderr: string }> {
-    if (platform === 'windows') {
+    if (detectedPlatform === 'windows') {
         const installServerScript = generatePowerShellInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
@@ -230,9 +362,9 @@ async function runInstallScript(
 
 function parseInstallOutput(
     commandOutput: { stdout: string; stderr: string },
+    logger: Log,
     scriptId: string,
-    envVariables: string[],
-    logger: Log
+    envVariables: string[]
 ): ServerInstallResult {
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
@@ -267,6 +399,67 @@ function parseInstallOutput(
         ...remoteEnvVars
     };
 }
+
+async function getRemoteServerDir(
+    conn: SSHConnection,
+    detectedPlatform: string,
+    customInstallPath: string | undefined,
+    vscodeServerConfig: IServerConfig
+): Promise<string> {
+    if (detectedPlatform === 'windows') {
+        const homeResult = await conn.exec('powershell -NoProfile -Command "Write-Output $env:USERPROFILE"');
+        const home = homeResult.stdout.trim();
+        const serverDataDir = customInstallPath
+            ? customInstallPath.replace(/^~(?=[\\/]|$)/, home)
+            : `${home}\\${vscodeServerConfig.serverDataFolderName}`;
+        return `${serverDataDir}\\bin\\${vscodeServerConfig.commit}\\vscode-server.tar.gz`;
+    } else {
+        const homeResult = await conn.exec('echo $HOME');
+        const home = homeResult.stdout.trim();
+        const serverDataDir = customInstallPath
+            ? customInstallPath.replace(/^~(?=\/|$)/, home)
+            : `${home}/${vscodeServerConfig.serverDataFolderName}`;
+        return `${serverDataDir}/bin/${vscodeServerConfig.commit}/vscode-server.tar.gz`;
+    }
+}
+
+async function downloadAndUploadServerBinary(
+    conn: SSHConnection,
+    serverDownloadUrlTemplate: string,
+    vscodeServerConfig: IServerConfig,
+    bestRelease: IRelease,
+    detectedPlatform: string,
+    remoteArch: string,
+    customInstallPath: string | undefined,
+    logger: Log
+): Promise<void> {
+    const downloadUrl = buildServerDownloadUrl(
+        serverDownloadUrlTemplate,
+        vscodeServerConfig.quality,
+        bestRelease.version,
+        vscodeServerConfig.commit,
+        detectedPlatform,
+        remoteArch,
+        bestRelease.build
+    );
+
+    const localPath = await downloadServerLocally(downloadUrl, vscodeServerConfig.commit, logger);
+    try {
+        const remotePath = await getRemoteServerDir(conn, detectedPlatform, customInstallPath, vscodeServerConfig);
+        await conn.exec(detectedPlatform === 'windows'
+            ? `powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path (Split-Path -Parent '${remotePath}')"`
+            : `mkdir -p "$(dirname '${remotePath}')"`);
+        await uploadServerBinary(conn, localPath, remotePath, logger);
+    } finally {
+        try {
+            await fs.promises.unlink(localPath);
+            logger.trace(`Cleaned up local server binary: ${localPath}`);
+        } catch (err) {
+            logger.trace(`Failed to clean up local server binary: ${err}`);
+        }
+    }
+}
+
 
 function parseServerInstallOutput(str: string, scriptId: string): { [k: string]: string } | undefined {
     const startResultStr = `${scriptId}: start`;
@@ -454,21 +647,25 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     pushd $SERVER_DIR > /dev/null
 
-    if command -v wget >/dev/null 2>&1; then
-        wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
-    elif command -v curl >/dev/null 2>&1; then
-        curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
-    elif command -v fetch >/dev/null 2>&1; then
-        fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    if [[ -f vscode-server.tar.gz ]]; then
+        echo "Using pre-uploaded server binary"
     else
-        echo "Error no tool to download server binary"
-        print_install_results_and_exit 1
-    fi
+        if command -v wget >/dev/null 2>&1; then
+            wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+        elif command -v curl >/dev/null 2>&1; then
+            curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+        elif command -v fetch >/dev/null 2>&1; then
+            fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+        else
+            echo "Error no tool to download server binary"
+            print_install_results_and_exit 1
+        fi
 
-    if (( $? > 0 )); then
-        echo "Error downloading server from $SERVER_DOWNLOAD_URL"
-        rm -rf vscode-server.tar.gz
-        print_install_results_and_exit 1
+        if (( $? > 0 )); then
+            echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+            rm -rf vscode-server.tar.gz
+            print_install_results_and_exit 1
+        fi
     fi
 
     tar -xf vscode-server.tar.gz --strip-components 1
@@ -647,18 +844,22 @@ cd $SERVER_DIR
 
 # Check if server script is already installed
 if(!(Test-Path $SERVER_SCRIPT)) {
-    del vscode-server.tar.gz
+    if(Test-Path "vscode-server.tar.gz") {
+        "Using pre-uploaded server binary"
+    } else {
+        del vscode-server.tar.gz
 
-    $REQUEST_ARGUMENTS = @{
-        Uri="${downloadUrl}"
-        TimeoutSec=20
-        OutFile="vscode-server.tar.gz"
-        UseBasicParsing=$True
+        $REQUEST_ARGUMENTS = @{
+            Uri="${downloadUrl}"
+            TimeoutSec=20
+            OutFile="vscode-server.tar.gz"
+            UseBasicParsing=$True
+        }
+
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+        Invoke-RestMethod @REQUEST_ARGUMENTS
     }
-
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    Invoke-RestMethod @REQUEST_ARGUMENTS
 
     if(Test-Path "vscode-server.tar.gz") {
         tar -xf vscode-server.tar.gz --strip-components 1
