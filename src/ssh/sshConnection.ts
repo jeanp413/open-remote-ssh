@@ -171,6 +171,38 @@ export default class SSHConnection extends EventEmitter {
     }
 
     /**
+     * Transfer a local file to the remote machine via SFTP.
+     *
+     * Uses `fastPut`, which keeps many WRITE requests in flight concurrently.
+     * Piping into `sftp.createWriteStream()` is not used because ssh2's
+     * WriteStream issues a single WRITE request at a time and waits for its
+     * acknowledgement, making throughput bound by round-trip latency
+     * (effectively stalling on any non-local link).
+     */
+    putFile(localPath: string, remotePath: string, onProgress?: (transferred: number, total: number) => void): Promise<void> {
+        return this.connect().then(() => {
+            return new Promise((resolve, reject) => {
+                this.sshConnection!.sftp((err, sftp) => {
+                    if (err) {
+                        return reject(err);
+                    }
+
+                    sftp.fastPut(localPath, remotePath, {
+                        step: onProgress ? (transferred, _chunk, total) => onProgress(transferred, total) : undefined,
+                    }, (error) => {
+                        sftp.end();
+                        if (error) {
+                            reject(error);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            });
+        });
+    }
+
+    /**
      * Forward out
      */
     forwardOut(srcIP: string, srcPort: number, destIP: string, destPort: number): Promise<ClientChannel> {
