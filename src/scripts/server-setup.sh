@@ -163,21 +163,25 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
   pushd "$SERVER_DIR" > /dev/null || exit
 
-  if command -v wget >/dev/null 2>&1; then
-    wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
-  elif command -v curl >/dev/null 2>&1; then
-    curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
-  elif command -v fetch >/dev/null 2>&1; then
-    fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+  if [[ -f vscode-server.tar.gz ]]; then
+    echo "Using pre-uploaded server binary"
   else
-    echo "Error: no tool to download server binary"
-    print_install_results_and_exit 1
-  fi
+    if command -v wget >/dev/null 2>&1; then
+      wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+    elif command -v curl >/dev/null 2>&1; then
+      curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+    elif command -v fetch >/dev/null 2>&1; then
+      fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+    else
+      echo "Error: no tool to download server binary"
+      print_install_results_and_exit 1
+    fi
 
-  if (( $? > 0 )); then
-    echo "Error downloading server from $SERVER_DOWNLOAD_URL"
-    rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    if (( $? > 0 )); then
+      echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+      rm -rf vscode-server.tar.gz
+      print_install_results_and_exit 1
+    fi
   fi
 
   tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (

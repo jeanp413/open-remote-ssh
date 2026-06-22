@@ -124,19 +124,19 @@ cd $SERVER_DIR
 # Check if server script is already installed
 if(!(Test-Path $SERVER_SCRIPT)) {
   if(Test-Path vscode-server.tar.gz) {
-    del vscode-server.tar.gz
+    "Using pre-uploaded server binary"
+  } else {
+    $REQUEST_ARGUMENTS = @{
+      Uri="$SERVER_DOWNLOAD_URL"
+      TimeoutSec=20
+      OutFile="vscode-server.tar.gz"
+      UseBasicParsing=$True
+    }
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    Invoke-RestMethod @REQUEST_ARGUMENTS
   }
-
-  $REQUEST_ARGUMENTS = @{
-    Uri="$SERVER_DOWNLOAD_URL"
-    TimeoutSec=20
-    OutFile="vscode-server.tar.gz"
-    UseBasicParsing=$True
-  }
-
-  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-  Invoke-RestMethod @REQUEST_ARGUMENTS
 
   if(Test-Path "vscode-server.tar.gz") {
     tar -xOf vscode-server.tar.gz | Out-Null
