@@ -158,7 +158,19 @@ export async function installCodeServer(
         serverValidation: vscodeServerConfig.serverValidation,
     };
 
-    let commandOutput: { stdout: string; stderr: string };
+    const commandOutput = await runInstallScript(conn, platform, shell, installOptions, vscodeServerConfig, scriptId, logger);
+    return parseInstallOutput(commandOutput, scriptId, envVariables, logger);
+}
+
+async function runInstallScript(
+    conn: SSHConnection,
+    platform: string | undefined,
+    shell: string,
+    installOptions: ServerInstallOptions,
+    vscodeServerConfig: { serverDataFolderName: string; commit: string },
+    scriptId: string,
+    logger: Log
+): Promise<{ stdout: string; stderr: string }> {
     if (platform === 'windows') {
         const installServerScript = generatePowerShellInstallScript(installOptions);
 
@@ -170,7 +182,7 @@ export async function installCodeServer(
 
         // investigate if it's possible to use `-EncodedCommand` flag
         // https://devblogs.microsoft.com/powershell/invoking-powershell-with-complex-expressions-using-scriptblocks/
-		// eslint-disable-next-line no-useless-assignment
+        // eslint-disable-next-line no-useless-assignment
         let command = '';
 
         if (shell === 'powershell') {
@@ -205,16 +217,23 @@ export async function installCodeServer(
             throw new ServerInstallError(`Not supported shell: ${shell}`);
         }
 
-        commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
+        return await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
         const installServerScript = generateBashInstallScript(installOptions);
 
         logger.trace('Server install command:', installServerScript);
         // Fish shell does not support heredoc so let's workaround it using -c option,
         // also replace single quotes (') within the script with ('\'') as there's no quoting within single quotes, see https://unix.stackexchange.com/a/24676
-        commandOutput = await conn.exec(`bash -lc '${installServerScript.replace(/'/g, `'\\''`)}'`);
+        return await conn.exec(`bash -lc '${installServerScript.replace(/'/g, `'\\''`)}'`);
     }
+}
 
+function parseInstallOutput(
+    commandOutput: { stdout: string; stderr: string },
+    scriptId: string,
+    envVariables: string[],
+    logger: Log
+): ServerInstallResult {
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
     }
