@@ -161,6 +161,22 @@
 					"scope": "application",
 					"default": ""
 				},
+				"remote.SSH.localServerDownload": {
+					"type": "string",
+					"description": "Controls whether the VS Code server binary is downloaded locally and transferred to the remote host via SFTP. 'auto' tries downloading on the remote first, then falls back to downloading locally and transferring via SFTP. 'always' always downloads locally and transfers via SFTP. 'never' only downloads directly on the remote machine.",
+					"scope": "application",
+					"default": "auto",
+					"enum": [
+						"auto",
+						"always",
+						"never"
+					],
+					"enumDescriptions": [
+						"Try remote download first, fall back to local download + SFTP transfer (default)",
+						"Always download locally and transfer via SFTP",
+						"Only download directly on the remote machine (current behavior)"
+					]
+				},
 				"remote.SSH.serverVersion": {
 					"type": "string",
 					"description": "The version number of the remote VSCodium server. Can take the values: 'match' (default), 'latest', 'closest' or a specific version (e.g. '1.117.0').",
