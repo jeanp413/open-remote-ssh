@@ -14,7 +14,7 @@ import { gatherIdentityFiles } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
+import { installCodeServer, ServerInstallError, findServerInstallPath, LocalServerDownload } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
 import { isNullable } from '@zokugun/is-it-type';
@@ -140,6 +140,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate');
         const serverVersion = remoteSSHconfig.get<ServerVersion>('serverVersion', 'match');
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
+        const localServerDownload = remoteSSHconfig.get<LocalServerDownload>('localServerDownload', 'auto');
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
@@ -261,7 +262,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     remotePlatformMap[sshDest.hostname],
                     remoteServerListenOnSocket,
                     customInstallPath,
-                    this.logger
+                    this.logger,
+                    localServerDownload
                 );
 
                 for (const key of Object.keys(envVariables)) {
