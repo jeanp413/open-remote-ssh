@@ -1,14 +1,41 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { getRemoteAuthority } from './authResolver';
-import { getSSHConfigPath } from './ssh/sshConfig';
+import SSHConfiguration, { getSSHConfigPath } from './ssh/sshConfig';
 import { exists as fileExists } from './common/files';
 import SSHDestination from './ssh/sshDestination';
 
 export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
-    const host = await vscode.window.showInputBox({
-        title: 'Enter [user@]hostname[:port]'
-    });
+    const configuredHosts = (await SSHConfiguration.loadFromFS()).getAllConfiguredHosts();
+
+    let host: string | undefined;
+    if (configuredHosts.length) {
+        const selection = await vscode.window.showQuickPick([
+            ...configuredHosts.map(hostname => ({
+                label: hostname,
+                description: 'Configured SSH host',
+            })),
+            {
+                label: 'Enter host manually',
+                description: '[user@]hostname[:port]',
+            },
+        ], {
+            title: 'Connect to Host',
+            placeHolder: 'Select a configured SSH host or enter one manually',
+        });
+
+        if (!selection) {
+            return;
+        }
+
+        host = selection.label === 'Enter host manually' ? undefined : selection.label;
+    }
+
+    if (!host) {
+        host = await vscode.window.showInputBox({
+            title: 'Enter [user@]hostname[:port]'
+        });
+    }
 
     if (!host) {
         return;
