@@ -80,6 +80,27 @@ export default class SSHConnection extends EventEmitter {
     }
 
     /**
+     * Get the underlying ssh2 Client for direct access (SFTP, raw channels).
+     */
+    getClient(): Client | null {
+        return this.sshConnection;
+    }
+
+    /**
+     * Exec a command and return the raw channel for streaming access.
+     */
+    execChannel(cmd: string, options: ExecOptions = {}): Promise<ClientChannel> {
+        return this.connect().then(() => {
+            return new Promise<ClientChannel>((resolve, reject) => {
+                this.sshConnection!.exec(cmd, options, (err, stream) => {
+                    if (err) {return reject(err);}
+                    resolve(stream);
+                });
+            });
+        });
+    }
+
+    /**
      * Get shell socket
      */
     shell(options: ShellOptions = {}): Promise<ClientChannel> {
