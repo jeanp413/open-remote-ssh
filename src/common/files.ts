@@ -13,7 +13,7 @@ export async function exists(path: string) {
 }
 
 export function untildify(path: string){
-	return path.replace(/^~(?=$|\/|\\)/, homeDir);
+    return path.replace(/^~(?=$|\/|\\)/, homeDir);
 }
 
 export function normalizeToSlash(path: string) {

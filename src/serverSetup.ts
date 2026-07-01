@@ -25,32 +25,32 @@ function compileTemplate(templateName: string, variables: Record<string, string>
  * Returns -1 if no match.
  */
 function matchHostnamePattern(hostname: string, pattern: string): number {
-	// Exact match has highest priority
-	if (hostname === pattern) {
-		return 1000;
-	}
+    // Exact match has highest priority
+    if (hostname === pattern) {
+        return 1000;
+    }
 
-	// Catch-all wildcard has lowest priority
-	if (pattern === '*') {
-		return 1;
-	}
+    // Catch-all wildcard has lowest priority
+    if (pattern === '*') {
+        return 1;
+    }
 
-	// Convert wildcard pattern to regex
-	// Escape special regex characters except *
-	const regexPattern = pattern
-		.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-		.replace(/\*/g, '.*');
+    // Convert wildcard pattern to regex
+    // Escape special regex characters except *
+    const regexPattern = pattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*');
 
-	const regex = new RegExp(`^${regexPattern}$`);
+    const regex = new RegExp(`^${regexPattern}$`);
 
-	if (regex.test(hostname)) {
-		// Calculate specificity based on the number of non-wildcard characters
-		// More specific patterns (more characters) get higher scores
-		const nonWildcardChars = pattern.replace(/\*/g, '').length;
-		return 10 + nonWildcardChars;
-	}
+    if (regex.test(hostname)) {
+        // Calculate specificity based on the number of non-wildcard characters
+        // More specific patterns (more characters) get higher scores
+        const nonWildcardChars = pattern.replace(/\*/g, '').length;
+        return 10 + nonWildcardChars;
+    }
 
-	return -1;
+    return -1;
 }
 
 /**
@@ -58,19 +58,19 @@ function matchHostnamePattern(hostname: string, pattern: string): number {
  * Supports wildcards with priority: exact match > specific wildcard > general wildcard.
  */
 export function findServerInstallPath(hostname: string, pathMap: Record<string, string>): string | undefined {
-	let bestMatch: { pattern: string; path: string; score: number } | undefined;
+    let bestMatch: { pattern: string; path: string; score: number } | undefined;
 
-	for (const [pattern, path] of Object.entries(pathMap)) {
-		const score = matchHostnamePattern(hostname, pattern);
+    for (const [pattern, path] of Object.entries(pathMap)) {
+        const score = matchHostnamePattern(hostname, pattern);
 
-		if (score > 0) {
-			if (!bestMatch || score > bestMatch.score) {
-				bestMatch = { pattern, path, score };
-			}
-		}
-	}
+        if (score > 0) {
+            if (!bestMatch || score > bestMatch.score) {
+                bestMatch = { pattern, path, score };
+            }
+        }
+    }
 
-	return bestMatch?.path;
+    return bestMatch?.path;
 }
 
 export type ServerInstallOptions = {
@@ -186,7 +186,7 @@ export async function installCodeServer(
 
         // investigate if it's possible to use `-EncodedCommand` flag
         // https://devblogs.microsoft.com/powershell/invoking-powershell-with-complex-expressions-using-scriptblocks/
-		// eslint-disable-next-line no-useless-assignment
+        // eslint-disable-next-line no-useless-assignment
         let command = '';
 
         if (shell === 'powershell') {
@@ -300,7 +300,7 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
     const listenFlag = useSocketPath
         ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"`
         : '--port=0';
-    const envVarLines = envVariables.map(envVar => `    echo "${envVar}==$${envVar}=="`).join('\n');
+    const envVarLines = envVariables.map(envVar => `  echo "${envVar}==$${envVar}=="`).join('\n');
 
     return compileTemplate('server-setup.sh', {
         DISTRO_VERSION: version,
