@@ -234,7 +234,7 @@ else
 fi
 
 if [[ -f $SERVER_LOGFILE ]]; then
-    for i in {1..5}; do
+    for i in {1..35}; do
         LISTENING_ON="$(cat $SERVER_LOGFILE | grep -E 'Extension host agent listening on .+' | sed 's/Extension host agent listening on //')"
         if [[ -n $LISTENING_ON ]]; then
             break
