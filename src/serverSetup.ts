@@ -11,7 +11,7 @@ import { fetchRelease, IRelease } from './fetchRelease';
  * replaces every %%KEY%% occurrence with the matching value from `variables`.
  */
 function compileTemplate(templateName: string, variables: Record<string, string>, extensionPath: string): string {
-    const templatePath = path.join(extensionPath, 'scripts', templateName);
+    const templatePath = path.join(extensionPath, 'src', 'scripts', templateName);
     let content = fs.readFileSync(templatePath, 'utf8');
     for (const [key, value] of Object.entries(variables)) {
         content = content.replace(new RegExp(`%%${key}%%`, 'g'), value);
