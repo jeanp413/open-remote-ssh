@@ -261,7 +261,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     remotePlatformMap[sshDest.hostname],
                     remoteServerListenOnSocket,
                     customInstallPath,
-                    this.logger
+                    this.logger,
+                    this.context.extensionPath
                 );
 
                 for (const key of Object.keys(envVariables)) {
