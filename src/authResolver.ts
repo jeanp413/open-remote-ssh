@@ -434,7 +434,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!await fileExists(identityKey.filename)) {
                     // Try next identity file
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 
@@ -457,7 +457,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!result || result instanceof Error) {
                     // Try next identity file
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 

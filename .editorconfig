@@ -1,7 +1,7 @@
 root = true
 
 [*]
-indent_style = tab
+indent_style = space
 tab_width = 4
 end_of_line = lf
 charset = utf-8
@@ -12,6 +12,10 @@ insert_final_newline = true
 indent_style = space
 indent_size = 2
 
+[{*.json,.fixpackrc}]
+indent_style = tab
+indent_size = 4
+
 [*.md]
 indent_style = space
 indent_size = 4
@@ -20,3 +24,7 @@ indent_size = 4
 indent_style = space
 indent_size = 2
 trim_trailing_whitespace = false
+
+[{*.sh,*.ps1}]
+indent_style = space
+indent_size = 2
