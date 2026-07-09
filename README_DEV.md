@@ -14,7 +14,8 @@ npm run build
 ## Packaging:
 1. Install VSCE
 ```bash
-npm install -g @vscode/vsce
+# Done once:
+# npm install -g @vscode/vsce
 ```
 2. Create the .vsix
 ```bash
