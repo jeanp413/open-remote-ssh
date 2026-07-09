@@ -190,7 +190,18 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                         const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
-                        const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyHostName, proxyIdentityKeys, preferredAuthentications);
+                        // 👇 Use the jump host's own PreferredAuthentications
+                        const proxyPreferredAuths = proxyHostConfig['PreferredAuthentications']
+                            ? proxyHostConfig['PreferredAuthentications'].split(',').map(s => s.trim())
+                            : ['publickey', 'password', 'keyboard-interactive'];
+
+                        const proxyAuthHandler = this.getSSHAuthHandler(
+                            proxyUser,
+                            proxyHostName,
+                            proxyIdentityKeys,
+                            proxyPreferredAuths       // pass it here
+                        );
+
                         const proxyConnection = new SSHConnection({
                             host: !proxyStream ? proxyHostName : undefined,
                             port: !proxyStream ? proxyPort : undefined,
@@ -203,6 +214,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             authHandler: (arg0, arg1, arg2) => (proxyAuthHandler(arg0, arg1, arg2), undefined)
                         });
                         this.proxyConnections.push(proxyConnection);
+
+                        // 👇 Connect + authenticate before forwarding
+                        await proxyConnection.connect();
 
                         const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                         const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;

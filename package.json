@@ -1,15 +1,15 @@
 {
-	"name": "open-remote-ssh",
+	"name": "open-remote-ssh-copy",
 	"displayName": "Open Remote - SSH",
 	"description": "Use any remote machine with a SSH server as your development environment.",
-	"version": "0.2.0",
-	"publisher": "jeanp413",
+	"version": "0.2.1",
+	"publisher": "ai-nikolai",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/jeanp413/open-remote-ssh.git"
+		"url": "https://github.com/ai-nikolai/open-remote-ssh.git"
 	},
 	"bugs": {
-		"url": "https://github.com/jeanp413/open-remote-ssh/issues"
+		"url": "https://github.com/ai-nikolai/open-remote-ssh/issues"
 	},
 	"engines": {
 		"vscode": "^1.70.2"
