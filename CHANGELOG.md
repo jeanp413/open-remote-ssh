@@ -1,3 +1,9 @@
+## 0.2.2 
+- enhance: readme updated to reflect the new package
+
+## 0.2.1
+- feat: MFA authentication via jump host works well
+
 ## 0.2.0
 - feat: add compatibility with Code-OSS (#189)
 - remodel: use base64 encoding for install script to support csh/tcsh login shells (#296)
