@@ -1,6 +1,31 @@
-# Open Remote - SSH
+# Open Remote - SSH - Copy
 
-![Open Remote SSH](https://raw.githubusercontent.com/jeanp413/open-remote-ssh/master/docs/images/open-remote-ssh.gif)
+This is a VSCODIUM extension available on open-vsx:
+https://open-vsx.org/extension/ai-nikolai/open-remote-ssh-copy
+
+This is a shoot-off from the original implementation by Jean Pierre (https://github.com/jeanp413/open-remote-ssh). The reason for this copy is so that Multi-factor, two-factor authentication via a jump host work more smoothly. (Other custom features might follow later.)
+
+Specifically the following ssh config now works beautifully:
+
+```ssh_config
+Host jump_host
+	Hostname your_awesome_jump_host.com
+	User $USER
+	PreferredAuthentications keyboard-interactive
+
+Host final_node
+	HostName your_awesome_final_node.com
+	User $USER
+	ProxyJump jump_host
+	PreferredAuthentications password
+```
+
+This is assuming you have MFA on the jump host and then password authentication on the final node. Change it around for the correct authentication method i.e. change `PreferredAuthentications` with valid options (e.g. `publickey`, `password`, `keyboard-interactive`).
+
+
+## Previous README contents for completeness:
+
+![Open Remote SSH](https://raw.githubusercontent.com/ai-nikolai/open-remote-ssh/master/docs/images/open-remote-ssh.gif)
 
 ## SSH Host Requirements
 You can connect to a running SSH server on the following platforms.
