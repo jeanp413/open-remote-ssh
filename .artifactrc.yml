@@ -1,11 +1,11 @@
 $schema: https://raw.githubusercontent.com/zokugun/artifact/v0.12.0/schemas/v4/install.json
 artifacts:
   "@daiyam/artifact-lang-js":
-    version: 0.14.3
+    version: 0.14.7
     requires:
       - "20"
   "@daiyam/artifact-lang-ts":
-    version: 0.10.5
+    version: 0.10.6
     update:
       .xo-config.json:
         if_missing: skip
@@ -14,7 +14,7 @@ artifacts:
       tsconfig.json:
         if_exists: skip
   "@daiyam/artifact-vsx-ts":
-    version: 0.11.13
+    version: 0.11.17
     update:
       .vscodeignore:
         if_exists: skip
