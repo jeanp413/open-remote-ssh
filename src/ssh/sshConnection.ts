@@ -91,6 +91,19 @@ export default class SSHConnection extends EventEmitter {
     }
 
     /**
+     * Start a command and return its channel as soon as it's opened, without
+     * waiting for it to finish. Unlike shell(), no pty is allocated, so there's
+     * no local echo of anything written to the channel.
+     */
+    execChannel(cmd: string, options: ExecOptions = {}): Promise<ClientChannel> {
+        return this.connect().then(() => {
+            return new Promise<ClientChannel>((resolve, reject) => {
+                this.sshConnection!.exec(cmd, options, (err, stream) => err ? reject(err) : resolve(stream));
+            });
+        });
+    }
+
+    /**
      * Exec a command
      */
     exec(cmd: string, params?: Array<string>, options: ExecOptions = {}): Promise<{ stdout: string; stderr: string }> {
