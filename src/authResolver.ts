@@ -361,6 +361,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     if (!resolved) {
                         resolved = true;
                         channel.removeListener('data', onData);
+                        channel.removeListener('close', onClose);
                         clearTimeout(timer);
                         resolve(value);
                     }
@@ -372,8 +373,16 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     if (newlineIdx < 0) {
                         return;
                     }
-                    finish(buffer.slice(0, newlineIdx).trim() || undefined);
+                    // A forwarded SSH_AUTH_SOCK is always an absolute path. Anything else
+                    // (e.g. a non-POSIX remote echoing the command back verbatim) is rejected
+                    // rather than exported as a bogus value.
+                    const value = buffer.slice(0, newlineIdx).trim();
+                    finish(value.startsWith('/') ? value : undefined);
                 };
+
+                // On a non-POSIX remote the `echo`d line ends the command and the channel
+                // closes without a usable path; resolve now instead of waiting for the timeout.
+                const onClose = () => finish(undefined);
 
                 const timer = setTimeout(() => {
                     this.logger.trace('Timed out waiting for remote SSH_AUTH_SOCK');
@@ -381,6 +390,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }, 5000);
 
                 channel.on('data', onData);
+                channel.on('close', onClose);
             });
         });
     }
