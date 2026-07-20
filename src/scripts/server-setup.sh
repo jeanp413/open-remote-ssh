@@ -47,16 +47,37 @@ LOCKFILE="$TMP_DIR/server_install.lock"
 
 if command -v flock >/dev/null 2>&1; then
   exec {FD}<>"$LOCKFILE"
-  # wait 30s to acquire lock, otherwise fail
-  flock -x -w 30 $FD || print_install_results_and_exit 1
+
+  if flock --help 2>&1 | grep -q -- '-w'; then
+    # wait 30s to acquire lock, otherwise fail
+    flock -x -w 30 $FD || print_install_results_and_exit 1
+  else
+    ELAPSED=0
+
+    while [[ $ELAPSED -lt 30 ]]; do
+        if flock -n -x $FD; then
+            break
+        fi
+
+        sleep 1
+
+        ELAPSED=$((ELAPSED + 1))
+    done
+
+    if [[ $ELAPSED -ge 30 ]]; then
+      echo "Warning: flock cannot acquire the install lock"
+      print_install_results_and_exit 1
+    fi
+  fi
+
   trap "flock -u $FD; trap - EXIT INT HUP; exit" EXIT INT HUP
 else
-  echo "Warning: flock not available, skipping install lock" >&2
+  echo "Warning: flock not available, skipping install lock"
 fi
 
 # Check if platform is supported
-if ! command -v uname; then
-  echo "Error 'uname' command not found, could not get platform/arch data."
+if ! command -v uname >/dev/null 2>&1; then
+  echo "Error: 'uname' command not found, could not get platform/arch data."
   print_install_results_and_exit 1
 fi
 
@@ -75,11 +96,11 @@ case $KERNEL in
     PLATFORM="dragonfly"
     ;;
   "")
-    echo "Error uname -s yields empty result"
+    echo "Error: uname -s yields empty result"
     print_install_results_and_exit 1
     ;;
   *)
-    echo "Error platform not supported: $KERNEL"
+    echo "Error: platform not supported: $KERNEL"
     print_install_results_and_exit 1
     ;;
 esac
@@ -109,7 +130,7 @@ case $ARCH in
     SERVER_ARCH="s390x"
     ;;
   *)
-    echo "Error architecture not supported: $ARCH"
+    echo "Error: architecture not supported: $ARCH"
     print_install_results_and_exit 1
     ;;
 esac
@@ -127,7 +148,7 @@ fi
 if [[ ! -d $SERVER_DIR ]]; then
   mkdir -p $SERVER_DIR
   if (( $? > 0 )); then
-    echo "Error creating server install directory"
+    echo "Error: creating server install directory"
     print_install_results_and_exit 1
   fi
 fi
@@ -145,7 +166,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     darwin | linux | alpine | freebsd )
       ;;
     *)
-      echo "Error '$PLATFORM' needs manual installation of remote extension host"
+      echo "Error: '$PLATFORM' needs manual installation of remote extension host"
       print_install_results_and_exit 1
       ;;
   esac
@@ -159,7 +180,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
   elif command -v fetch >/dev/null 2>&1; then
     fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
   else
-    echo "Error no tool to download server binary"
+    echo "Error: no tool to download server binary"
     print_install_results_and_exit 1
   fi
 
@@ -178,7 +199,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
   if [[ ! -f $SERVER_SCRIPT ]]; then
     rm -rf $SERVER_DIR/*
-    echo "Error server contents are corrupted"
+    echo "Error: server contents are corrupted"
     print_install_results_and_exit 1
   fi
 
@@ -229,25 +250,31 @@ fi
 if [[ -f $SERVER_TOKENFILE ]]; then
   SERVER_CONNECTION_TOKEN="$(cat $SERVER_TOKENFILE)"
 else
-  echo "Error server token file not found $SERVER_TOKENFILE"
+  echo "Error: server token file not found $SERVER_TOKENFILE"
   print_install_results_and_exit 1
 fi
 
 if [[ -f $SERVER_LOGFILE ]]; then
   for i in {1..35}; do
+    if [[ -n "$(cat $SERVER_LOGFILE | grep 'Error loading shared library libstdc++.so')" ]]; then
+      echo "Error: missing libstdc++"
+      break;
+    fi
+
     LISTENING_ON="$(cat $SERVER_LOGFILE | grep -E 'Extension host agent listening on .+' | sed 's/Extension host agent listening on //')"
     if [[ -n $LISTENING_ON ]]; then
       break
     fi
+
     sleep 0.5
   done
 
   if [[ -z $LISTENING_ON ]]; then
-    echo "Error server did not start successfully"
+    echo "Error: server did not start successfully"
     print_install_results_and_exit 1
   fi
 else
-  echo "Error server log file not found $SERVER_LOGFILE"
+  echo "Error: server log file not found $SERVER_LOGFILE"
   print_install_results_and_exit 1
 fi
 
