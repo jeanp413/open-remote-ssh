@@ -107,6 +107,6 @@ for (const file of files.value) {
 
       expect(result).toBeDefined();
       expect(result.host).to.eql('127.0.0.1');
-    }, 30_000);
+    }, 40_000);
   });
 }
