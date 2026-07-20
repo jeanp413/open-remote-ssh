@@ -22,3 +22,7 @@ artifacts:
         if_exists: skip
       src/**:
         if_missing: skip
+  "@daiyam/artifact-test-vitest-ts":
+    version: 0.5.8
+    features:
+      - test

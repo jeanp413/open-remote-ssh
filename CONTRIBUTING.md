@@ -69,6 +69,13 @@ Similarly:
 - **Update documentation** if needed
 - **Commit your changes** with clear, descriptive commit messages
 
+### Testing
+
+```bash
+npm run test:images
+npm run test
+```
+
 ### Version
 
 Do not bump the version number.

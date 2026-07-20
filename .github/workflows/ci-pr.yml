@@ -1,4 +1,4 @@
-name: "CI - Pull Request: Build & Lint"
+name: "CI - Pull Request: Build, Test & Lint"
 
 on:
   pull_request:
@@ -36,6 +36,14 @@ jobs:
       - name: Build
         run: |
           npm run build
+
+      - name: Build Images
+        run: |
+          npm run test:images
+
+      - name: Test
+        run: |
+          npm run test
 
       - name: Lint code
         run: |
