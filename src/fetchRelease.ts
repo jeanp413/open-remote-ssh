@@ -1,4 +1,4 @@
-import Log from './common/logger';
+import { Log } from './common/logger';
 import * as semver from 'semver';
 import { ServerVersion } from './serverConfig';
 
