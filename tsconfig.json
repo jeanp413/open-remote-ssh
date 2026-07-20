@@ -44,7 +44,9 @@
 		]
 	},
 	"exclude": [
+		".vscode-test",
 		"node_modules",
-		".vscode-test"
+		"test",
+		"vitest.config.ts"
 	]
 }
