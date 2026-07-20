@@ -131,7 +131,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         this.logger.info(`Resolving ssh remote authority '${authority}' (attempt #${context.resolveAttempt})`);
 
         const sshDest = SSHDestination.parseEncoded(dest);
-
+        this.logger.info(`[Debug] Parsed dest hostname: ${sshDest.hostname}, user: ${sshDest.user}, port: ${sshDest.port}`);
+        
         // It looks like default values are not loaded yet when resolving a remote,
         // so let's hardcode the default values here
         const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
@@ -157,6 +158,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const sshUser = sshHostConfig['User'] || sshDest.user || os.userInfo().username || ''; // https://github.com/openssh/openssh-portable/blob/5ec5504f1d328d5bfa64280cd617c3efec4f78f3/sshconnect.c#L1561-L1562
                 const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : (sshDest.port || 22);
 
+                this.logger.info(`[Debug] Target host: ${sshUser}@${sshHostName}:${sshPort}`);
+
                 this.sshAgentSock = sshHostConfig['IdentityAgent'] || process.env['SSH_AUTH_SOCK'] || (isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined);
                 this.sshAgentSock = this.sshAgentSock ? untildify(this.sshAgentSock) : undefined;
                 const agentForward = enableAgentForwarding && (sshHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
@@ -170,18 +173,29 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 // Create proxy jump connections if any
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
+
+                this.logger.info(`[Debug] Final target resolved: ${sshUser}@${sshHostName}:${sshPort}`);
+                this.logger.info(`[Debug] SSH config HostName for '${sshDest.hostname}': ${sshHostConfig['HostName']}`);
                 if (sshHostConfig['ProxyJump']) {
-                    const proxyJumps = sshHostConfig['ProxyJump'].split(',').filter(i => !!i.trim())
+                    const rawProxyJump = sshHostConfig['ProxyJump'];
+                    this.logger.info(`[Debug] ProxyJump configured: "${rawProxyJump}"`);
+
+                    const proxyJumps = rawProxyJump.split(',').filter(i => !!i.trim())
                         .map(i => {
                             const proxy = SSHDestination.parse(i);
                             const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
                             return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
                         });
+
+                    this.logger.info(`[Debug] Number of jump hosts: ${proxyJumps.length}`);
+
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
                         const proxyHostName = proxyHostConfig['HostName'] || proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
                         const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : (proxy.port || sshPort);
+
+                        this.logger.info(`[Debug] [Jump ${i+1}/${proxyJumps.length}] Host: ${proxyUser}@${proxyHostName}:${proxyPort}`);
 
                         const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                         const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
@@ -190,7 +204,18 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                         const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
-                        const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyHostName, proxyIdentityKeys, preferredAuthentications);
+                        // Use the jump host's own PreferredAuthentications
+                        const proxyPreferredAuths = proxyHostConfig['PreferredAuthentications']
+                            ? proxyHostConfig['PreferredAuthentications'].split(',').map(s => s.trim())
+                            : ['publickey', 'password', 'keyboard-interactive'];
+
+                        const proxyAuthHandler = this.getSSHAuthHandler(
+                            proxyUser,
+                            proxyHostName,
+                            proxyIdentityKeys,
+                            proxyPreferredAuths       // pass it here
+                        );
+
                         const proxyConnection = new SSHConnection({
                             host: !proxyStream ? proxyHostName : undefined,
                             port: !proxyStream ? proxyPort : undefined,
@@ -204,10 +229,28 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         });
                         this.proxyConnections.push(proxyConnection);
 
+                        if (proxyStream) {
+                            this.logger.info(`[Debug] [Jump ${i+1}] Connecting through existing proxy stream...`);
+                        } else {
+                            this.logger.info(`[Debug] [Jump ${i+1}] Connecting directly to ${proxyHostName}:${proxyPort}`);
+                        }
+
+                        this.logger.info(`[Debug] [Jump ${i+1}] Starting SSH connection...`);
+                        await proxyConnection.connect();
+                        this.logger.info(`[Debug] [Jump ${i+1}] SSH connection established.`);
+
                         const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                         const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
                         const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(nextProxyJump[1]['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
+
+                        if (nextProxyJump) {
+                            this.logger.info(`[Debug] [Jump ${i+1}] Forwarding to next jump: ${destIP}:${destPort}`);
+                        } else {
+                            this.logger.info(`[Debug] [Jump ${i+1}] Forwarding to final target: ${destIP}:${destPort}`);
+                        }
+
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
+                        this.logger.info(`[Debug] [Jump ${i+1}] Forwarding channel established.`);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
                     let proxyArgs = splitProxyCommand(sshHostConfig['ProxyCommand'] as unknown as string | string[])
@@ -229,6 +272,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
 
                 // Create final shh connection
+                this.logger.info(`[Debug] Authentication Methods: ${preferredAuthentications}`);
                 const sshAuthHandler = this.getSSHAuthHandler(sshUser, sshHostName, identityKeys, preferredAuthentications);
 
                 this.sshConnection = new SSHConnection({
@@ -242,6 +286,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     agent,
                     authHandler: (arg0, arg1, arg2) => (sshAuthHandler(arg0, arg1, arg2), undefined),
                 });
+                this.logger.info(`[Debug] Awaiting final SSH connection...`);
                 await this.sshConnection.connect();
 
                 const envVariables: Record<string, string | null> = {};
@@ -335,65 +380,65 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         });
     }
 
-    private async openTunnel(localPort: number, remotePortOrSocketPath: number | string) {
-        localPort = localPort > 0 ? localPort : await findRandomPort();
+        private async openTunnel(localPort: number, remotePortOrSocketPath: number | string) {
+            localPort = localPort > 0 ? localPort : await findRandomPort();
 
-        const disposables: vscode.Disposable[] = [];
-        const remotePort = typeof remotePortOrSocketPath === 'number' ? remotePortOrSocketPath : undefined;
-        const remoteSocketPath = typeof remotePortOrSocketPath === 'string' ? remotePortOrSocketPath : undefined;
-        if (this.socksTunnel && remotePort) {
-            const forwardingServer = await new Promise<net.Server>((resolve, reject) => {
-                this.logger.trace(`Creating forwarding server ${localPort}(local) => ${this.socksTunnel!.localPort!}(socks) => ${remotePort}(remote)`);
-                const socksOptions: SocksClientOptions = {
-                    proxy: {
-                        host: '127.0.0.1',
-                        port: this.socksTunnel!.localPort!,
-                        type: 5
-                    },
-                    command: 'connect',
-                    destination: {
-                        host: '127.0.0.1',
-                        port: remotePort
-                    }
-                };
-                const server: net.Server = net.createServer()
-                    .on('error', reject)
-                    .on('connection', async (socket: net.Socket) => {
-                        try {
-                            const socksConn = await SocksClient.createConnection(socksOptions);
-                            socket.pipe(socksConn.socket);
-                            socksConn.socket.pipe(socket);
-                        } catch (error) {
-                            this.logger.error(`Error while creating SOCKS connection`, error);
+            const disposables: vscode.Disposable[] = [];
+            const remotePort = typeof remotePortOrSocketPath === 'number' ? remotePortOrSocketPath : undefined;
+            const remoteSocketPath = typeof remotePortOrSocketPath === 'string' ? remotePortOrSocketPath : undefined;
+            if (this.socksTunnel && remotePort) {
+                const forwardingServer = await new Promise<net.Server>((resolve, reject) => {
+                    this.logger.trace(`Creating forwarding server ${localPort}(local) => ${this.socksTunnel!.localPort!}(socks) => ${remotePort}(remote)`);
+                    const socksOptions: SocksClientOptions = {
+                        proxy: {
+                            host: '127.0.0.1',
+                            port: this.socksTunnel!.localPort!,
+                            type: 5
+                        },
+                        command: 'connect',
+                        destination: {
+                            host: '127.0.0.1',
+                            port: remotePort
                         }
-                    })
-                    .on('listening', () => resolve(server))
-                    .listen(localPort);
-            });
-            disposables.push({
-                dispose: () => forwardingServer.close(() => {
-                    this.logger.trace(`SOCKS forwading server closed`);
-                }),
-            });
-        } else {
-            this.logger.trace(`Opening tunnel ${localPort}(local) => ${remotePortOrSocketPath}(remote)`);
-            const tunnelConfig = await this.sshConnection!.addTunnel({
-                name: `ssh_tunnel_${localPort}_${remotePortOrSocketPath}`,
-                remoteAddr: '127.0.0.1',
-                remotePort,
-                remoteSocketPath,
-                localPort
-            });
-            disposables.push({
-                dispose: () => {
-                    this.sshConnection?.closeTunnel(tunnelConfig.name);
-                    this.logger.trace(`Tunnel ${tunnelConfig.name} closed`);
-                }
-            });
-        }
+                    };
+                    const server: net.Server = net.createServer()
+                        .on('error', reject)
+                        .on('connection', async (socket: net.Socket) => {
+                            try {
+                                const socksConn = await SocksClient.createConnection(socksOptions);
+                                socket.pipe(socksConn.socket);
+                                socksConn.socket.pipe(socket);
+                            } catch (error) {
+                                this.logger.error(`Error while creating SOCKS connection`, error);
+                            }
+                        })
+                        .on('listening', () => resolve(server))
+                        .listen(localPort);
+                });
+                disposables.push({
+                    dispose: () => forwardingServer.close(() => {
+                        this.logger.trace(`SOCKS forwading server closed`);
+                    }),
+                });
+            } else {
+                this.logger.trace(`Opening tunnel ${localPort}(local) => ${remotePortOrSocketPath}(remote)`);
+                const tunnelConfig = await this.sshConnection!.addTunnel({
+                    name: `ssh_tunnel_${localPort}_${remotePortOrSocketPath}`,
+                    remoteAddr: '127.0.0.1',
+                    remotePort,
+                    remoteSocketPath,
+                    localPort
+                });
+                disposables.push({
+                    dispose: () => {
+                        this.sshConnection?.closeTunnel(tunnelConfig.name);
+                        this.logger.trace(`Tunnel ${tunnelConfig.name} closed`);
+                    }
+                });
+            }
 
-        return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);
-    }
+            return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);
+        }
 
     private getSSHAuthHandler(sshUser: string, sshHostName: string, identityKeys: SSHKey[], preferredAuthentications: string[]) {
         let passwordRetryCount = PASSWORD_RETRY_COUNT;
