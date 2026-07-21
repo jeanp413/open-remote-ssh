@@ -17,7 +17,6 @@ import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
-import { isNullable } from '@zokugun/is-it-type';
 import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
@@ -110,6 +109,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     private sshConnection: SSHConnection | undefined;
     private sshAgentSock: string | undefined;
     private proxyCommandProcess: cp.ChildProcessWithoutNullStreams | undefined;
+    private agentForwardSession: ssh2.ClientChannel | undefined;
 
     private socksTunnel: SSHTunnelConfig | undefined;
     private tunnels: TunnelInfo[] = [];
@@ -246,7 +246,21 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 const envVariables: Record<string, string | null> = {};
                 if (agentForward) {
-                    envVariables['SSH_AUTH_SOCK'] = null;
+                    // The agent-forwarding socket sshd creates is scoped to the ssh channel that
+                    // requested it and is torn down as soon as that channel closes. The server
+                    // install/start script runs on its own short-lived exec channel, so any
+                    // SSH_AUTH_SOCK it reports is already stale by the time we get here. Keep a
+                    // dedicated channel open for the lifetime of the connection instead, and use
+                    // its socket path everywhere else (terminals, extension host). Agent
+                    // forwarding is best-effort: a failure here must not prevent connecting.
+                    try {
+                        const remoteAgentSock = await this.openAgentForwardSession();
+                        if (remoteAgentSock) {
+                            envVariables['SSH_AUTH_SOCK'] = remoteAgentSock;
+                        }
+                    } catch (e) {
+                        this.logger.error(`Failed to setup agent forwarding`, e);
+                    }
                 }
 
                 // Find the custom install path for this hostname (supports wildcards)
@@ -257,19 +271,13 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     serverDownloadUrlTemplate,
                     serverVersion,
                     defaultExtensions,
-                    Object.keys(envVariables),
+                    [],
                     remotePlatformMap[sshDest.hostname],
                     remoteServerListenOnSocket,
                     customInstallPath,
                     this.logger,
                     this.context.extensionPath
                 );
-
-                for (const key of Object.keys(envVariables)) {
-                    if (!isNullable(installResult[key])) {
-                        envVariables[key] = String(installResult[key]);
-                    }
-                }
 
                 // Update terminal env variables
                 this.context.environmentVariableCollection.persistent = false;
@@ -332,6 +340,58 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
                 }
             }
+        });
+    }
+
+    private openAgentForwardSession(): Promise<string | undefined> {
+        // No pty here on purpose: a pty echoes back whatever is written to the
+        // channel before the remote shell executes it, which would otherwise be
+        // mistaken for the command's actual output. `exec cat` keeps the process
+        // (and therefore the channel's agent-forwarding socket) alive indefinitely
+        // after printing the socket path once.
+        return this.sshConnection!.execChannel('echo "$SSH_AUTH_SOCK"; exec cat').then(channel => {
+            this.agentForwardSession?.close();
+            this.agentForwardSession = channel;
+
+            return new Promise<string | undefined>(resolve => {
+                let buffer = '';
+                let resolved = false;
+
+                const finish = (value: string | undefined) => {
+                    if (!resolved) {
+                        resolved = true;
+                        channel.removeListener('data', onData);
+                        channel.removeListener('close', onClose);
+                        clearTimeout(timer);
+                        resolve(value);
+                    }
+                };
+
+                const onData = (data: Buffer) => {
+                    buffer += data.toString();
+                    const newlineIdx = buffer.indexOf('\n');
+                    if (newlineIdx < 0) {
+                        return;
+                    }
+                    // A forwarded SSH_AUTH_SOCK is always an absolute path. Anything else
+                    // (e.g. a non-POSIX remote echoing the command back verbatim) is rejected
+                    // rather than exported as a bogus value.
+                    const value = buffer.slice(0, newlineIdx).trim();
+                    finish(value.startsWith('/') ? value : undefined);
+                };
+
+                // On a non-POSIX remote the `echo`d line ends the command and the channel
+                // closes without a usable path; resolve now instead of waiting for the timeout.
+                const onClose = () => finish(undefined);
+
+                const timer = setTimeout(() => {
+                    this.logger.trace('Timed out waiting for remote SSH_AUTH_SOCK');
+                    finish(undefined);
+                }, 5000);
+
+                channel.on('data', onData);
+                channel.on('close', onClose);
+            });
         });
     }
 
@@ -522,6 +582,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
     dispose() {
         disposeAll(this.tunnels);
+        this.agentForwardSession?.close();
+        this.agentForwardSession = undefined;
         // If there's proxy connections then just close the parent connection
         if (this.proxyConnections.length) {
             this.proxyConnections[0].close();
