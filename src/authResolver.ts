@@ -55,7 +55,11 @@ class TunnelInfo implements vscode.Disposable {
  * This helper mirrors OpenSSH's own ProxyCommand tokenization:
  * - whitespace separates tokens (outside quotes)
  * - double quotes group a single token
- * - backslash escapes the next character
+ * - backslash escapes the next character (on non-Windows platforms)
+ *
+ * On Windows, backslash is the path separator and is NOT treated as an
+ * escape character. This matches the behavior of Windows OpenSSH, which
+ * does not support backslash escaping in ProxyCommand values.
  *
  * Array inputs are passed through for defensive compatibility with older
  * ssh-config versions.
@@ -69,7 +73,7 @@ function splitProxyCommand(value: string | string[]): string[] {
     let hasToken = false;
     while (i < value.length) {
         const ch = value[i];
-        if (ch === '\\' && i + 1 < value.length) {
+        if (!isWindows && ch === '\\' && i + 1 < value.length) {
             cur += value[i + 1];
             i += 2;
             hasToken = true;
