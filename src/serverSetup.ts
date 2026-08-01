@@ -5,6 +5,7 @@ import { Log } from './common/logger';
 import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
+import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
 
 /**
  * Reads a script template from <extensionPath>/scripts/<templateName> and
@@ -164,7 +165,7 @@ export async function installCodeServer(
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
         release: bestRelease.build,
-        extensionIds,
+        extensionIds : sanitizeExtensionIds(extensionIds),
         envVariables,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
