@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { ParsedKey } from 'ssh2-streams';
 import * as ssh2 from 'ssh2';
-import { untildify, exists as fileExists } from '../common/files';
+import { untildify } from '../common/files';
 import { Log } from '../common/logger';
 
 const homeDir = os.homedir();
@@ -41,45 +41,73 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
         identityFiles.push(...DEFAULT_IDENTITY_FILES);
     }
 
-    const identityFileResults = await Promise.allSettled(identityFiles.map(async keyPath => {
-        const pubKeyPath = keyPath + '.pub';
-        const hasPubFile = await fileExists(pubKeyPath);
+    const fileKeys: SSHKey[] = []
 
-        if (hasPubFile) {
-            const pubBuffer = await fs.promises.readFile(pubKeyPath);
-            const pubParsed = ssh2.utils.parseKey(pubBuffer);
-            if (!(pubParsed instanceof Error) && pubParsed) {
-                return { buffer: pubBuffer, parsed: pubParsed };
+    await Promise.allSettled(identityFiles.map(async (keyPath) => {
+        const publicKeyPath = keyPath + '.pub';
+
+        let buffer: Buffer | undefined;
+
+        try {
+            buffer = await fs.promises.readFile(publicKeyPath);
+        }
+        catch(error) {
+            if (error.code !== 'ENOENT') {
+                 logger.error(`Error while loading SSH key ${publicKeyPath}:`, error);
             }
-            // .pub file exists but isn't a valid SSH key (e.g. PGP key),
-            // fall back to reading the private key file directly
-            logger.info(`Failed to parse ${pubKeyPath} (${pubParsed instanceof Error ? pubParsed.message : 'unknown error'}), falling back to private key file`);
         }
 
-        const privBuffer = await fs.promises.readFile(keyPath);
-        const privParsed = ssh2.utils.parseKey(privBuffer);
-        if (privParsed instanceof Error || !privParsed) {
-            throw privParsed || new Error(`Failed to parse key ${keyPath}`);
-        }
-        return { buffer: privBuffer, parsed: privParsed };
-    }));
-    const fileKeys: SSHKey[] = identityFileResults.map((result, i) => {
-        if (result.status === 'rejected') {
-            if (!(result.reason instanceof Error && result.reason.message.includes('ENOENT'))) {
-                logger.error(`Error while loading SSH key ${identityFiles[i]}:`, result.reason);
+        if(buffer) {
+            const result = ssh2.utils.parseKey(buffer);
+
+            if (result instanceof Error || !result) {
+                // .pub file exists but isn't a valid SSH key (e.g. PGP key),
+                // fall back to reading the private key file directly
+                logger.error(`Error while loading SSH key ${publicKeyPath}, falling back to private key file`, result ?? 'unknown error');
             }
-            return undefined;
+            else {
+                const parsedKey = Array.isArray(result) ? result[0] : result;
+                const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
+
+                fileKeys.push({
+                    filename: publicKeyPath,
+                    parsedKey,
+                    fingerprint,
+                });
+
+                return;
+            }
         }
 
-        const parsedKey = Array.isArray(result.value.parsed) ? result.value.parsed[0] : result.value.parsed;
+        try {
+            buffer = await fs.promises.readFile(keyPath);
+        }
+        catch(error) {
+            if (error.code !== 'ENOENT') {
+                 logger.error(`Error while loading SSH key ${keyPath}:`, error);
+            }
+
+            return;
+        }
+
+        const result = ssh2.utils.parseKey(buffer);
+
+        if (result instanceof Error || !result) {
+            logger.error(`Error while loading SSH key ${keyPath}:`, result);
+
+            return;
+        }
+
+        const parsedKey = Array.isArray(result) ? result[0] : result;
         const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
 
-        return {
-            filename: identityFiles[i],
+        fileKeys.push({
+            filename: keyPath,
             parsedKey,
-            fingerprint
-        };
-    }).filter(<T>(v: T | undefined): v is T => !!v);
+            fingerprint,
+            isPrivate: true,
+        });
+    }));
 
     let sshAgentParsedKeys: ParsedKey[] = [];
     try {
