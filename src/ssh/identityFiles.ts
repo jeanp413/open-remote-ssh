@@ -28,8 +28,8 @@ const DEFAULT_IDENTITY_FILES: string[] = [
 
 export interface SSHKey {
     filename: string;
-    parsedKey: ParsedKey;
-    fingerprint: string;
+    parsedKey?: ParsedKey;
+    fingerprint?: string;
     agentSupport?: boolean;
     isPrivate?: boolean;
 }
@@ -68,7 +68,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
                 const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
 
                 fileKeys.push({
-                    filename: publicKeyPath,
+                    filename: keyPath,
                     parsedKey,
                     fingerprint,
                 });
@@ -90,7 +90,15 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
         const result = ssh2.utils.parseKey(buffer);
 
         if (result instanceof Error || !result) {
-            logger.error(`Error while loading SSH key ${keyPath}:`, result);
+            if (result?.message.includes('but no passphrase given')) {
+                // needs a passphrase
+                // let's add it to the list and the AuthResolver deals with it
+                fileKeys.push({
+                    filename: keyPath,
+                });
+            } else {
+                logger.error(`Error while loading SSH key ${keyPath}:`, result);
+            }
 
             return;
         }
@@ -138,8 +146,11 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
 
     const agentKeys: SSHKey[] = [];
     const preferredIdentityKeys: SSHKey[] = [];
+
     for (const agentKey of sshAgentKeys) {
-        const foundIdx = fileKeys.findIndex(k => agentKey.parsedKey.type === k.parsedKey.type && agentKey.fingerprint === k.fingerprint);
+        const { parsedKey: { type }, fingerprint } = agentKey as { parsedKey: ParsedKey, fingerprint: string };
+        const foundIdx = fileKeys.findIndex(k => type === k.parsedKey?.type && fingerprint === k.fingerprint);
+
         if (foundIdx >= 0) {
             preferredIdentityKeys.push({ ...fileKeys[foundIdx], agentSupport: true });
             fileKeys.splice(foundIdx, 1);
@@ -147,10 +158,11 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
             agentKeys.push(agentKey);
         }
     }
+
     preferredIdentityKeys.push(...agentKeys);
     preferredIdentityKeys.push(...fileKeys);
 
-    logger.trace(`Identity keys:`, preferredIdentityKeys.length ? preferredIdentityKeys.map(k => `${k.filename} ${k.parsedKey.type} SHA256:${k.fingerprint}`).join('\n') : 'None');
+    logger.trace(`Identity keys:`, preferredIdentityKeys.length ? preferredIdentityKeys.map(k => `${k.filename} ${k.parsedKey?.type} SHA256:${k.fingerprint}`).join('\n') : 'None');
 
     return preferredIdentityKeys;
 }
