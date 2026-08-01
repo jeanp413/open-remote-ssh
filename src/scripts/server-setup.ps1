@@ -73,7 +73,9 @@ cd $SERVER_DIR
 
 # Check if server script is already installed
 if(!(Test-Path $SERVER_SCRIPT)) {
-  del vscode-server.tar.gz
+  if(Test-Path vscode-server.tar.gz) {
+    del vscode-server.tar.gz
+  }
 
   $REQUEST_ARGUMENTS = @{
     Uri="$SERVER_DOWNLOAD_URL"
@@ -87,7 +89,21 @@ if(!(Test-Path $SERVER_SCRIPT)) {
   Invoke-RestMethod @REQUEST_ARGUMENTS
 
   if(Test-Path "vscode-server.tar.gz") {
+    tar -xOf vscode-server.tar.gz > $null 2>&1
+
+    if($LastExitCode -ne 0) {
+      del vscode-server.tar.gz
+      "Error downloaded tarball is corrupt or incomplete"
+      exit 1
+    }
+
     tar -xf vscode-server.tar.gz --strip-components 1
+
+    if($LastExitCode -ne 0) {
+      del vscode-server.tar.gz
+      "Error while extracting server contents"
+      exit 1
+    }
 
     del vscode-server.tar.gz
   }
