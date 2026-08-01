@@ -5,7 +5,7 @@ import * as crypto from 'crypto';
 import type { ParsedKey } from 'ssh2-streams';
 import * as ssh2 from 'ssh2';
 import { untildify, exists as fileExists } from '../common/files';
-import Log from '../common/logger';
+import { Log } from '../common/logger';
 
 const homeDir = os.homedir();
 const PATH_SSH_CLIENT_ID_DSA = path.join(homeDir, '.ssh', '/id_dsa');

@@ -1,3 +1,11 @@
+## 0.2.0
+- feat: add compatibility with Code-OSS (#189)
+- remodel: use base64 encoding for install script to support csh/tcsh login shells (#296)
+- enhance(linux): use `flock` to prevent multiple server install scripts running in parallel (#285)
+- enhance: increase polling loop to aid slowish machines (#290)
+- refactor: rename `serverBinaryName` setting (#280)
+- refactor: extract install scripts from `serverSetup.ts` into script files (#287)
+
 ## 0.1.2
 - fix: split ProxyCommand into argv tokens before spawn (#274)
 

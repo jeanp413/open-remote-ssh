@@ -1,0 +1,85 @@
+labels:
+  - S-needs-triage
+
+body:
+  - type: markdown
+    attributes:
+      value: "# Issue Details"
+
+  - type: textarea
+    attributes:
+      label: Issue Description
+      description: Provide a detailed description of the issue. Include relevant informations.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Expected Behavior
+      description: Describe how you expect this project to behave in this situation. Include any relevant documentation links.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Actual Behavior
+      description: Describe how this project actually behaves in this situation. If it is not immediately obvious how the actual behavior differs from the expected behavior described above, please be sure to mention the deviation specifically.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Reproduction Steps
+      description: Provide a detailed set of step-by-step instructions for reproducing this issue.
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Editor Name & Version
+      placeholder: VSCode v1.110.0
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Extension Version
+      placeholder: v0.1.2
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Environment
+      description: Paste the output of `npx envinfo --system` here.
+      render: text
+      placeholder: System
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |-
+        # User Acknowledgements
+        > [!TIP]
+        > Use these links to review the existing [Issues](https://github.com/jeanp413/open-remote-ssh/issues?q=sort%3Areactions-desc).
+
+  - type: checkboxes
+    attributes:
+      label: Validations
+      description: "Before submitting the issue, please make sure you acknowledge that:"
+      options:
+        - label: I have reviewed the FAQ and confirm that my issue is NOT among them.
+          required: true
+        - label: I have searched the repository (both open and closed Issues) and confirm this is not a duplicate of an existing issue.
+          required: true
+        - label: I have checked the "Preview" tab on all text fields to ensure that everything looks right, and have wrapped all configuration and code in code blocks with a group of three backticks (` ``` `) on separate lines.
+          required: true
+
+  - type: checkboxes
+    attributes:
+      label: Contributions
+      description: Please note that Open Source projects are maintained by volunteers, where your cases might not be always relevant to the others. It would make things move faster if you could help investigate and propose solutions.
+      options:
+        - label: I am willing to submit a PR to fix this issue
+
