@@ -9,3 +9,7 @@
 /vscode.d.ts
 /vscode.proposed.*.d.ts
 /tsconfig.tsbuildinfo
+/.test/
+/coverage/
+/**/*.js
+/**/*.js.map

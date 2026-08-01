@@ -1,0 +1,12 @@
+{
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		/* Basic Options */
+		"outDir": "../.test",
+		"rootDir": "..",								/* Specify the root directory of input files. */
+		"module": "node20",
+
+		/* Source Map Options */
+		"sourceMap": true,								/* Create source map files for emitted JavaScript files. */
+	},
+}

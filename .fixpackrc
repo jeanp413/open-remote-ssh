@@ -38,6 +38,7 @@
 		"categories",
 		"peerDependencies",
 		"overrides",
+		"allowScripts",
 		"keywords"
 	]
 }

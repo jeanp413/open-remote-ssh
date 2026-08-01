@@ -6,7 +6,7 @@ import { SocksClient, SocksClientOptions } from 'socks';
 import * as vscode from 'vscode';
 import * as ssh2 from 'ssh2';
 import type { ParsedKey } from 'ssh2-streams';
-import Log from './common/logger';
+import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import SSHConfiguration from './ssh/sshConfig';
@@ -17,7 +17,7 @@ import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
-import { isNullable } from '@zokugun/is-it-type';
+import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -49,12 +49,67 @@ interface SSHKey {
     isPrivate?: boolean;
 }
 
+
+/**
+ * Split a ProxyCommand value into argv tokens.
+ *
+ * ssh-config v5.0.0 reassembles ProxyCommand's value into a single string (to
+ * preserve quoting across the param boundary), but the spawn code expects
+ * individual argv tokens. Calling `[].concat(someString)` does NOT split the
+ * string — it wraps it, so `spawn()` ends up receiving the whole command
+ * line as the executable path and fails with ENOENT. See
+ * https://github.com/jeanp413/open-remote-ssh/issues/271 and
+ * https://github.com/jeanp413/open-remote-ssh/issues/273.
+ *
+ * This helper mirrors OpenSSH's own ProxyCommand tokenization:
+ * - whitespace separates tokens (outside quotes)
+ * - double quotes group a single token
+ * - backslash escapes the next character
+ *
+ * Array inputs are passed through for defensive compatibility with older
+ * ssh-config versions.
+ */
+function splitProxyCommand(value: string | string[]): string[] {
+    if (Array.isArray(value)) {return value.slice();}
+    const out: string[] = [];
+    let cur = '';
+    let i = 0;
+    let quoted = false;
+    let hasToken = false;
+    while (i < value.length) {
+        const ch = value[i];
+        if (ch === '\\' && i + 1 < value.length) {
+            cur += value[i + 1];
+            i += 2;
+            hasToken = true;
+            continue;
+        }
+        if (ch === '"') {
+            quoted = !quoted;
+            hasToken = true;
+            i += 1;
+            continue;
+        }
+        if (!quoted && /\s/.test(ch)) {
+            if (hasToken) { out.push(cur); cur = ''; hasToken = false; }
+            i += 1;
+            continue;
+        }
+        cur += ch;
+        hasToken = true;
+        i += 1;
+    }
+    if (hasToken) {out.push(cur);}
+    return out;
+}
+
 export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode.Disposable {
 
     private proxyConnections: SSHConnection[] = [];
     private sshConnection: SSHConnection | undefined;
     private sshAgentSock: string | undefined;
     private proxyCommandProcess: cp.ChildProcessWithoutNullStreams | undefined;
+    private agentForwardSession: ssh2.ClientChannel | undefined;
 
     private socksTunnel: SSHTunnelConfig | undefined;
     private tunnels: TunnelInfo[] = [];
@@ -83,6 +138,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const enableDynamicForwarding = remoteSSHconfig.get<boolean>('enableDynamicForwarding', true)!;
         const enableAgentForwarding = remoteSSHconfig.get<boolean>('enableAgentForwarding', true)!;
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate');
+        const serverVersion = remoteSSHconfig.get<ServerVersion>('serverVersion', 'match');
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
@@ -154,7 +210,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
-                    let proxyArgs = (sshHostConfig['ProxyCommand'] as unknown as string[])
+                    let proxyArgs = splitProxyCommand(sshHostConfig['ProxyCommand'] as unknown as string | string[])
                         .map((arg) => arg.replace('%h', sshHostName).replace('%n', sshDest.hostname).replace('%p', sshPort.toString()).replace('%r', sshUser));
                     let proxyCommand = proxyArgs.shift()!;
 
@@ -190,19 +246,38 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 const envVariables: Record<string, string | null> = {};
                 if (agentForward) {
-                    envVariables['SSH_AUTH_SOCK'] = null;
+                    // The agent-forwarding socket sshd creates is scoped to the ssh channel that
+                    // requested it and is torn down as soon as that channel closes. The server
+                    // install/start script runs on its own short-lived exec channel, so any
+                    // SSH_AUTH_SOCK it reports is already stale by the time we get here. Keep a
+                    // dedicated channel open for the lifetime of the connection instead, and use
+                    // its socket path everywhere else (terminals, extension host). Agent
+                    // forwarding is best-effort: a failure here must not prevent connecting.
+                    try {
+                        const remoteAgentSock = await this.openAgentForwardSession();
+                        if (remoteAgentSock) {
+                            envVariables['SSH_AUTH_SOCK'] = remoteAgentSock;
+                        }
+                    } catch (e) {
+                        this.logger.error(`Failed to setup agent forwarding`, e);
+                    }
                 }
 
                 // Find the custom install path for this hostname (supports wildcards)
                 const customInstallPath = findServerInstallPath(sshDest.hostname, serverInstallPathMap);
 
-                const installResult = await installCodeServer(this.sshConnection, serverDownloadUrlTemplate, defaultExtensions, Object.keys(envVariables), remotePlatformMap[sshDest.hostname], remoteServerListenOnSocket, customInstallPath, this.logger);
-
-                for (const key of Object.keys(envVariables)) {
-                    if (!isNullable(installResult[key])) {
-                        envVariables[key] = String(installResult[key]);
-                    }
-                }
+                const installResult = await installCodeServer(
+                    this.sshConnection,
+                    serverDownloadUrlTemplate,
+                    serverVersion,
+                    defaultExtensions,
+                    [],
+                    remotePlatformMap[sshDest.hostname],
+                    remoteServerListenOnSocket,
+                    customInstallPath,
+                    this.logger,
+                    this.context.extensionPath
+                );
 
                 // Update terminal env variables
                 this.context.environmentVariableCollection.persistent = false;
@@ -265,6 +340,58 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
                 }
             }
+        });
+    }
+
+    private openAgentForwardSession(): Promise<string | undefined> {
+        // No pty here on purpose: a pty echoes back whatever is written to the
+        // channel before the remote shell executes it, which would otherwise be
+        // mistaken for the command's actual output. `exec cat` keeps the process
+        // (and therefore the channel's agent-forwarding socket) alive indefinitely
+        // after printing the socket path once.
+        return this.sshConnection!.execChannel('echo "$SSH_AUTH_SOCK"; exec cat').then(channel => {
+            this.agentForwardSession?.close();
+            this.agentForwardSession = channel;
+
+            return new Promise<string | undefined>(resolve => {
+                let buffer = '';
+                let resolved = false;
+
+                const finish = (value: string | undefined) => {
+                    if (!resolved) {
+                        resolved = true;
+                        channel.removeListener('data', onData);
+                        channel.removeListener('close', onClose);
+                        clearTimeout(timer);
+                        resolve(value);
+                    }
+                };
+
+                const onData = (data: Buffer) => {
+                    buffer += data.toString();
+                    const newlineIdx = buffer.indexOf('\n');
+                    if (newlineIdx < 0) {
+                        return;
+                    }
+                    // A forwarded SSH_AUTH_SOCK is always an absolute path. Anything else
+                    // (e.g. a non-POSIX remote echoing the command back verbatim) is rejected
+                    // rather than exported as a bogus value.
+                    const value = buffer.slice(0, newlineIdx).trim();
+                    finish(value.startsWith('/') ? value : undefined);
+                };
+
+                // On a non-POSIX remote the `echo`d line ends the command and the channel
+                // closes without a usable path; resolve now instead of waiting for the timeout.
+                const onClose = () => finish(undefined);
+
+                const timer = setTimeout(() => {
+                    this.logger.trace('Timed out waiting for remote SSH_AUTH_SOCK');
+                    finish(undefined);
+                }, 5000);
+
+                channel.on('data', onData);
+                channel.on('close', onClose);
+            });
         });
     }
 
@@ -367,13 +494,13 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!await fileExists(identityKey.filename)) {
                     // Try next identity file
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 
                 const keyBuffer = await fs.promises.readFile(identityKey.filename);
                 let result = ssh2.utils.parseKey(keyBuffer); // First try without passphrase
-                if (result instanceof Error && result.message === 'Encrypted private OpenSSH key detected, but no passphrase given') {
+                if (result instanceof Error && result.message.includes('but no passphrase given')) {
                     let passphraseRetryCount = PASSPHRASE_RETRY_COUNT;
                     while (result instanceof Error && passphraseRetryCount > 0) {
                         const passphrase = await vscode.window.showInputBox({
@@ -390,7 +517,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
                 if (!result || result instanceof Error) {
                     // Try next identity file
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return callback(null as any);
                 }
 
@@ -455,6 +582,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
     dispose() {
         disposeAll(this.tunnels);
+        this.agentForwardSession?.close();
+        this.agentForwardSession = undefined;
         // If there's proxy connections then just close the parent connection
         if (this.proxyConnections.length) {
             this.proxyConnections[0].close();

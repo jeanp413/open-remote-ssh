@@ -1,3 +1,28 @@
+## 0.2.0
+- feat: add compatibility with Code-OSS (#189)
+- remodel: use base64 encoding for install script to support csh/tcsh login shells (#296)
+- enhance(linux): use `flock` to prevent multiple server install scripts running in parallel (#285)
+- enhance: increase polling loop to aid slowish machines (#290)
+- refactor: rename `serverBinaryName` setting (#280)
+- refactor: extract install scripts from `serverSetup.ts` into script files (#287)
+
+## 0.1.2
+- fix: split ProxyCommand into argv tokens before spawn (#274)
+
+## 0.1.1
+- don't assume `ProxyCommand` value's type (#270)
+
+## 0.1.0
+- replace `which` with `command -v` (#215)
+- allow automatic download of remote extension host on FreeBSD (#244)
+- add remote.SSH.serverInstallPath option (#259)
+- cleanup on errors (#172)
+- typo `attemp` -> `attempt` (#185)
+- use original ssh-config dependency (#267)
+
+## 0.0.49
+- remove default `remote.SSH.serverDownloadUrlTemplate`
+
 ## 0.0.48
 - Support `%n` in ProxyCommand
 - fix: add missing direct @types/ssh2-stream dependency (#177)
