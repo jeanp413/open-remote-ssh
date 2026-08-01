@@ -3,4 +3,4 @@ rules:
     ignore:
       # allows `softprops/action-gh-release` action
       - preview.yml:78
-      - publish.yml:106
+      - publish.yml:107
