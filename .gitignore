@@ -11,3 +11,5 @@
 /tsconfig.tsbuildinfo
 /.test/
 /coverage/
+/**/*.js
+/**/*.js.map
