@@ -50,8 +50,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
 
         try {
             buffer = await fs.promises.readFile(publicKeyPath);
-        }
-        catch(error) {
+        } catch (error) {
             if (error.code !== 'ENOENT') {
                  logger.error(`Error while loading SSH key ${publicKeyPath}:`, error);
             }
@@ -64,8 +63,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
                 // .pub file exists but isn't a valid SSH key (e.g. PGP key),
                 // fall back to reading the private key file directly
                 logger.error(`Error while loading SSH key ${publicKeyPath}, falling back to private key file`, result ?? 'unknown error');
-            }
-            else {
+            } else {
                 const parsedKey = Array.isArray(result) ? result[0] : result;
                 const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
 
@@ -81,8 +79,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
 
         try {
             buffer = await fs.promises.readFile(keyPath);
-        }
-        catch(error) {
+        } catch (error) {
             if (error.code !== 'ENOENT') {
                  logger.error(`Error while loading SSH key ${keyPath}:`, error);
             }
