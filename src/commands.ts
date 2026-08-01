@@ -1,14 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { getRemoteAuthority } from './authResolver';
-import { getSSHConfigPath } from './ssh/sshConfig';
+import SSHConfiguration, { getSSHConfigPath } from './ssh/sshConfig';
 import { exists as fileExists } from './common/files';
 import SSHDestination from './ssh/sshDestination';
 
 export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
-    const host = await vscode.window.showInputBox({
-        title: 'Enter [user@]hostname[:port]'
-    });
+    const host = await promptForHost();
 
     if (!host) {
         return;
@@ -16,6 +14,55 @@ export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
 
     const sshDest = new SSHDestination(host);
     openRemoteSSHWindow(sshDest.toEncodedString(), reuseWindow);
+}
+
+/**
+ * Lists the hosts from the SSH config while still accepting an arbitrary
+ * [user@]hostname[:port]. Whatever is typed is offered as the first item, so
+ * typing a host and pressing enter keeps working exactly as it did before.
+ */
+async function promptForHost(): Promise<string | undefined> {
+    let configuredHosts: string[] = [];
+    try {
+        configuredHosts = (await SSHConfiguration.loadFromFS()).getAllConfiguredHosts();
+    } catch {
+        // Ignore and fall back to the plain input box below.
+    }
+
+    if (!configuredHosts.length) {
+        return vscode.window.showInputBox({
+            title: 'Enter [user@]hostname[:port]'
+        });
+    }
+
+    const hostItems: vscode.QuickPickItem[] = configuredHosts.map(label => ({ label }));
+
+    return new Promise<string | undefined>(resolve => {
+        const quickPick = vscode.window.createQuickPick();
+        quickPick.title = 'Connect to Host';
+        quickPick.placeholder = 'Select a configured host, or enter [user@]hostname[:port]';
+        quickPick.items = hostItems;
+
+        quickPick.onDidChangeValue(value => {
+            const typed = value.trim();
+            quickPick.items = typed && !configuredHosts.includes(typed)
+                ? [{ label: typed, description: 'Connect to this host' }, ...hostItems]
+                : hostItems;
+        });
+
+        quickPick.onDidAccept(() => {
+            const picked = quickPick.selectedItems[0]?.label ?? quickPick.value.trim();
+            resolve(picked || undefined);
+            quickPick.hide();
+        });
+
+        quickPick.onDidHide(() => {
+            resolve(undefined);
+            quickPick.dispose();
+        });
+
+        quickPick.show();
+    });
 }
 
 export function openRemoteSSHWindow(host: string, reuseWindow: boolean) {
