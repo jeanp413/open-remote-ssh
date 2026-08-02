@@ -51,7 +51,7 @@
 		"@zokugun/is-it-type": "0.8.1",
 		"glob": "13.0.6",
 		"semver": "7.8.5",
-		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
+		"simple-socks": "3.6.0",
 		"socks": "2.8.9",
 		"ssh-config": "5.2.0",
 		"ssh2": "git+https://github.com/jeanp413/ssh2#master"
