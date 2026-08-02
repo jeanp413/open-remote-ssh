@@ -41,7 +41,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
         identityFiles.push(...DEFAULT_IDENTITY_FILES);
     }
 
-    const fileKeys: SSHKey[] = []
+    const fileKeys: SSHKey[] = [];
 
     await Promise.allSettled(identityFiles.map(async (keyPath) => {
         const publicKeyPath = keyPath + '.pub';
@@ -148,7 +148,7 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
     const preferredIdentityKeys: SSHKey[] = [];
 
     for (const agentKey of sshAgentKeys) {
-        const { parsedKey: { type }, fingerprint } = agentKey as { parsedKey: ParsedKey, fingerprint: string };
+        const { parsedKey: { type }, fingerprint } = agentKey as { parsedKey: ParsedKey; fingerprint: string };
         const foundIdx = fileKeys.findIndex(k => type === k.parsedKey?.type && fingerprint === k.fingerprint);
 
         if (foundIdx >= 0) {
