@@ -18,6 +18,11 @@ You can connect to a running SSH server on the following platforms.
 
 ## Requirements
 
+**Configuration**
+
+You SSH server's configuration needs to have the following setting:
+- `AllowTcpForwarding yes`
+
 **Activation**
 
 > NOTE: Not needed in VSCodium since version 1.75
@@ -48,7 +53,8 @@ sudo apk add bash libstdc++
 
 ## SSH configuration file
 
-[OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections. To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
+[OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections.
+To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
 
 ## Note for VSCode-OSS users
 

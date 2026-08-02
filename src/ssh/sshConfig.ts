@@ -10,14 +10,14 @@ import { glob } from 'glob';
 // Only a few directives might return an array
 // https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L10
 export type HostConfiguration = {
-	CanonicalDomains?: string | string[];
-	GlobalKnownHostsFile?: string | string[];
-	Host?: string | string[];
-	IPQoS?: string | string[];
-	Match?: string | string[];
-	ProxyCommand?: string | string[];
-	SendEnv?: string | string[];
-	UserKnownHostsFile?: string | string[];
+    CanonicalDomains?: string | string[];
+    GlobalKnownHostsFile?: string | string[];
+    Host?: string | string[];
+    IPQoS?: string | string[];
+    Match?: string | string[];
+    ProxyCommand?: string | string[];
+    SendEnv?: string | string[];
+    UserKnownHostsFile?: string | string[];
 } & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
