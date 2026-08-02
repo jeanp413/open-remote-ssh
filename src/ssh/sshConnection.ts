@@ -3,10 +3,12 @@
 import { EventEmitter } from 'events';
 import * as net from 'net';
 import * as fs from 'fs';
-import * as stream from 'stream';
 import { Client, ClientChannel, ClientErrorExtensions, ExecOptions, ShellOptions, ConnectConfig } from 'ssh2';
 import { Server } from 'net';
-import { SocksConnectionInfo, createServer as createSocksServer } from 'simple-socks';
+import socks from 'simple-socks';
+// eslint-disable-next-line no-duplicate-imports
+import type { DestinationInfo, OriginInfo, ConnectionOptionsCallback } from 'simple-socks';
+import { isString } from '@zokugun/is-it-type';
 
 export interface SSHConnectConfig extends ConnectConfig {
     /** Optional Unique ID attached to ssh connection. */
@@ -282,23 +284,20 @@ export default class SSHConnection extends EventEmitter {
             return new Promise((resolve, reject) => {
                 let server: net.Server;
                 if (SSHTunnelConfig.socks) {
-                    server = createSocksServer({
-                        connectionFilter: (destination: SocksConnectionInfo, origin: SocksConnectionInfo, callback: (err?: unknown, dest?: stream.Duplex) => void) => {
-                            this.connect().then(() => {
-                                this.sshConnection!.forwardOut(
-                                    origin.address,
-                                    origin.port,
-                                    destination.address,
-                                    destination.port,
-                                    (err, stream) => {
-                                        if (err) {
-                                            this.emit(SSHConstants.CHANNEL.TUNNEL, SSHConstants.STATUS.DISCONNECT, { SSHTunnelConfig: SSHTunnelConfig, err: err });
-                                            return callback(err);
-                                        }
-                                        return callback(null, stream);
-                                    });
+                    server = socks.createServer({
+                        connectionOptions: (destination, origin, defaults, callback) => {
+                            this.createSshForwardTarget(destination, origin, (err, target) => {
+                                if (err) {
+                                    this.emit(SSHConstants.CHANNEL.TUNNEL, SSHConstants.STATUS.DISCONNECT, { SSHTunnelConfig: SSHTunnelConfig, err: err });
+                                    return callback(err);
+                                }
+
+                                return callback(null, {
+                                    ...defaults,
+                                    ...target,
+                                });
                             });
-                        }
+                        },
                     }).on('proxyError', (err: unknown) => {
                         this.emit(SSHConstants.CHANNEL.TUNNEL, SSHConstants.STATUS.DISCONNECT, { SSHTunnelConfig: SSHTunnelConfig, err: err });
                     });
@@ -373,5 +372,54 @@ export default class SSHConnection extends EventEmitter {
         }
 
         return Promise.resolve();
+    }
+
+    private createSshForwardTarget(destination: DestinationInfo, origin: OriginInfo, callback: ConnectionOptionsCallback) {
+        const ssh = this.sshConnection;
+
+        if(!ssh) {
+            return callback(new Error('Not connected'));
+        }
+
+        const forwarder = net.createServer((localSocket) => {
+            // This listener is for one SOCKS request only.
+            forwarder.close();
+
+            ssh.forwardOut(
+                origin.address,
+                origin.port,
+                destination.address,
+                destination.port,
+                (err, sshStream) => {
+                    if (err) {
+                        localSocket.destroy(err);
+                        return;
+                    }
+
+                    localSocket.pipe(sshStream);
+                    sshStream.pipe(localSocket);
+
+                    localSocket.once('close', () => sshStream.destroy());
+                    localSocket.once('error', () => sshStream.destroy());
+                    sshStream.once('close', () => localSocket.destroy());
+                    sshStream.once('error', () => localSocket.destroy());
+                },
+            );
+        });
+
+        forwarder.once('error', callback);
+
+        forwarder.listen(0, '127.0.0.1', () => {
+            const address = forwarder.address();
+
+            if(address === null || isString(address)) {
+                return callback(new Error(`Invalid address: ${address}`));
+            }
+
+            callback(null, {
+                host: address.address,
+                port: address.port,
+            });
+        });
     }
 }
