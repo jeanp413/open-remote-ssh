@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { Client, ClientChannel, ClientErrorExtensions, ExecOptions, ShellOptions, ConnectConfig } from 'ssh2';
 import { Server } from 'net';
 import socks from 'simple-socks';
+// eslint-disable-next-line no-duplicate-imports
 import type { DestinationInfo, OriginInfo, ConnectionOptionsCallback } from 'simple-socks';
 import { isString } from '@zokugun/is-it-type';
 
@@ -374,10 +375,10 @@ export default class SSHConnection extends EventEmitter {
     }
 
     private createSshForwardTarget(destination: DestinationInfo, origin: OriginInfo, callback: ConnectionOptionsCallback) {
-        const ssh = this.sshConnection
+        const ssh = this.sshConnection;
 
         if(!ssh) {
-            return callback(new Error('Not connected'))
+            return callback(new Error('Not connected'));
         }
 
         const forwarder = net.createServer((localSocket) => {
@@ -412,7 +413,7 @@ export default class SSHConnection extends EventEmitter {
             const address = forwarder.address();
 
             if(address === null || isString(address)) {
-                return callback(new Error(`Invalid address: ${address}`))
+                return callback(new Error(`Invalid address: ${address}`));
             }
 
             callback(null, {
