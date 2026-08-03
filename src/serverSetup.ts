@@ -89,8 +89,8 @@ export type ServerInstallOptions = {
     serverDownloadUrlTemplate: string;
     customInstallPath?: string;
     serverValidation: ServerValidation;
-    serverPlatform: Platform,
-    serverArch: Architecture,
+    serverPlatform: Platform;
+    serverArch: Architecture;
 };
 
 export type ServerInstallResult = {
@@ -114,9 +114,9 @@ export class ServerInstallError extends Error {
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
 export type LocalServerDownload = 'auto' | 'always' | 'never';
-export type Platform = 'alpine' | 'dragonfly' | 'freebsd' | 'linux' | 'macos' | 'windows'
-export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64'
-export type Shell = 'cmd' | 'powershell' | 'bash'
+export type Platform = 'alpine' | 'dragonfly' | 'freebsd' | 'linux' | 'macos' | 'windows';
+export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64';
+export type Shell = 'cmd' | 'powershell' | 'bash';
 
 type RemotePlatformInfo = {
     platform: Platform;
@@ -140,10 +140,10 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
                 platform = 'windows';
                 shell = 'cmd';
             } else {
-                throw new Error(`Cannot execute "uname -s", yields: ${result.stderr}`)
+                throw new Error(`Cannot execute "uname -s", yields: ${result.stderr}`);
             }
         } else if(stdout.length === 0) {
-            throw new Error(`"uname -s" yields empty result`)
+            throw new Error(`"uname -s" yields empty result`);
         } else if (stdout.includes('windows32')) {
             platform = 'windows';
             shell = 'powershell';
@@ -159,7 +159,7 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
         } else if (stdout === 'DragonFly') {
             platform = 'dragonfly';
         } else {
-            throw new Error(`platform not supported: ${stdout}`)
+            throw new Error(`platform not supported: ${stdout}`);
         }
 
         if (platform) {
@@ -176,9 +176,9 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
         const stdout = result.stdout.trim();
 
         if (result.stderr) {
-            throw new Error(`Cannot execute "uname -m", yields: ${result.stderr}`)
+            throw new Error(`Cannot execute "uname -m", yields: ${result.stderr}`);
         } else if(stdout.length === 0) {
-            throw new Error(`"uname -m" yields empty result`)
+            throw new Error(`"uname -m" yields empty result`);
         } else {
             switch (stdout) {
                 case 'x86_64':
@@ -206,7 +206,7 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
                     arch = 's390x';
                     break;
                 default:
-                    throw new Error(`architecture not supported: ${stdout}`)
+                    throw new Error(`architecture not supported: ${stdout}`);
             }
         }
     }
