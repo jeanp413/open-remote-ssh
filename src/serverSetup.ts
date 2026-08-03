@@ -89,6 +89,8 @@ export type ServerInstallOptions = {
     serverDownloadUrlTemplate: string;
     customInstallPath?: string;
     serverValidation: ServerValidation;
+    serverPlatform: Platform,
+    serverArch: Architecture,
 };
 
 export type ServerInstallResult = {
@@ -112,36 +114,52 @@ export class ServerInstallError extends Error {
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
 export type LocalServerDownload = 'auto' | 'always' | 'never';
+export type Platform = 'alpine' | 'dragonfly' | 'freebsd' | 'linux' | 'macos' | 'windows'
+export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64'
+export type Shell = 'cmd' | 'powershell' | 'bash'
 
 type RemotePlatformInfo = {
-    platform: string;
-    arch: string;
-    shell: string;
+    platform: Platform;
+    arch: Architecture;
+    shell: Shell;
 };
 
-async function detectRemotePlatform(conn: SSHConnection, platform: string | undefined, logger: Log): Promise<RemotePlatformInfo> {
-    let shell = 'powershell';
+async function detectRemotePlatform(conn: SSHConnection, platform: Platform | undefined, logger: Log): Promise<RemotePlatformInfo> {
+    let shell: 'cmd' | 'powershell' | 'bash' = 'bash';
 
     // detect platform and shell for windows
     if (!platform || platform === 'windows') {
         const result = await conn.exec('uname -s');
+        const stdout = result.stdout.trim();
 
-        if (result.stdout) {
-            if (result.stdout.includes('windows32')) {
-                platform = 'windows';
-            } else if (result.stdout.includes('MINGW64')) {
-                platform = 'windows';
-                shell = 'bash';
-            }
-        } else if (result.stderr) {
+        if (result.stderr) {
             if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
                 platform = 'windows';
-            }
-
-            if (result.stderr.includes('is not recognized as an internal or external command')) {
+                shell = 'powershell';
+            } else if (result.stderr.includes('is not recognized as an internal or external command')) {
                 platform = 'windows';
                 shell = 'cmd';
+            } else {
+                throw new Error(`Cannot execute "uname -s", yields: ${result.stderr}`)
             }
+        } else if(stdout.length === 0) {
+            throw new Error(`"uname -s" yields empty result`)
+        } else if (stdout.includes('windows32')) {
+            platform = 'windows';
+            shell = 'powershell';
+        } else if (stdout.includes('MINGW64')) {
+            platform = 'windows';
+            shell = 'bash';
+        } else if (stdout === 'Darwin') {
+            platform = 'macos';
+        } else if (stdout === 'Linux') {
+            platform = 'linux';
+        } else if (stdout === 'FreeBSD') {
+            platform = 'freebsd';
+        } else if (stdout === 'DragonFly') {
+            platform = 'dragonfly';
+        } else {
+            throw new Error(`platform not supported: ${stdout}`)
         }
 
         if (platform) {
@@ -149,44 +167,55 @@ async function detectRemotePlatform(conn: SSHConnection, platform: string | unde
         }
     }
 
-    let arch: string;
+    let arch: Architecture;
+
     if (platform === 'windows') {
         arch = 'x64';
     } else {
-        const unameResult = await conn.exec('uname -m');
-        const remoteArch = unameResult.stdout.trim();
-        switch (remoteArch) {
-            case 'x86_64':
-            case 'amd64':
-                arch = 'x64';
-                break;
-            case 'armv7l':
-            case 'armv8l':
-                arch = 'armhf';
-                break;
-            case 'arm64':
-            case 'aarch64':
-                arch = 'arm64';
-                break;
-            case 'ppc64le':
-                arch = 'ppc64le';
-                break;
-            case 'riscv64':
-                arch = 'riscv64';
-                break;
-            case 'loongarch64':
-                arch = 'loong64';
-                break;
-            case 's390x':
-                arch = 's390x';
-                break;
-            default:
-                arch = remoteArch;
-                break;
+        const result = await conn.exec('uname -m');
+        const stdout = result.stdout.trim();
+
+        if (result.stderr) {
+            throw new Error(`Cannot execute "uname -m", yields: ${result.stderr}`)
+        } else if(stdout.length === 0) {
+            throw new Error(`"uname -m" yields empty result`)
+        } else {
+            switch (stdout) {
+                case 'x86_64':
+                case 'amd64':
+                    arch = 'x64';
+                    break;
+                case 'armv7l':
+                case 'armv8l':
+                    arch = 'armhf';
+                    break;
+                case 'arm64':
+                case 'aarch64':
+                    arch = 'arm64';
+                    break;
+                case 'ppc64le':
+                    arch = 'ppc64le';
+                    break;
+                case 'riscv64':
+                    arch = 'riscv64';
+                    break;
+                case 'loongarch64':
+                    arch = 'loong64';
+                    break;
+                case 's390x':
+                    arch = 's390x';
+                    break;
+                default:
+                    throw new Error(`architecture not supported: ${stdout}`)
+            }
         }
     }
 
-    return { platform: platform || 'linux', arch, shell };
+    if (arch) {
+        logger.trace(`Detected architecture: ${arch}`);
+    }
+
+    return { platform, arch, shell };
 }
 
 function buildServerDownloadUrl(
@@ -251,17 +280,18 @@ export async function installCodeServer(
     serverVersion: ServerVersion,
     extensionIds: string[],
     envVariables: string[],
-    platform: string | undefined,
+    platform: Platform | undefined,
     useSocketPath: boolean,
     customInstallPath: string | undefined,
     logger: Log,
     extensionPath: string,
     localServerDownload: LocalServerDownload = 'auto'
 ): Promise<ServerInstallResult> {
-    const platformInfo = await detectRemotePlatform(conn, platform, logger);
-    const detectedPlatform = platformInfo.platform;
-    const shell = platformInfo.shell;
-    const remoteArch = platformInfo.arch;
+    const {
+        platform: detectedPlatform,
+        arch: detectedArch,
+        shell: detectedShell,
+    } = await detectRemotePlatform(conn, platform, logger);
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
@@ -285,24 +315,26 @@ export async function installCodeServer(
         serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
         customInstallPath,
         serverValidation: vscodeServerConfig.serverValidation,
+        serverPlatform: detectedPlatform,
+        serverArch: detectedArch,
     };
 
     let commandOutput: { stdout: string; stderr: string };
 
     if (localServerDownload === 'always') {
         logger.info('localServerDownload is always, downloading server binary locally and uploading via SFTP');
-        await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, remoteArch, customInstallPath, logger);
-        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger, extensionPath);
+        await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, detectedArch, customInstallPath, logger);
+        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, detectedShell, vscodeServerConfig, scriptId, logger, extensionPath);
     } else if (localServerDownload === 'never') {
-        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger, extensionPath);
+        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, detectedShell, vscodeServerConfig, scriptId, logger, extensionPath);
     } else {
         // auto: try remote download first, fall back to local download + SFTP on failure
-        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger, extensionPath);
+        commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, detectedShell, vscodeServerConfig, scriptId, logger, extensionPath);
 
         if (isRemoteDownloadFailure(commandOutput.stdout, commandOutput.stderr)) {
             logger.info('Remote server download failed, falling back to local download and SFTP upload');
-            await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, remoteArch, customInstallPath, logger);
-            commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, shell, vscodeServerConfig, scriptId, logger, extensionPath);
+            await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, detectedArch, customInstallPath, logger);
+            commandOutput = await runInstallScript(conn, detectedPlatform, installOptions, detectedShell, vscodeServerConfig, scriptId, logger, extensionPath);
         }
     }
 
@@ -311,7 +343,7 @@ export async function installCodeServer(
 
 async function runInstallScript(
     conn: SSHConnection,
-    detectedPlatform: string,
+    platform: string,
     installOptions: ServerInstallOptions,
     shell: string,
     vscodeServerConfig: IServerConfig,
@@ -319,7 +351,7 @@ async function runInstallScript(
     logger: Log,
     extensionPath: string,
 ): Promise<{ stdout: string; stderr: string }> {
-    if (detectedPlatform === 'windows') {
+    if (platform === 'windows') {
         const installServerScript = generatePowerShellInstallScript(installOptions, extensionPath);
 
         logger.trace('Server install command:', installServerScript);
@@ -504,7 +536,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -530,6 +562,8 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         ENV_VAR_LINES: envVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? 'true' : 'false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
+        SERVER_PLATFORM: serverPlatform,
+        SERVER_ARCH: serverArch,
     }, extensionPath);
 }
 
