@@ -1,5 +1,8 @@
+import { xtry } from '@zokugun/xtry';
 import { vi } from 'vitest';
 import * as vscode from 'vscode';
+import { fs as mfs } from './fs';
+import { isNonNullable } from '@zokugun/is-it-type';
 
 type ProgressTask = <R>(progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken) => Promise<R>;
 
@@ -82,10 +85,30 @@ const window = {
 };
 
 const workspace = {
-    getConfiguration: vi.fn(() => ({
-        get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
-        update: vi.fn(() => Promise.resolve())
-    })),
+    getConfiguration: (prefix: string) => {
+        return {
+            get: (key: string, defaultValue?: unknown) => {
+                const fileResult = xtry(() => mfs.readFileSync('/user/.config/vscodium/User/settings.json', 'utf8'));
+                if(fileResult.fails) {
+                    return defaultValue;
+                }
+
+                const jsonResult = xtry(() => JSON.parse(fileResult.value as string));
+                if(jsonResult.fails) {
+                    return defaultValue;
+                }
+
+                const fullKey = `${prefix}.${key}`;
+
+                if(isNonNullable(jsonResult.value[fullKey])) {
+                    return jsonResult.value[fullKey];
+                }
+
+                return defaultValue;
+            },
+            update: vi.fn(() => Promise.resolve())
+        };
+    },
     registerResourceLabelFormatter: vi.fn()
 };
 
