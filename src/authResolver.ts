@@ -14,10 +14,11 @@ import { gatherIdentityFiles } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer, ServerInstallError, findServerInstallPath, LocalServerDownload, Platform } from './serverSetup';
+import { installCodeServer, ServerInstallError, findServerInstallPath, LocalServerDownload } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
 import { ServerVersion } from './serverConfig';
+import { RemotePlatform } from './types';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -273,7 +274,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     serverVersion,
                     defaultExtensions,
                     [],
-                    remotePlatformMap[sshDest.hostname] as Platform | undefined,
+                    remotePlatformMap[sshDest.hostname] as RemotePlatform,
                     remoteServerListenOnSocket,
                     customInstallPath,
                     this.logger,

@@ -108,7 +108,7 @@ SERVER_DOWNLOAD_URL="$(echo "%%SERVER_DOWNLOAD_URL_TEMPLATE%%" | sed "s/\${quali
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
   case "$PLATFORM" in
-    alpine | freebsd | linux | macos )
+    alpine | darwin | freebsd | linux )
       ;;
     *)
       echo "Error: '$PLATFORM' needs manual installation of remote extension host"

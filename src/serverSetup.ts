@@ -1,12 +1,13 @@
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { Log } from './common/logger';
 import { getVSCodeServerConfig, IServerConfig, ServerVersion, ServerValidation } from './serverConfig';
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
+import { RemotePlatform } from './types';
 
 /**
  * Reads a script template from <extensionPath>/scripts/<templateName> and
@@ -114,18 +115,13 @@ export class ServerInstallError extends Error {
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
 export type LocalServerDownload = 'auto' | 'always' | 'never';
-export type Platform = 'alpine' | 'dragonfly' | 'freebsd' | 'linux' | 'macos' | 'windows';
+export type Platform = 'alpine' | 'darwin' | 'dragonfly' | 'freebsd' | 'linux' | 'windows';
 export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64';
 export type Shell = 'cmd' | 'powershell' | 'bash';
 
-type RemotePlatformInfo = {
-    platform: Platform;
-    arch: Architecture;
-    shell: Shell;
-};
-
-async function detectRemotePlatform(conn: SSHConnection, platform: Platform | undefined, logger: Log): Promise<RemotePlatformInfo> {
-    let shell: 'cmd' | 'powershell' | 'bash' = 'bash';
+async function detectPlatform(conn: SSHConnection, platform: RemotePlatform, logger: Log): Promise<{detectedPlatform: Platform; detectedArch: Architecture; detectedShell: Shell}> {
+    let detectedPlatform: Platform | undefined;
+    let detectedShell: Shell = 'bash';
 
     // detect platform and shell for windows
     if (!platform || platform === 'windows') {
@@ -134,43 +130,45 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
 
         if (result.stderr) {
             if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
-                platform = 'windows';
-                shell = 'powershell';
+                detectedPlatform = 'windows';
+                detectedShell = 'powershell';
             } else if (result.stderr.includes('is not recognized as an internal or external command')) {
-                platform = 'windows';
-                shell = 'cmd';
+                detectedPlatform = 'windows';
+                detectedShell = 'cmd';
             } else {
                 throw new Error(`Cannot execute "uname -s", yields: ${result.stderr}`);
             }
         } else if(stdout.length === 0) {
             throw new Error(`"uname -s" yields empty result`);
         } else if (stdout.includes('windows32')) {
-            platform = 'windows';
-            shell = 'powershell';
+            detectedPlatform = 'windows';
+            detectedShell = 'powershell';
         } else if (stdout.includes('MINGW64')) {
-            platform = 'windows';
-            shell = 'bash';
+            detectedPlatform = 'windows';
+            detectedShell = 'bash';
         } else if (stdout === 'Darwin') {
-            platform = 'macos';
+            detectedPlatform = 'darwin';
         } else if (stdout === 'Linux') {
-            platform = 'linux';
+            detectedPlatform = 'linux';
         } else if (stdout === 'FreeBSD') {
-            platform = 'freebsd';
+            detectedPlatform = 'freebsd';
         } else if (stdout === 'DragonFly') {
-            platform = 'dragonfly';
+            detectedPlatform = 'dragonfly';
         } else {
             throw new Error(`platform not supported: ${stdout}`);
         }
 
-        if (platform) {
-            logger.trace(`Detected platform: ${platform}, ${shell}`);
+        if (detectedPlatform) {
+            logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
         }
+    } else if(platform === 'macos') {
+        detectedPlatform = 'darwin';
     }
 
-    let arch: Architecture;
+    let detectedArch: Architecture;
 
-    if (platform === 'windows') {
-        arch = 'x64';
+    if (detectedPlatform === 'windows') {
+        detectedArch = 'x64';
     } else {
         const result = await conn.exec('uname -m');
         const stdout = result.stdout.trim();
@@ -183,27 +181,27 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
             switch (stdout) {
                 case 'x86_64':
                 case 'amd64':
-                    arch = 'x64';
+                    detectedArch = 'x64';
                     break;
                 case 'armv7l':
                 case 'armv8l':
-                    arch = 'armhf';
+                    detectedArch = 'armhf';
                     break;
                 case 'arm64':
                 case 'aarch64':
-                    arch = 'arm64';
+                    detectedArch = 'arm64';
                     break;
                 case 'ppc64le':
-                    arch = 'ppc64le';
+                    detectedArch = 'ppc64le';
                     break;
                 case 'riscv64':
-                    arch = 'riscv64';
+                    detectedArch = 'riscv64';
                     break;
                 case 'loongarch64':
-                    arch = 'loong64';
+                    detectedArch = 'loong64';
                     break;
                 case 's390x':
-                    arch = 's390x';
+                    detectedArch = 's390x';
                     break;
                 default:
                     throw new Error(`architecture not supported: ${stdout}`);
@@ -211,11 +209,11 @@ async function detectRemotePlatform(conn: SSHConnection, platform: Platform | un
         }
     }
 
-    if (arch) {
-        logger.trace(`Detected architecture: ${arch}`);
+    if (detectedArch) {
+        logger.trace(`Detected architecture: ${detectedArch}`);
     }
 
-    return { platform, arch, shell };
+    return { detectedPlatform: detectedPlatform!, detectedArch, detectedShell };
 }
 
 function buildServerDownloadUrl(
@@ -267,6 +265,7 @@ async function uploadServerBinary(
     logger.info(`Server binary uploaded successfully`);
 }
 
+// @TODO
 function isRemoteDownloadFailure(stdout: string, stderr: string): boolean {
     const combined = `${stdout}\n${stderr}`;
     return combined.includes('Error downloading server from') ||
@@ -280,18 +279,14 @@ export async function installCodeServer(
     serverVersion: ServerVersion,
     extensionIds: string[],
     envVariables: string[],
-    platform: Platform | undefined,
+    platform: RemotePlatform,
     useSocketPath: boolean,
     customInstallPath: string | undefined,
     logger: Log,
     extensionPath: string,
     localServerDownload: LocalServerDownload = 'auto'
 ): Promise<ServerInstallResult> {
-    const {
-        platform: detectedPlatform,
-        arch: detectedArch,
-        shell: detectedShell,
-    } = await detectRemotePlatform(conn, platform, logger);
+    const { detectedPlatform, detectedArch, detectedShell } = await detectPlatform(conn, platform, logger);
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
