@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { ParsedKey } from 'ssh2-streams';
 import * as ssh2 from 'ssh2';
-import { untildify, exists as fileExists } from '../common/files';
+import { untildify } from '../common/files';
 import { Log } from '../common/logger';
 
 const homeDir = os.homedir();
@@ -28,8 +28,8 @@ const DEFAULT_IDENTITY_FILES: string[] = [
 
 export interface SSHKey {
     filename: string;
-    parsedKey: ParsedKey;
-    fingerprint: string;
+    parsedKey?: ParsedKey;
+    fingerprint?: string;
     agentSupport?: boolean;
     isPrivate?: boolean;
 }
@@ -41,30 +41,78 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
         identityFiles.push(...DEFAULT_IDENTITY_FILES);
     }
 
-    const identityFileContentsResult = await Promise.allSettled(identityFiles.map(async keyPath => {
-        keyPath = await fileExists(keyPath + '.pub') ? keyPath + '.pub' : keyPath;
-        return fs.promises.readFile(keyPath);
-    }));
-    const fileKeys: SSHKey[] = identityFileContentsResult.map((result, i) => {
-        if (result.status === 'rejected') {
-            return undefined;
+    const fileKeys: SSHKey[] = [];
+
+    await Promise.allSettled(identityFiles.map(async (keyPath) => {
+        const publicKeyPath = keyPath + '.pub';
+
+        let buffer: Buffer | undefined;
+
+        try {
+            buffer = await fs.promises.readFile(publicKeyPath);
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                 logger.error(`Error while loading SSH key ${publicKeyPath}:`, error);
+            }
         }
 
-        const parsedResult = ssh2.utils.parseKey(result.value);
-        if (parsedResult instanceof Error || !parsedResult) {
-            logger.error(`Error while parsing SSH public key ${identityFiles[i]}:`, parsedResult);
-            return undefined;
+        if(buffer) {
+            const result = ssh2.utils.parseKey(buffer);
+
+            if (result instanceof Error || !result) {
+                // .pub file exists but isn't a valid SSH key (e.g. PGP key),
+                // fall back to reading the private key file directly
+                logger.error(`Error while loading SSH key ${publicKeyPath}, falling back to private key file`, result ?? 'unknown error');
+            } else {
+                const parsedKey = Array.isArray(result) ? result[0] : result;
+                const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
+
+                fileKeys.push({
+                    filename: keyPath,
+                    parsedKey,
+                    fingerprint,
+                });
+
+                return;
+            }
         }
 
-        const parsedKey = Array.isArray(parsedResult) ? parsedResult[0] : parsedResult;
+        try {
+            buffer = await fs.promises.readFile(keyPath);
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                 logger.error(`Error while loading SSH key ${keyPath}:`, error);
+            }
+
+            return;
+        }
+
+        const result = ssh2.utils.parseKey(buffer);
+
+        if (result instanceof Error || !result) {
+            if (result?.message.includes('but no passphrase given')) {
+                // needs a passphrase
+                // let's add it to the list and the AuthResolver deals with it
+                fileKeys.push({
+                    filename: keyPath,
+                });
+            } else {
+                logger.error(`Error while loading SSH key ${keyPath}:`, result);
+            }
+
+            return;
+        }
+
+        const parsedKey = Array.isArray(result) ? result[0] : result;
         const fingerprint = crypto.createHash('sha256').update(parsedKey.getPublicSSH()).digest('base64');
 
-        return {
-            filename: identityFiles[i],
+        fileKeys.push({
+            filename: keyPath,
             parsedKey,
-            fingerprint
-        };
-    }).filter(<T>(v: T | undefined): v is T => !!v);
+            fingerprint,
+            isPrivate: true,
+        });
+    }));
 
     let sshAgentParsedKeys: ParsedKey[] = [];
     try {
@@ -98,8 +146,11 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
 
     const agentKeys: SSHKey[] = [];
     const preferredIdentityKeys: SSHKey[] = [];
+
     for (const agentKey of sshAgentKeys) {
-        const foundIdx = fileKeys.findIndex(k => agentKey.parsedKey.type === k.parsedKey.type && agentKey.fingerprint === k.fingerprint);
+        const { parsedKey: { type }, fingerprint } = agentKey as { parsedKey: ParsedKey; fingerprint: string };
+        const foundIdx = fileKeys.findIndex(k => type === k.parsedKey?.type && fingerprint === k.fingerprint);
+
         if (foundIdx >= 0) {
             preferredIdentityKeys.push({ ...fileKeys[foundIdx], agentSupport: true });
             fileKeys.splice(foundIdx, 1);
@@ -107,10 +158,11 @@ export async function gatherIdentityFiles(identityFiles: string[], sshAgentSock:
             agentKeys.push(agentKey);
         }
     }
+
     preferredIdentityKeys.push(...agentKeys);
     preferredIdentityKeys.push(...fileKeys);
 
-    logger.trace(`Identity keys:`, preferredIdentityKeys.length ? preferredIdentityKeys.map(k => `${k.filename} ${k.parsedKey.type} SHA256:${k.fingerprint}`).join('\n') : 'None');
+    logger.trace(`Identity keys:`, preferredIdentityKeys.length ? preferredIdentityKeys.map(k => `${k.filename} ${k.parsedKey?.type} SHA256:${k.fingerprint}`).join('\n') : 'None');
 
     return preferredIdentityKeys;
 }

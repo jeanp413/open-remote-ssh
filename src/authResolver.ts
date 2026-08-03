@@ -10,7 +10,7 @@ import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import SSHConfiguration from './ssh/sshConfig';
-import { gatherIdentityFiles } from './ssh/identityFiles';
+import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
@@ -40,15 +40,6 @@ class TunnelInfo implements vscode.Disposable {
         disposeAll(this.disposables);
     }
 }
-
-interface SSHKey {
-    filename: string;
-    parsedKey: ParsedKey;
-    fingerprint: string;
-    agentSupport?: boolean;
-    isPrivate?: boolean;
-}
-
 
 /**
  * Split a ProxyCommand value into argv tokens.
@@ -471,27 +462,32 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             if (methodsLeft.includes('publickey') && identityKeys.length && preferredAuthentications.includes('publickey')) {
                 const identityKey = identityKeys.shift()!;
 
-                this.logger.info(`Trying publickey authentication: ${identityKey.filename} ${identityKey.parsedKey.type} SHA256:${identityKey.fingerprint}`);
+                if (identityKey.parsedKey) {
+                    this.logger.info(`Trying publickey authentication: ${identityKey.filename} ${identityKey.parsedKey.type} SHA256:${identityKey.fingerprint}`);
 
-                if (identityKey.agentSupport) {
-                    return callback({
-                        type: 'agent',
-                        username: sshUser,
-                        agent: new class extends ssh2.OpenSSHAgent {
-                            // Only return the current key
-                            override getIdentities(callback: (err: Error | undefined, publicKeys?: ParsedKey[]) => void): void {
-                                callback(undefined, [identityKey.parsedKey]);
-                            }
-                        }(this.sshAgentSock!)
-                    });
+                    if (identityKey.agentSupport) {
+                        const { parsedKey } = identityKey;
+
+                        return callback({
+                            type: 'agent',
+                            username: sshUser,
+                            agent: new class extends ssh2.OpenSSHAgent {
+                                // Only return the current key
+                                override getIdentities(callback: (err: Error | undefined, publicKeys?: ParsedKey[]) => void): void {
+                                    callback(undefined, [parsedKey]);
+                                }
+                            }(this.sshAgentSock!)
+                        });
+                    }
+                    if (identityKey.isPrivate) {
+                        return callback({
+                            type: 'publickey',
+                            username: sshUser,
+                            key: identityKey.parsedKey
+                        });
+                    }
                 }
-                if (identityKey.isPrivate) {
-                    return callback({
-                        type: 'publickey',
-                        username: sshUser,
-                        key: identityKey.parsedKey
-                    });
-                }
+
                 if (!await fileExists(identityKey.filename)) {
                     // Try next identity file
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
