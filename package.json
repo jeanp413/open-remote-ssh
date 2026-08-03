@@ -438,6 +438,11 @@
 	"categories": [
 		"Other"
 	],
+	"overrides": {
+		"release-it": {
+			"undici": "7.29.0"
+		}
+	},
 	"allowScripts": {
 		"fsevents": true
 	},
