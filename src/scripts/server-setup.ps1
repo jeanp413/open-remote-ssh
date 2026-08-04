@@ -89,7 +89,7 @@ if(!(Test-Path $SERVER_SCRIPT)) {
   Invoke-RestMethod @REQUEST_ARGUMENTS
 
   if(Test-Path "vscode-server.tar.gz") {
-    tar -xOf vscode-server.tar.gz > $null
+    tar -xOf vscode-server.tar.gz > $null 2>&1
 
     if($LastExitCode -ne 0) {
       del vscode-server.tar.gz
