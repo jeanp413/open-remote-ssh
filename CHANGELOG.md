@@ -1,3 +1,7 @@
+## 0.3.1
+
+- fix(windows): use improved command to test archive (#331)
+
 ## 0.3.0
 
 - feat: list configured SSH hosts in the Connect to Host prompt (#319)
