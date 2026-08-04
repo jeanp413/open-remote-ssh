@@ -28,7 +28,7 @@ jobs:
       - name: Get Version
         run: |
           # Get the latest tag
-          LATEST_TAG=$(git tag --sort=-v:refname | head -n1)
+          LATEST_TAG=$(git tag | tr - \~ | sort -rV | tr \~ - | head -n1)
 
           if [ -z "$LATEST_TAG" ]; then
             echo "No tags found in the repository"
