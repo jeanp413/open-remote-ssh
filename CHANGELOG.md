@@ -1,3 +1,16 @@
+## 0.3.0
+
+- feat: list configured SSH hosts in the Connect to Host prompt (#319)
+- feat: support `ForwardAgent` (#310)
+- feat: support PEM-encoded password-protected ssh keys (#249)
+- feat: add tests (#314)
+- enhance: add integrity check of the archive (#323)
+- enhance: fall back to private key when .pub file parsing fails (#268)
+- feat: use official simple-socks (#324)
+- fix(alpine): pass flock and expose error on missing libstdc++ (#315)
+- fix: sanitize the extension ids (#321)
+- fix(macos): use a fixed file descriptor due to bash3 (#326)
+
 ## 0.2.0
 - feat: add compatibility with Code-OSS (#189)
 - remodel: use base64 encoding for install script to support csh/tcsh login shells (#296)
