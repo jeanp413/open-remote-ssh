@@ -207,6 +207,7 @@ export async function installCodeServer(
                 // escape single quotes (from cmd)
                 .replace(/'/g, `''`)
                 // escape redirect (from cmd)
+                .replace(' > $null 2>&1', '')
                 .replace(/>/g, `^>`)
                 // escape new lines (from powershell/cmd)
                 .replace(/\n/g, '\'`n\'');
