@@ -46,7 +46,10 @@ print_install_results_and_exit() {
 LOCKFILE="$TMP_DIR/server_install.lock"
 
 if command -v flock >/dev/null 2>&1; then
-  exec {FD}<>"$LOCKFILE"
+  # Automatic file descriptor allocation ({FD}) requires bash >= 4.1,
+  # and macOS still ships bash 3.2, so use a fixed descriptor instead.
+  FD=9
+  exec 9<>"$LOCKFILE"
 
   if flock --help 2>&1 | grep -q -- '-w'; then
     # wait 30s to acquire lock, otherwise fail
