@@ -177,7 +177,7 @@ export async function installCodeServer(
 
     let commandOutput: { stdout: string; stderr: string };
     if (platform === 'windows') {
-        const installServerScript = generatePowerShellInstallScript(installOptions, extensionPath);
+        const installServerScript = generatePowerShellInstallScript(installOptions, extensionPath, shell);
 
         logger.trace('Server install command:', installServerScript);
 
@@ -207,7 +207,6 @@ export async function installCodeServer(
                 // escape single quotes (from cmd)
                 .replace(/'/g, `''`)
                 // escape redirect (from cmd)
-                .replace(' > $null 2>&1', '')
                 .replace(/>/g, `^>`)
                 // escape new lines (from powershell/cmd)
                 .replace(/\n/g, '\'`n\'');
@@ -323,7 +322,7 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
     }, extensionPath);
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string, shell: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -356,5 +355,6 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         ENV_VAR_LINES: envVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
+        TEST_ARCHIVE_COMMAND: shell === 'cmd' ? 'tar -tf vscode-server.tar.gz' : 'tar -xOf vscode-server.tar.gz > $null 2>&1'
     }, extensionPath);
 }
