@@ -71,6 +71,21 @@ function normalizeSSHConfig(config: SSHConfig) {
     return config;
 }
 
+async function resolveInclude(line: Section, userConfig: boolean): Promise<SSHConfig[]> {
+    const values = (line.value as string).split(',').map(s => s.trim());
+    const configs: SSHConfig[] = [];
+    for (const value of values) {
+        const includePaths = await glob(normalizeToSlash(untildify(value)), {
+            absolute: true,
+            cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
+        });
+        for (const p of includePaths) {
+            configs.push(await parseSSHConfigFromFile(p, userConfig));
+        }
+    }
+    return configs;
+}
+
 async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     let content = '';
     if (await fileExists(filePath)) {
@@ -82,22 +97,30 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
     for (let i = 0; i < config.length; i++) {
         const line = config[i];
         if (isIncludeDirective(line)) {
-            const values = (line.value as string).split(',').map(s => s.trim());
-            const configs: SSHConfig[] = [];
-            for (const value of values) {
-                const includePaths = await glob(normalizeToSlash(untildify(value)), {
-                    absolute: true,
-                    cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
-                });
-                for (const p of includePaths) {
-                    configs.push(await parseSSHConfigFromFile(p, userConfig));
+            includedConfigs.push([i, await resolveInclude(line, userConfig)]);
+        } else if (isHostSection(line)) {
+            // ssh config has no block terminator, so an `Include` written after a
+            // `Host` block is parsed as a child of that block. ssh reads the file
+            // linearly, so any `Host` the included file declares ends the enclosing
+            // block — the included lines belong next to it, not inside it.
+            const hoisted: SSHConfig[] = [];
+            for (let j = line.config.length - 1; j >= 0; j--) {
+                const child = line.config[j];
+                if (isIncludeDirective(child)) {
+                    hoisted.unshift(...await resolveInclude(child, userConfig));
+                    line.config.splice(j, 1);
                 }
             }
-            includedConfigs.push([i, configs]);
+            if (hoisted.length) {
+                includedConfigs.push([i + 1, hoisted]);
+            }
         }
     }
     for (const [idx, includeConfigs] of includedConfigs.reverse()) {
-        config.splice(idx, 1, ...includeConfigs.flat());
+        // A hoisted include is inserted after its section, everything else
+        // replaces the `Include` directive it came from.
+        const deleteCount = idx < config.length && isIncludeDirective(config[idx]) ? 1 : 0;
+        config.splice(idx, deleteCount, ...includeConfigs.flat());
     }
 
     return config;
@@ -119,10 +142,14 @@ export default class SSHConfiguration {
         const hosts = new Set<string>();
         for (const line of this.sshConfig) {
             if (isHostSection(line)) {
-                const value = Array.isArray(line.value) ? line.value[0].val : line.value;
-                const isPattern = /^!/.test(value) || /[?*]/.test(value);
-                if (!isPattern) {
-                    hosts.add(value);
+                // A single `Host` line can declare several names, all of which
+                // share the block's configuration.
+                const values = Array.isArray(line.value) ? line.value.map(v => v.val) : [line.value];
+                for (const value of values) {
+                    const isPattern = /^!/.test(value) || /[?*]/.test(value);
+                    if (!isPattern) {
+                        hosts.add(value);
+                    }
                 }
             }
         }
