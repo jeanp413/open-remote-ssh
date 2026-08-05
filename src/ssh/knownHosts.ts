@@ -19,12 +19,15 @@ export interface KnownHostsEntry {
     keyBase64: string;
     /** Anything after the key (comments some tools write), preserved on rewrite */
     suffix?: string;
+    /** The entry carries the @revoked marker: this exact key must be refused */
+    revoked?: boolean;
 }
 
 export type HostKeyVerdict =
     | { status: 'match'; entry: KnownHostsEntry }
     | { status: 'unknown' }
-    | { status: 'mismatch'; entry: KnownHostsEntry };
+    | { status: 'mismatch'; entry: KnownHostsEntry }
+    | { status: 'revoked'; entry: KnownHostsEntry };
 
 export interface KnownHosts {
     entries: KnownHostsEntry[];
@@ -83,11 +86,20 @@ export async function loadKnownHosts(hostConfig: KnownHostsFilesConfig, logger: 
             const lines = content.split(/\r?\n/);
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
-                // Marker entries (@cert-authority, @revoked) are not supported yet
-                if (!line || line.startsWith('#') || line.startsWith('@')) {
+                if (!line || line.startsWith('#')) {
                     continue;
                 }
                 const parts = line.split(/\s+/);
+                let revoked = false;
+                if (parts[0].startsWith('@')) {
+                    // @cert-authority needs certificate support in ssh2 and is
+                    // not supported yet; @revoked is honored
+                    if (parts[0] !== '@revoked') {
+                        continue;
+                    }
+                    revoked = true;
+                    parts.shift();
+                }
                 if (parts.length < 3) {
                     continue;
                 }
@@ -98,6 +110,7 @@ export async function loadKnownHosts(hostConfig: KnownHostsFilesConfig, logger: 
                     keyType: parts[1],
                     keyBase64: parts[2],
                     suffix: parts.length > 3 ? parts.slice(3).join(' ') : undefined,
+                    revoked,
                 });
             }
         } catch (e) {
@@ -187,12 +200,19 @@ export function matchesHost(entry: KnownHostsEntry, host: string, port: number, 
 export function matchHostKey(entries: KnownHostsEntry[], host: string, port: number, keyType: string, keyBase64: string, alias?: string): HostKeyVerdict {
     const sameType = entries.filter(entry => entry.keyType === keyType && matchesHost(entry, host, port, alias));
 
-    const exact = sameType.find(entry => entry.keyBase64 === keyBase64);
+    // A revoked key is refused before anything else, like OpenSSH
+    const revoked = sameType.find(entry => entry.revoked && entry.keyBase64 === keyBase64);
+    if (revoked) {
+        return { status: 'revoked', entry: revoked };
+    }
+
+    const candidates = sameType.filter(entry => !entry.revoked);
+    const exact = candidates.find(entry => entry.keyBase64 === keyBase64);
     if (exact) {
         return { status: 'match', entry: exact };
     }
-    if (sameType.length) {
-        return { status: 'mismatch', entry: sameType[0] };
+    if (candidates.length) {
+        return { status: 'mismatch', entry: candidates[0] };
     }
     return { status: 'unknown' };
 }

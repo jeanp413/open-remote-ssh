@@ -370,6 +370,11 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             case 'match':
                 this.logger.trace(`Host key for ${hostname} matches ${verdict.entry.file}:${verdict.entry.line + 1} (${keyType} ${fingerprint})`);
                 return true;
+            case 'revoked':
+                // Marked @revoked in known_hosts: refused unconditionally, no
+                // setting overrides this — same as OpenSSH
+                this.logger.error(`Host key for ${hostname} is REVOKED by ${verdict.entry.file}:${verdict.entry.line + 1} (${keyType} ${fingerprint})`);
+                return false;
             case 'unknown': {
                 // A read failure means recorded keys may be missing, so
                 // 'unknown' cannot be trusted: never auto-accept it
