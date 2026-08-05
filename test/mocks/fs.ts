@@ -4,6 +4,8 @@ import { fromCallback as u } from 'universalify';
 
 const fs = {
 	access: u(mfs.access),
+	appendFile: u(mfs.appendFile),
+	appendFileSync: mfs.appendFileSync,
 	chmod: u(mfs.chmod),
 	chown: u(mfs.chown),
 	close: u(mfs.close),
@@ -45,6 +47,7 @@ const fs = {
 
 	promises: {
 		access: mfs.promises.access,
+		appendFile: mfs.promises.appendFile,
 		chmod: mfs.promises.chmod,
 		chown: mfs.promises.chown,
 		copyFile: mfs.promises.copyFile,

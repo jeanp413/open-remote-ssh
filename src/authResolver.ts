@@ -10,6 +10,7 @@ import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import SSHConfiguration from './ssh/sshConfig';
+import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
@@ -21,6 +22,8 @@ import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
+
+export type HostVerificationPolicy = 'accept' | 'ask' | 'reject';
 
 export const REMOTE_SSH_AUTHORITY = 'ssh-remote';
 
@@ -135,6 +138,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
         const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
+        const verifyUnknownHosts = remoteSSHconfig.get<HostVerificationPolicy>('verifyUnknownHosts', 'accept')!;
+        const verifyKnownHosts = remoteSSHconfig.get<HostVerificationPolicy>('verifyKnownHosts', 'ask')!;
 
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${sshDest.hostname}`,
@@ -191,6 +196,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             strictVendor: false,
                             agentForward: proxyAgentForward,
                             agent: proxyAgent,
+                            hostVerifier: this.createHostVerifier(proxyHostName, proxyPort, proxyHostConfig, verifyUnknownHosts, verifyKnownHosts),
                             authHandler: (arg0, arg1, arg2) => (proxyAuthHandler(arg0, arg1, arg2), undefined)
                         });
                         this.proxyConnections.push(proxyConnection);
@@ -231,6 +237,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     strictVendor: false,
                     agentForward,
                     agent,
+                    hostVerifier: this.createHostVerifier(sshHostName, sshPort, sshHostConfig, verifyUnknownHosts, verifyKnownHosts),
                     authHandler: (arg0, arg1, arg2) => (sshAuthHandler(arg0, arg1, arg2), undefined),
                 });
                 await this.sshConnection.connect();
@@ -332,6 +339,125 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
             }
         });
+    }
+
+    // @types/ssh2 predates the current runtime and types the key as a string;
+    // without `hostHash` set, ssh2 actually passes the raw key blob and
+    // supports an async verify callback.
+    private createHostVerifier(hostname: string, port: number, hostConfig: KnownHostsFilesConfig, unknownPolicy: HostVerificationPolicy, knownPolicy: HostVerificationPolicy) {
+        return ((rawKey: Buffer, verify: (valid: boolean) => void) => {
+            this.checkHostKey(hostname, port, rawKey, hostConfig, unknownPolicy, knownPolicy)
+                .then(verify, e => {
+                    this.logger.error(`Error verifying host key for ${hostname}`, e);
+                    verify(false);
+                });
+        }) as unknown as ssh2.ConnectConfig['hostVerifier'];
+    }
+
+    // Note: the 'ask' prompts run inside ssh2's handshake, which is bounded by
+    // readyTimeout. An answer given after the timeout still records the key,
+    // and the retry then connects against the just-approved entry.
+    private async checkHostKey(hostname: string, port: number, rawKey: Buffer, hostConfig: KnownHostsFilesConfig, unknownPolicy: HostVerificationPolicy, knownPolicy: HostVerificationPolicy): Promise<boolean> {
+        const keyType = keyTypeOf(rawKey);
+        const keyBase64 = rawKey.toString('base64');
+        const fingerprint = keyFingerprint(rawKey);
+        const alias = hostConfig['HostKeyAlias'];
+
+        const knownHosts = await loadKnownHosts(hostConfig, this.logger);
+        const verdict = matchHostKey(knownHosts.entries, hostname, port, keyType, keyBase64, alias);
+
+        switch (verdict.status) {
+            case 'match':
+                this.logger.trace(`Host key for ${hostname} matches ${verdict.entry.file}:${verdict.entry.line + 1} (${keyType} ${fingerprint})`);
+                return true;
+            case 'unknown': {
+                // A read failure means recorded keys may be missing, so
+                // 'unknown' cannot be trusted: never auto-accept it
+                const trustStoreIncomplete = knownHosts.readFailures.length > 0;
+
+                if (unknownPolicy === 'accept' && !trustStoreIncomplete) {
+                    this.logger.info(`Adding ${keyType} host key for ${hostname} to ${knownHosts.userFile} (${fingerprint})`);
+                    await this.rememberHostKey(knownHosts.userFile, hostname, port, keyType, keyBase64, alias);
+                    return true;
+                }
+                if (unknownPolicy === 'reject') {
+                    this.logger.error(`Rejecting unknown ${keyType} host key for ${hostname} (${fingerprint}) — remote.SSH.verifyUnknownHosts is 'reject'`);
+                    return false;
+                }
+
+                const readFailureNote = trustStoreIncomplete
+                    ? `\n\nNote: ${knownHosts.readFailures.join(', ')} could not be read, so this host may in fact be recorded there.`
+                    : '';
+                const connect = 'Connect';
+                const answer = await vscode.window.showWarningMessage(
+                    `"${hostname}" has an unknown ${keyType} host key.\n\nFingerprint:\n${fingerprint}\n\nConnect and remember this key?${readFailureNote}`,
+                    { modal: true },
+                    connect
+                );
+                if (answer === connect) {
+                    if (!trustStoreIncomplete) {
+                        await this.rememberHostKey(knownHosts.userFile, hostname, port, keyType, keyBase64, alias);
+                    }
+                    return true;
+                }
+                this.logger.info(`Connection to ${hostname} cancelled at the host key prompt`);
+                return false;
+            }
+            case 'mismatch': {
+                const recordedFingerprint = keyFingerprint(Buffer.from(verdict.entry.keyBase64, 'base64'));
+                this.logger.error(`Host key for ${hostname} does not match the one recorded in ${verdict.entry.file}:${verdict.entry.line + 1}! Recorded ${recordedFingerprint}, received ${fingerprint}`);
+
+                if (knownPolicy === 'accept') {
+                    return true;
+                }
+                if (knownPolicy === 'reject') {
+                    return false;
+                }
+
+                const update = 'Update and Connect';
+                const answer = await vscode.window.showWarningMessage(
+                    `WARNING: the ${keyType} host key for "${hostname}" has changed!\n\nRecorded fingerprint:\n${recordedFingerprint}\n\nReceived fingerprint:\n${fingerprint}\n\nThis can mean the server was reinstalled — or that the connection is being intercepted.`,
+                    { modal: true },
+                    update
+                );
+                if (answer === update) {
+                    await this.updateHostKey(knownHosts, verdict.entry, hostname, port, keyType, keyBase64, alias);
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+
+    // Rewrites the entry in place when it's a single-host line in a file the
+    // user owns; otherwise (shared/wildcard lines, global files) the accepted
+    // key is appended to the user file — rewriting a shared line would re-pin
+    // every other host it names, and a global file usually isn't writable.
+    private async updateHostKey(knownHosts: KnownHosts, entry: KnownHostsEntry, hostname: string, port: number, keyType: string, keyBase64: string, alias?: string): Promise<void> {
+        let replaced = false;
+        if (knownHosts.userFiles.includes(entry.file)) {
+            try {
+                replaced = await replaceHostKey(entry, hostname, port, keyBase64, alias);
+            } catch (e) {
+                this.logger.error(`Couldn't update ${entry.file}`, e);
+            }
+        }
+        if (!replaced) {
+            await this.rememberHostKey(knownHosts.userFile, hostname, port, keyType, keyBase64, alias);
+        }
+    }
+
+    // Failing to write the file shouldn't block the connection
+    private async rememberHostKey(file: string | undefined, hostname: string, port: number, keyType: string, keyBase64: string, alias?: string): Promise<void> {
+        if (!file) {
+            // UserKnownHostsFile is 'none': connect without persisting
+            return;
+        }
+        try {
+            await appendHostKey(file, hostname, port, keyType, keyBase64, alias);
+        } catch (e) {
+            this.logger.error(`Couldn't add the host key for ${hostname} to ${file}`, e);
+        }
     }
 
     private openAgentForwardSession(): Promise<string | undefined> {
