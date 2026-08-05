@@ -22,6 +22,8 @@ export const {
 	matchHostKey,
 	appendHostKey,
 	replaceHostKey,
+	removeHostFromEntry,
+	findConflictingEntries,
 	keyFingerprint,
 	keyTypeOf,
 } = knownHosts;

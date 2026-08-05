@@ -2,7 +2,7 @@ import * as crypto from 'node:crypto';
 import { vol } from 'memfs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Log } from '../src/common/logger';
-import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, keyFingerprint, keyTypeOf } from './rewires/known-hosts';
+import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, removeHostFromEntry, findConflictingEntries, keyFingerprint, keyTypeOf } from './rewires/known-hosts';
 
 const logger = {
 	trace: () => {},
@@ -229,6 +229,17 @@ describe('loadKnownHosts', () => {
 		expect(knownHosts.userFile).toBeUndefined();
 	});
 
+	it('reports a file that exists but cannot be read', async () => {
+		vol.reset();
+		// A directory where a file is expected: exists, but readFile fails
+		vol.fromJSON({ '/kh/known_hosts/placeholder': 'x' });
+
+		const knownHosts = await loadKnownHosts({ UserKnownHostsFile: '/kh/known_hosts' }, logger);
+
+		expect(knownHosts.entries).toHaveLength(0);
+		expect(knownHosts.readFailures).to.eql(['/kh/known_hosts']);
+	});
+
 	it('survives a missing file', async () => {
 		const knownHosts = await loadKnownHosts({ UserKnownHostsFile: '/does/not/exist' }, logger);
 
@@ -350,16 +361,18 @@ describe('replaceHostKey', () => {
 		expect((vol.readFileSync(USER_FILE, 'utf8') as string).trim()).to.eql(line);
 	});
 
-	it('an appended exact entry outranks a stale wildcard line on reconnect', async () => {
-		// What authResolver does after replaceHostKey declines a shared line
+	it('appending next to a wildcard line leaves the old key trusted — which is why it is refused', async () => {
 		vol.fromJSON({ [USER_FILE]: `*.example.com ssh-ed25519 ${otherEd25519.toString('base64')}\n` });
 
 		await appendHostKey(USER_FILE, 'web1.example.com', 22, 'ssh-ed25519', ed25519Base64);
 
 		const { entries } = await loadKnownHosts({ UserKnownHostsFile: USER_FILE }, logger);
+		// The new key verifies...
 		expect(matchHostKey(entries, 'web1.example.com', 22, 'ssh-ed25519', ed25519Base64).status).to.eql('match');
-		// The other hosts on the wildcard line keep their original pin
-		expect(matchHostKey(entries, 'web2.example.com', 22, 'ssh-ed25519', otherEd25519.toString('base64')).status).to.eql('match');
+		// ...but so does the OLD one: appending doesn't retire it. Hence
+		// findConflictingEntries reports it and the caller refuses.
+		expect(matchHostKey(entries, 'web1.example.com', 22, 'ssh-ed25519', otherEd25519.toString('base64')).status).to.eql('match');
+		expect(findConflictingEntries(entries, 'web1.example.com', 22, 'ssh-ed25519', ed25519Base64)).toHaveLength(1);
 	});
 
 	it('leaves the file alone if the line changed underneath', async () => {
@@ -375,5 +388,67 @@ describe('replaceHostKey', () => {
 
 		expect(replaced).toBe(false);
 		expect(vol.readFileSync(USER_FILE, 'utf8') as string).to.eql(`something.else ssh-rsa ${rsa.toString('base64')}\n`);
+	});
+});
+
+describe('removeHostFromEntry', () => {
+	beforeEach(() => {
+		vol.reset();
+	});
+
+	async function entryFor(host: string) {
+		const { entries } = await loadKnownHosts({ UserKnownHostsFile: USER_FILE }, logger);
+		return entries.find(e => matchHostKey([e], host, 22, 'ssh-ed25519', 'x').status !== 'unknown')!;
+	}
+
+	it('drops just this host from a multi-name line, keeping the key for the others', async () => {
+		vol.fromJSON({ [USER_FILE]: `web1.example.com,web2.example.com ssh-ed25519 ${otherEd25519.toString('base64')}\n` });
+
+		expect(await removeHostFromEntry(await entryFor('web1.example.com'), 'web1.example.com', 22)).toBe(true);
+
+		const { entries } = await loadKnownHosts({ UserKnownHostsFile: USER_FILE }, logger);
+		expect(entries[0].hostsPattern).to.eql('web2.example.com');
+		expect(matchHostKey(entries, 'web1.example.com', 22, 'ssh-ed25519', otherEd25519.toString('base64')).status).to.eql('unknown');
+		expect(matchHostKey(entries, 'web2.example.com', 22, 'ssh-ed25519', otherEd25519.toString('base64')).status).to.eql('match');
+	});
+
+	it('deletes the line when this host was its only name', async () => {
+		vol.fromJSON({ [USER_FILE]: `only.example.com ssh-ed25519 ${otherEd25519.toString('base64')}\nkeep.example.com ssh-rsa ${rsa.toString('base64')}\n` });
+
+		expect(await removeHostFromEntry(await entryFor('only.example.com'), 'only.example.com', 22)).toBe(true);
+
+		const content = (vol.readFileSync(USER_FILE, 'utf8') as string).trim();
+		expect(content).to.eql(`keep.example.com ssh-rsa ${rsa.toString('base64')}`);
+	});
+
+	it('refuses a line with a wildcard, which could still match afterwards', async () => {
+		const line = `web1.example.com,*.example.com ssh-ed25519 ${otherEd25519.toString('base64')}`;
+		vol.fromJSON({ [USER_FILE]: `${line}\n` });
+
+		expect(await removeHostFromEntry(await entryFor('web1.example.com'), 'web1.example.com', 22)).toBe(false);
+		expect((vol.readFileSync(USER_FILE, 'utf8') as string).trim()).to.eql(line);
+	});
+});
+
+describe('findConflictingEntries', () => {
+	beforeEach(() => {
+		vol.reset();
+	});
+
+	it('finds every same-type entry pinning a different key, and ignores the rest', async () => {
+		const { entries } = await load({
+			[USER_FILE]: [
+				`example.com ssh-ed25519 ${otherEd25519.toString('base64')}`,   // conflict
+				`example.com ssh-rsa ${rsa.toString('base64')}`,                // other type
+				`other.com ssh-ed25519 ${otherEd25519.toString('base64')}`,     // other host
+				`@revoked example.com ssh-ed25519 ${otherEd25519.toString('base64')}`, // revoked
+				`example.com ssh-ed25519 ${ed25519Base64}`,                     // the new key itself
+			].join('\n'),
+		});
+
+		const conflicts = findConflictingEntries(entries, 'example.com', 22, 'ssh-ed25519', ed25519Base64);
+
+		expect(conflicts).toHaveLength(1);
+		expect(conflicts[0].line).to.eql(0);
 	});
 });

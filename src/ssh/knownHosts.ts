@@ -131,7 +131,7 @@ export async function loadKnownHosts(hostConfig: KnownHostsFilesConfig, logger: 
  */
 function hostNames(host: string, port: number, alias?: string): string[] {
     if (alias) {
-        return [alias];
+        return [alias.toLowerCase()];
     }
     const name = host.toLowerCase();
     return port === 22 ? [name, `[${name}]:22`] : [`[${name}]:${port}`];
@@ -139,7 +139,7 @@ function hostNames(host: string, port: number, alias?: string): string[] {
 
 function recordName(host: string, port: number, alias?: string): string {
     if (alias) {
-        return alias;
+        return alias.toLowerCase();
     }
     const name = host.toLowerCase();
     return port === 22 ? name : `[${name}]:${port}`;
@@ -251,11 +251,24 @@ export async function appendHostKey(file: string, host: string, port: number, ke
 }
 
 /**
+ * Every recorded key that would still verify this host but isn't the key it
+ * just presented. After a key change these all have to go, otherwise the old
+ * key keeps verifying and the warning was pointless.
+ */
+export function findConflictingEntries(entries: KnownHostsEntry[], host: string, port: number, keyType: string, keyBase64: string, alias?: string): KnownHostsEntry[] {
+    return entries.filter(entry =>
+        !entry.revoked
+        && entry.keyType === keyType
+        && entry.keyBase64 !== keyBase64
+        && matchesHost(entry, host, port, alias));
+}
+
+/**
  * Whether the entry's pattern denotes exactly this one host, so its key can
  * be rewritten without affecting anything else. A `|1|` hash always denotes a
  * single name; anything with commas, wildcards or negations covers more.
  */
-function coversOnlyThisHost(entry: KnownHostsEntry, host: string, port: number, alias?: string): boolean {
+export function coversOnlyThisHost(entry: KnownHostsEntry, host: string, port: number, alias?: string): boolean {
     if (entry.hostsPattern.startsWith(HASH_MAGIC)) {
         return true;
     }
@@ -277,22 +290,63 @@ export async function replaceHostKey(entry: KnownHostsEntry, host: string, port:
         return false;
     }
 
+    const suffix = entry.suffix ? ` ${entry.suffix}` : '';
+    return editEntryLine(entry, `${entry.hostsPattern} ${entry.keyType} ${keyBase64}${suffix}`);
+}
+
+/**
+ * Drops this host from a line that names several hosts, leaving the recorded
+ * key in place for the others — what `ssh-keygen -R` does. Returns false when
+ * the line can't be edited safely (any wildcard or negation could still match
+ * this host after the edit), so the caller must treat the old key as still
+ * trusted.
+ */
+export async function removeHostFromEntry(entry: KnownHostsEntry, host: string, port: number, alias?: string): Promise<boolean> {
+    if (coversOnlyThisHost(entry, host, port, alias)) {
+        return editEntryLine(entry, undefined);
+    }
+
+    const tokens = entry.hostsPattern.split(',');
+    if (tokens.some(token => /[*?]/.test(token) || token.startsWith('!'))) {
+        return false;
+    }
+
+    const names = hostNames(host, port, alias);
+    const kept = tokens.filter(token => !names.includes(token.toLowerCase()));
+    if (kept.length === tokens.length) {
+        return false;
+    }
+
+    const suffix = entry.suffix ? ` ${entry.suffix}` : '';
+    return editEntryLine(entry, kept.length ? `${kept.join(',')} ${entry.keyType} ${entry.keyBase64}${suffix}` : undefined);
+}
+
+/**
+ * Rewrites (or with `undefined`, deletes) the entry's line, but only if it
+ * still holds exactly what was parsed. That guards against the file having
+ * changed since it was loaded, and as a side effect refuses @revoked lines,
+ * whose first token is the marker rather than the host pattern.
+ *
+ * Callers editing several entries in one file must go in descending line
+ * order, since a deletion shifts every line after it.
+ */
+async function editEntryLine(entry: KnownHostsEntry, replacement: string | undefined): Promise<boolean> {
     const content = await fs.promises.readFile(entry.file, 'utf8');
     const newline = content.includes('\r\n') ? '\r\n' : '\n';
     const lines = content.split(/\r?\n/);
 
-    // Only replace the line if it still holds exactly what was parsed — this
-    // guards against the file having been rewritten since the load, and as a
-    // side effect refuses @revoked lines (their first token is the marker,
-    // not the host pattern)
     const parts = lines[entry.line]?.trim().split(/\s+/);
-    if (parts && parts[0] === entry.hostsPattern && parts[1] === entry.keyType && parts[2] === entry.keyBase64) {
-        const suffix = entry.suffix ? ` ${entry.suffix}` : '';
-        lines[entry.line] = `${entry.hostsPattern} ${entry.keyType} ${keyBase64}${suffix}`;
-        await fs.promises.writeFile(entry.file, lines.join(newline));
-        return true;
+    if (!parts || parts[0] !== entry.hostsPattern || parts[1] !== entry.keyType || parts[2] !== entry.keyBase64) {
+        return false;
     }
-    return false;
+
+    if (replacement === undefined) {
+        lines.splice(entry.line, 1);
+    } else {
+        lines[entry.line] = replacement;
+    }
+    await fs.promises.writeFile(entry.file, lines.join(newline));
+    return true;
 }
 
 export function keyFingerprint(rawKey: Buffer): string {
