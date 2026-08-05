@@ -53,6 +53,8 @@ afterEach(() => {
   // Each resolve opens tunnels on local ports; free them before the next one
   activeResolver?.dispose();
   activeResolver = undefined;
+  vscode.window.showWarningMessage.mockClear();
+  vscode.window.showErrorMessage.mockClear();
 });
 
 beforeAll(async () => {
@@ -144,6 +146,10 @@ it('refuses to connect when the recorded key differs and verifyKnownHosts is rej
 
   await expect(resolveTestHost()).rejects.toThrow();
 
+  // Refused outright: no prompt at all. Without this the test would pass
+  // with the reject policy removed, since an unanswered prompt also refuses.
+  expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+
   // The forged entry is left untouched
   expect((vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split(' ')[2]).to.eql(forgedBase64);
 }, 60_000);
@@ -153,6 +159,8 @@ it('cancelling the changed-key prompt refuses the connection', async () => {
   vscode.window.setWarningAnswer(undefined);
 
   await expect(resolveTestHost()).rejects.toThrow();
+
+  expect(vscode.window.showWarningMessage).toHaveBeenCalledOnce();
 }, 60_000);
 
 it('accepting the changed-key prompt updates the entry and connects', async () => {
@@ -162,10 +170,39 @@ it('accepting the changed-key prompt updates the entry and connects', async () =
   const result = await resolveTestHost();
   expect(result.host).to.eql('127.0.0.1');
 
+  expect(vscode.window.showWarningMessage).toHaveBeenCalledOnce();
+  // No leftover conflict, so no error about one
+  expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+
   // The forged key was replaced by the server's real one, in place
   const lines = (vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split('\n');
   expect(lines).toHaveLength(1);
   expect(lines[0].split(' ')[2]).not.to.eql(forgedBase64);
+
+  vscode.window.setWarningAnswer(undefined);
+}, 60_000);
+
+it('refuses when a wildcard line would keep trusting the old key', async () => {
+  // A wildcard line can't be edited safely, so approving the change would
+  // leave both keys trusted — the extension refuses instead.
+  // The recorded name keeps its [host]:port form — the connection is on a
+  // non-default port, so a bare hostname wouldn't match at all
+  const [name, keyType] = (vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split(' ');
+  const sharedLine = `${name},*.nowhere.invalid ${keyType} ${forgedBase64}`;
+  vol.writeFileSync(KNOWN_HOSTS, `${sharedLine}\n`);
+
+  vscode.workspace.setConfig('verifyKnownHosts', 'ask');
+  vscode.window.setWarningAnswer('Update and Connect');
+
+  await expect(resolveTestHost()).rejects.toThrow();
+
+  expect(vscode.window.showWarningMessage).toHaveBeenCalledOnce();
+  // Told the user which line still has to go
+  expect(vscode.window.showErrorMessage).toHaveBeenCalledOnce();
+  expect(vscode.window.showErrorMessage.mock.calls[0][0]).toContain('conflicting');
+
+  // The old pin is left exactly as it was — nothing half-written
+  expect((vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim()).to.eql(sharedLine);
 
   vscode.window.setWarningAnswer(undefined);
 }, 60_000);

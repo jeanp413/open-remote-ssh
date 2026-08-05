@@ -10,7 +10,7 @@ import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import SSHConfiguration from './ssh/sshConfig';
-import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
+import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, removeHostFromEntry, findConflictingEntries, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
@@ -173,11 +173,17 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
                             return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
                         });
+                    const hopPort = ([dest, cfg]: [SSHDestination, Record<string, string>]) =>
+                        (cfg['Port'] && parseInt(cfg['Port'], 10)) || dest.port || 22;
+
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
                         const proxyHostName = proxyHostConfig['HostName'] || proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
-                        const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : (proxy.port || sshPort);
+                        // A jump host doesn't inherit the target's Port, and this must
+                        // agree with the port forwardOut connects to below — the host key
+                        // is looked up under it
+                        const proxyPort = hopPort(proxyJumps[i]);
 
                         const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                         const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
@@ -203,7 +209,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                         const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                         const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
-                        const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(nextProxyJump[1]['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
+                        const destPort = nextProxyJump ? hopPort(nextProxyJump) : sshPort;
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
@@ -381,7 +387,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const trustStoreIncomplete = knownHosts.readFailures.length > 0;
 
                 if (unknownPolicy === 'accept' && !trustStoreIncomplete) {
-                    this.logger.info(`Adding ${keyType} host key for ${hostname} to ${knownHosts.userFile} (${fingerprint})`);
                     await this.rememberHostKey(knownHosts.userFile, hostname, port, keyType, keyBase64, alias);
                     return true;
                 }
@@ -395,7 +400,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     : '';
                 const connect = 'Connect';
                 const answer = await vscode.window.showWarningMessage(
-                    `"${hostname}" has an unknown ${keyType} host key.\n\nFingerprint:\n${fingerprint}\n\nConnect and remember this key?${readFailureNote}`,
+                    `"${hostname}" has an unknown ${keyType} host key.\n\nFingerprint:\n${fingerprint}\n\n${knownHosts.userFile ? 'Connect and remember this key?' : 'Connect? UserKnownHostsFile is \'none\', so this key will not be remembered.'}${readFailureNote}`,
                     { modal: true },
                     connect
                 );
@@ -428,39 +433,71 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     { modal: true },
                     update
                 );
-                if (answer === update) {
-                    await this.updateHostKey(knownHosts, verdict.entry, hostname, port, keyType, keyBase64, alias);
-                    return true;
+                if (answer !== update) {
+                    return false;
                 }
-                return false;
+
+                const surviving = await this.updateHostKey(knownHosts, hostname, port, keyType, keyBase64, alias);
+                if (surviving.length) {
+                    // The old key still verifies, so approving would leave the
+                    // host trusting both keys — exactly what the warning is
+                    // about. Refuse and say which line has to go.
+                    const where = surviving.map(e => `${e.file}:${e.line + 1}`).join(', ');
+                    this.logger.error(`Refusing to connect to ${hostname}: the previous key is still recorded in ${where}`);
+                    void vscode.window.showErrorMessage(`"${hostname}" still has a conflicting ${keyType} host key recorded in ${where}. Remove it (ssh-keygen -R) and connect again.`);
+                    return false;
+                }
+                return true;
             }
         }
     }
 
-    // Rewrites the entry in place when it's a single-host line in a file the
-    // user owns; otherwise (shared/wildcard lines, global files) the accepted
-    // key is appended to the user file — rewriting a shared line would re-pin
-    // every other host it names, and a global file usually isn't writable.
-    private async updateHostKey(knownHosts: KnownHosts, entry: KnownHostsEntry, hostname: string, port: number, keyType: string, keyBase64: string, alias?: string): Promise<void> {
-        let replaced = false;
-        if (knownHosts.userFiles.includes(entry.file)) {
+    /**
+     * Records the new key and clears every entry that still pins an older one:
+     * a single-host line is rewritten in place, a line naming several hosts
+     * loses just this host. Returns the entries that couldn't be cleared —
+     * wildcard lines and files the user doesn't own — which the caller must
+     * treat as the old key still being trusted.
+     */
+    private async updateHostKey(knownHosts: KnownHosts, hostname: string, port: number, keyType: string, keyBase64: string, alias?: string): Promise<KnownHostsEntry[]> {
+        const conflicts = findConflictingEntries(knownHosts.entries, hostname, port, keyType, keyBase64, alias);
+        const surviving: KnownHostsEntry[] = [];
+        let replacedInPlace = false;
+
+        // Descending line order: deleting a line shifts the ones after it
+        const ordered = [...conflicts].sort((a, b) => a.file === b.file ? b.line - a.line : a.file.localeCompare(b.file));
+
+        for (const entry of ordered) {
+            if (!knownHosts.userFiles.includes(entry.file)) {
+                surviving.push(entry);
+                continue;
+            }
             try {
-                replaced = await replaceHostKey(entry, hostname, port, keyBase64, alias);
+                if (!replacedInPlace && await replaceHostKey(entry, hostname, port, keyBase64, alias)) {
+                    replacedInPlace = true;
+                } else if (!await removeHostFromEntry(entry, hostname, port, alias)) {
+                    surviving.push(entry);
+                }
             } catch (e) {
                 this.logger.error(`Couldn't update ${entry.file}`, e);
+                surviving.push(entry);
             }
         }
-        if (!replaced) {
+
+        if (!replacedInPlace && !surviving.length) {
             await this.rememberHostKey(knownHosts.userFile, hostname, port, keyType, keyBase64, alias);
         }
+
+        return surviving;
     }
 
     // Failing to write the file shouldn't block the connection
     private async rememberHostKey(file: string | undefined, hostname: string, port: number, keyType: string, keyBase64: string, alias?: string): Promise<void> {
         if (!file) {
-            // UserKnownHostsFile is 'none': connect without persisting
+            this.logger.info(`Not recording the ${keyType} host key for ${hostname}: UserKnownHostsFile is 'none'`);
             return;
         }
+        this.logger.info(`Adding ${keyType} host key for ${hostname} to ${file}`);
         try {
             await appendHostKey(file, hostname, port, keyType, keyBase64, alias);
         } catch (e) {

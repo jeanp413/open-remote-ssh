@@ -67,9 +67,10 @@ const window = {
     setWarningAnswer: (answer: string | undefined) => {
         $warningAnswer = answer;
     },
-    showWarningMessage: async (_message: string, _options?: vscode.MessageOptions, ...items: string[]) => {
+    showWarningMessage: vi.fn(async (_message: string, _options?: vscode.MessageOptions, ...items: string[]) => {
         return $warningAnswer !== undefined && items.includes($warningAnswer) ? $warningAnswer : undefined;
-    },
+    }),
+    showErrorMessage: vi.fn(async () => undefined),
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showInputBox: async (options?: vscode.InputBoxOptions, _token?: vscode.CancellationToken) => {
         if(options?.title?.startsWith('Enter password for')) {
