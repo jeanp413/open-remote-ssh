@@ -35,6 +35,8 @@ const containerName = `open-remote-ssh-test-${randomUUID()}`;
 
 let hostPort: number;
 let activeResolver: InstanceType<typeof RemoteSSHResolver> | undefined;
+// The forged key written in the mismatch test, checked again after the update
+let forgedBase64: string;
 
 function resolveTestHost() {
   vscode.window.setPassword(PASSWORD);
@@ -135,15 +137,15 @@ it('refuses to connect when the recorded key differs and verifyKnownHosts is rej
   const typeBuffer = Buffer.from(keyType);
   const length = Buffer.alloc(4);
   length.writeUInt32BE(typeBuffer.length, 0);
-  const forged = Buffer.concat([length, typeBuffer, Buffer.alloc(32, 0x42)]).toString('base64');
-  vol.writeFileSync(KNOWN_HOSTS, `${name} ${keyType} ${forged}\n`);
+  forgedBase64 = Buffer.concat([length, typeBuffer, Buffer.alloc(32, 0x42)]).toString('base64');
+  vol.writeFileSync(KNOWN_HOSTS, `${name} ${keyType} ${forgedBase64}\n`);
 
   vscode.workspace.setConfig('verifyKnownHosts', 'reject');
 
   await expect(resolveTestHost()).rejects.toThrow();
 
   // The forged entry is left untouched
-  expect((vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split(' ')[2]).to.eql(forged);
+  expect((vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split(' ')[2]).to.eql(forgedBase64);
 }, 60_000);
 
 it('cancelling the changed-key prompt refuses the connection', async () => {
@@ -160,9 +162,10 @@ it('accepting the changed-key prompt updates the entry and connects', async () =
   const result = await resolveTestHost();
   expect(result.host).to.eql('127.0.0.1');
 
-  // The forged key was replaced by the server's real one
-  const [, , keyBase64] = (vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split(' ');
-  expect(Buffer.from(keyBase64, 'base64').subarray(4 + 11).equals(Buffer.alloc(32, 0x42))).toBe(false);
+  // The forged key was replaced by the server's real one, in place
+  const lines = (vol.readFileSync(KNOWN_HOSTS, 'utf8') as string).trim().split('\n');
+  expect(lines).toHaveLength(1);
+  expect(lines[0].split(' ')[2]).not.to.eql(forgedBase64);
 
   vscode.window.setWarningAnswer(undefined);
 }, 60_000);

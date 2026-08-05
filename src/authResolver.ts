@@ -400,6 +400,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     connect
                 );
                 if (answer === connect) {
+                    // Don't persist while the trust store is unreadable: the
+                    // key may already be recorded in the unreadable file, and
+                    // appending a duplicate would mask the actual problem
                     if (!trustStoreIncomplete) {
                         await this.rememberHostKey(knownHosts.userFile, hostname, port, keyType, keyBase64, alias);
                     }
