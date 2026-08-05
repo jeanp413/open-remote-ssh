@@ -14,10 +14,11 @@ import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
-import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
+import { installCodeServer, ServerInstallError, findServerInstallPath, LocalServerDownload } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
 import { ServerVersion } from './serverConfig';
+import { RemotePlatform } from './types';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -131,6 +132,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate');
         const serverVersion = remoteSSHconfig.get<ServerVersion>('serverVersion', 'match');
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
+        const localServerDownload = remoteSSHconfig.get<LocalServerDownload>('localServerDownload', 'auto');
         const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
@@ -263,11 +265,12 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     serverVersion,
                     defaultExtensions,
                     [],
-                    remotePlatformMap[sshDest.hostname],
+                    remotePlatformMap[sshDest.hostname] as RemotePlatform,
                     remoteServerListenOnSocket,
                     customInstallPath,
                     this.logger,
-                    this.context.extensionPath
+                    this.context.extensionPath,
+                    localServerDownload,
                 );
 
                 // Update terminal env variables

@@ -139,7 +139,7 @@
 				},
 				"remote.SSH.serverDownloadUrlTemplate": {
 					"type": "string",
-					"description": "The URL from where the vscode server will be downloaded. You can use the following variables and they will be replaced dynamically:\n- ${quality}: vscode server quality, e.g. stable or insiders\n- ${version}: vscode server version, e.g. 1.69.0\n- ${commit}: vscode server release commit\n- ${arch}: vscode server arch, e.g. x64, armhf, arm64\n- ${release}: release number, vscodium only https://github.com/VSCodium/vscodium/pull/1192",
+					"description": "The URL from where the server binary will be downloaded. You can use the following variables and they will be replaced dynamically:\n- ${quality}: vscode server quality, e.g. stable or insiders\n- ${version}: vscode server version, e.g. 1.69.0\n- ${commit}: vscode server release commit\n- ${arch}: vscode server arch, e.g. x64, armhf, arm64\n- ${release}: release number, vscodium only https://github.com/VSCodium/vscodium/pull/1192",
 					"scope": "application"
 				},
 				"remote.SSH.remotePlatform": {
@@ -175,6 +175,22 @@
 					"description": "The name of the server binary, use this **only if** you are using a client without a corresponding server release",
 					"scope": "application",
 					"default": ""
+				},
+				"remote.SSH.localServerDownload": {
+					"type": "string",
+					"description": "Controls whether the server binary is downloaded locally and transferred to the remote host via SFTP. 'auto' tries downloading on the remote first, then falls back to downloading locally and transferring via SFTP. 'always' always downloads locally and transfers via SFTP. 'never' only downloads directly on the remote machine.",
+					"scope": "application",
+					"default": "auto",
+					"enum": [
+						"auto",
+						"always",
+						"never"
+					],
+					"enumDescriptions": [
+						"Try remote download first, fall back to local download + SFTP transfer (default)",
+						"Always download locally and transfer via SFTP",
+						"Only download directly on the remote machine (current behavior)"
+					]
 				},
 				"remote.SSH.serverVersion": {
 					"type": "string",

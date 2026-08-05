@@ -11,7 +11,7 @@ import { runDocker } from './utils/run-docker';
 import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
 
-const ROOT = fse.join('.', 'test', 'fixtures', 'default');
+const ROOT = fse.absolute('.', 'test', 'fixtures');
 const SERVER_SETUP = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
 
 type ClientOptions = {
@@ -24,11 +24,16 @@ type ServerOptions = {
   password: string;
 };
 
+type ExpectedResult = {
+  log?: {level: string; message: string}[];
+};
+
 const files = fse.walk(ROOT, {
   absolute: true,
   onlyFiles: true,
   collect: true,
   filter: (item) => item.path.endsWith('.yml'),
+  traverseAll: true,
 });
 
 if (files.fails) {
@@ -36,7 +41,7 @@ if (files.fails) {
 }
 
 for (const file of files.value) {
-  const name = fse.leafName(file.path, 1);
+  const name = file.path.slice(ROOT.length + 1).replace(/\.yml$/, '').replaceAll(fse.separator, '-');
   const content = fse.readFile(file.path, 'utf8');
   if (content.fails) {
     throw content.error;
@@ -47,7 +52,7 @@ for (const file of files.value) {
     throw document.error;
   }
 
-  const { client, server } = document.value as { client: ClientOptions; server: ServerOptions };
+  const { client, server, expected } = document.value as { client: ClientOptions; server: ServerOptions; expected: ExpectedResult };
   const containerName = `open-remote-ssh-test-${randomUUID()}`;
 
   describe(name, async () => {
@@ -91,6 +96,7 @@ for (const file of files.value) {
     });
 
     it(`test-${name}`, async () => {
+      vol.mkdirSync('/tmp');
       vol.fromJSON({
         ...client.files,
         '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP,
@@ -98,7 +104,7 @@ for (const file of files.value) {
 
       vscode.window.setPassword(server.password);
 
-      const logger = new Log('Remote - SSH');
+      const logger = new Log('Remote - SSH', Boolean(expected?.log));
       const extContext = new vscode.ExtensionContext();
       const remoteSSHResolver = new RemoteSSHResolver(extContext, logger);
       const remoteContext = new vscode.RemoteAuthorityResolverContext();
@@ -107,6 +113,17 @@ for (const file of files.value) {
 
       expect(result).toBeDefined();
       expect(result.host).to.eql('127.0.0.1');
+
+      if(expected?.log) {
+        for(const {level, message} of expected.log) {
+          if(message.startsWith('!')) {
+            expect(logger.hasInclusiveMessage(level, message.slice(1))).to.eql(false);
+          }
+          else {
+            expect(logger.hasInclusiveMessage(level, message)).to.eql(true);
+          }
+        }
+      }
     }, 40_000);
   });
 }

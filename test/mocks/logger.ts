@@ -7,8 +7,13 @@ const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true' || proce
 type LogLevel = 'Trace' | 'Info' | 'Error';
 
 export class Log {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    constructor(_name: string) {
+    private _messages?: {level: string; message: string}[];
+
+     
+    constructor(_name: string, track: boolean) {
+        if(track) {
+            this._messages = [];
+        }
     }
 
     public trace(message: string, data?: unknown): void {
@@ -31,6 +36,10 @@ export class Log {
                 console.log(toString(data));
             }
         }
+
+        if(this._messages) {
+            this._messages.push({level: level.toLowerCase(), message});
+        }
     }
 
     private now(): string {
@@ -45,5 +54,19 @@ export class Log {
     }
 
     public dispose() {
+    }
+
+    public hasInclusiveMessage(level: string, message: string): boolean {
+        if(!this._messages) {
+            return false;
+        }
+
+        for(const record of this._messages) {
+            if(record.level === level && record.message.includes(message)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
