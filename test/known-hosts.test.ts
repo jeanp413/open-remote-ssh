@@ -130,6 +130,35 @@ describe('matchHostKey', () => {
 		expect(matchHostKey(entries, 'localhost', 9922, 'ssh-ed25519', ed25519Base64, 'stage').status).to.eql('match');
 		expect(matchHostKey(entries, 'localhost', 9922, 'ssh-ed25519', ed25519Base64).status).to.eql('unknown');
 	});
+
+	it('refuses a key marked @revoked, even when another entry matches it', async () => {
+		const { entries } = await load({
+			[USER_FILE]: [
+				`example.com ssh-ed25519 ${ed25519Base64}`,
+				`@revoked example.com ssh-ed25519 ${ed25519Base64}`,
+			].join('\n'),
+		});
+
+		expect(matchHostKey(entries, 'example.com', 22, 'ssh-ed25519', ed25519Base64).status).to.eql('revoked');
+	});
+
+	it('a @revoked entry for a different key does not affect the presented one', async () => {
+		const { entries } = await load({
+			[USER_FILE]: [
+				`@revoked example.com ssh-ed25519 ${otherEd25519.toString('base64')}`,
+				`example.com ssh-ed25519 ${ed25519Base64}`,
+			].join('\n'),
+		});
+
+		expect(matchHostKey(entries, 'example.com', 22, 'ssh-ed25519', ed25519Base64).status).to.eql('match');
+	});
+
+	it('a lone @revoked entry does not count as a recorded key', async () => {
+		const { entries } = await load({ [USER_FILE]: `@revoked example.com ssh-ed25519 ${otherEd25519.toString('base64')}\n` });
+
+		// The presented (different) key is unknown, not a mismatch against the revoked one
+		expect(matchHostKey(entries, 'example.com', 22, 'ssh-ed25519', ed25519Base64).status).to.eql('unknown');
+	});
 });
 
 describe('loadKnownHosts', () => {
@@ -144,7 +173,7 @@ describe('loadKnownHosts', () => {
 		expect(entries[1].keyType).to.eql('ssh-rsa');
 	});
 
-	it('skips comments, blanks, markers and malformed lines', async () => {
+	it('skips comments, blanks, @cert-authority and malformed lines', async () => {
 		const { entries } = await load({
 			[USER_FILE]: [
 				'# a comment',
@@ -156,6 +185,14 @@ describe('loadKnownHosts', () => {
 		});
 
 		expect(entries).toHaveLength(1);
+		expect(entries[0].hostsPattern).to.eql('example.com');
+	});
+
+	it('keeps @revoked entries, flagged as revoked', async () => {
+		const { entries } = await load({ [USER_FILE]: `@revoked example.com ssh-ed25519 ${ed25519Base64}\n` });
+
+		expect(entries).toHaveLength(1);
+		expect(entries[0].revoked).toBe(true);
 		expect(entries[0].hostsPattern).to.eql('example.com');
 	});
 
