@@ -145,6 +145,9 @@ function recordName(host: string, port: number, alias?: string): string {
     return port === 22 ? name : `[${name}]:${port}`;
 }
 
+// A hashed host field is `|1|base64(salt)|base64(HMAC-SHA1(salt, name))` and
+// always denotes a single name — there's no way to tell which one without
+// guessing, which is the point of HashKnownHosts.
 function matchesHashedPattern(pattern: string, names: string[]): boolean {
     const [salt, hash] = pattern.substring(HASH_MAGIC.length).split(HASH_DELIM);
     if (!salt || !hash) {
@@ -166,6 +169,9 @@ function patternToRegExp(pattern: string): RegExp {
     return new RegExp(`^${escaped}$`, 'i');
 }
 
+// OpenSSH semantics: the line applies when at least one positive pattern
+// matches AND no negated pattern does. A `!` match vetoes the whole line
+// immediately; a line of only negations can therefore never match.
 function matchesPlainPatterns(patterns: string, names: string[]): boolean {
     let matched = false;
     for (const raw of patterns.split(',')) {
@@ -175,7 +181,6 @@ function matchesPlainPatterns(patterns: string, names: string[]): boolean {
             continue;
         }
         if (names.some(name => patternToRegExp(pattern).test(name))) {
-            // A negated match excludes the whole line
             if (negated) {
                 return false;
             }
@@ -276,7 +281,10 @@ export async function replaceHostKey(entry: KnownHostsEntry, host: string, port:
     const newline = content.includes('\r\n') ? '\r\n' : '\n';
     const lines = content.split(/\r?\n/);
 
-    // Only replace the line if it still holds what was parsed
+    // Only replace the line if it still holds exactly what was parsed — this
+    // guards against the file having been rewritten since the load, and as a
+    // side effect refuses @revoked lines (their first token is the marker,
+    // not the host pattern)
     const parts = lines[entry.line]?.trim().split(/\s+/);
     if (parts && parts[0] === entry.hostsPattern && parts[1] === entry.keyType && parts[2] === entry.keyBase64) {
         const suffix = entry.suffix ? ` ${entry.suffix}` : '';
