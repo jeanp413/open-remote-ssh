@@ -43,6 +43,7 @@ function isIncludeDirective(line: Line): line is Section {
 const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'host': 'Host',
     'hostname': 'HostName',
+    'hostkeyalias': 'HostKeyAlias',
     'user': 'User',
     'port': 'Port',
     'identityagent': 'IdentityAgent',
@@ -53,6 +54,8 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'proxyjump': 'ProxyJump',
     'proxycommand': 'ProxyCommand',
     'include': 'Include',
+    'userknownhostsfile': 'UserKnownHostsFile',
+    'globalknownhostsfile': 'GlobalKnownHostsFile',
 };
 
 function normalizeProp(prop: Directive) {

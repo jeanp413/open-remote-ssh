@@ -117,6 +117,38 @@
 					"scope": "application",
 					"minimum": 1
 				},
+				"remote.SSH.verifyUnknownHosts": {
+					"type": "string",
+					"enum": [
+						"accept",
+						"ask",
+						"reject"
+					],
+					"enumDescriptions": [
+						"Add the key to known_hosts and connect, like OpenSSH's `accept-new`.",
+						"Show the key fingerprint and ask before connecting.",
+						"Refuse to connect."
+					],
+					"description": "What to do when a host is not present in known_hosts.",
+					"default": "accept",
+					"scope": "application"
+				},
+				"remote.SSH.verifyKnownHosts": {
+					"type": "string",
+					"enum": [
+						"accept",
+						"ask",
+						"reject"
+					],
+					"enumDescriptions": [
+						"Connect without asking. The recorded key is left untouched.",
+						"Show both fingerprints and ask before connecting.",
+						"Refuse to connect, like OpenSSH's `strict`."
+					],
+					"description": "What to do when a host presents a different key than the one recorded in known_hosts. A changed host key can mean the server was reinstalled — or that the connection is being intercepted.",
+					"default": "ask",
+					"scope": "application"
+				},
 				"remote.SSH.defaultExtensions": {
 					"type": "array",
 					"items": {
