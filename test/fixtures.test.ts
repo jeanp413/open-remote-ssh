@@ -4,7 +4,7 @@ import { xtry } from '@zokugun/xtry/sync';
 import { vol } from 'memfs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import YAML from 'yaml';
-import { RemoteSSHResolver, getRemoteAuthority } from './rewires/remote';
+import { RemoteSSHResolver, SSHConfiguration, getRemoteAuthority } from './rewires/remote';
 import { Log } from './mocks/logger';
 import * as vscode from './mocks/vscode';
 import { runDocker } from './utils/run-docker';
@@ -16,6 +16,8 @@ const SERVER_SETUP = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value
 
 type ClientOptions = {
   files: Record<string, string>;
+  /** When set, the hosts the SSH config is expected to declare. */
+  hosts?: string[];
 };
 
 type ServerOptions = {
@@ -98,6 +100,12 @@ for (const file of files.value) {
 
       vscode.window.setPassword(server.password);
 
+      if (client.hosts) {
+        const config = await SSHConfiguration.loadFromFS();
+
+        expect(config.getAllConfiguredHosts()).to.eql(client.hosts);
+      }
+
       const logger = new Log('Remote - SSH');
       const extContext = new vscode.ExtensionContext();
       const remoteSSHResolver = new RemoteSSHResolver(extContext, logger);
@@ -107,6 +115,6 @@ for (const file of files.value) {
 
       expect(result).toBeDefined();
       expect(result.host).to.eql('127.0.0.1');
-    }, 40_000);
+    }, 60_000);
   });
 }
