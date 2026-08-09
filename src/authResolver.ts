@@ -18,6 +18,7 @@ import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
+import { SSHExecServer } from './execServer';
 import * as os from 'os';
 
 const PASSWORD_RETRY_COUNT = 3;
@@ -346,6 +347,17 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
             }
         });
+    }
+
+    async resolveExecServer(authority: string, _: vscode.RemoteAuthorityResolverContext): Promise<vscode.ExecServer> {
+        const [type, dest] = authority.split('+');
+        if (type !== REMOTE_SSH_AUTHORITY) {
+            throw new Error(`Invalid authority type for SSH resolverExec: ${type}`);
+        }
+
+        const sshDest = SSHDestination.parseEncoded(dest);
+        const connInfo = await this.getSSHConnectionInfo(sshDest);
+        return new SSHExecServer(connInfo, this.logger);
     }
 
     private openAgentForwardSession(): Promise<string | undefined> {
