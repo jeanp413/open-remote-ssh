@@ -349,15 +349,42 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         });
     }
 
-    async resolveExecServer(authority: string, _: vscode.RemoteAuthorityResolverContext): Promise<vscode.ExecServer> {
+    async resolveExecServer(authority: string, context: vscode.RemoteAuthorityResolverContext): Promise<vscode.ExecServer> {
         const [type, dest] = authority.split('+');
+        this.logger.info(`resolveExecServer: ${type} to dest '${dest}', attempt ${context.resolveAttempt}`);
+
         if (type !== REMOTE_SSH_AUTHORITY) {
             throw new Error(`Invalid authority type for SSH resolverExec: ${type}`);
         }
 
         const sshDest = SSHDestination.parseEncoded(dest);
         const connInfo = await this.getSSHConnectionInfo(sshDest);
-        return new SSHExecServer(connInfo, this.logger);
+        this.sshConnection = connInfo.conn;
+
+        try {
+            await connInfo.conn.connect();
+            return SSHExecServer.create(connInfo.conn, this.logger);
+        }
+        catch(e: unknown) {
+            this.logger.error(`Error resolving authority`, e);
+            // Initial connection
+            if (context.resolveAttempt === 1) {
+                this.logger.show();
+
+                const closeRemote = 'Close Remote';
+                const retry = 'Retry';
+                const result = await vscode.window.showErrorMessage(`Could not establish connection to "${sshDest.hostname}"`, { modal: true }, closeRemote, retry);
+                if (result === closeRemote) {
+                    await vscode.commands.executeCommand('workbench.action.remote.close');
+                } else if (result === retry) {
+                    await vscode.commands.executeCommand('workbench.action.reloadWindow');
+                }
+            }
+
+            if (e instanceof Error) {
+                throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
+            }
+        }
     }
 
     private openAgentForwardSession(): Promise<string | undefined> {
