@@ -384,6 +384,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             if (e instanceof Error) {
                 throw vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
             }
+            else {
+                throw vscode.RemoteAuthorityResolverError.NotAvailable('Could not connect to remote');
+            }
         }
     }
 

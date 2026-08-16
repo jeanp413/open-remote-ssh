@@ -28,7 +28,7 @@ export function shellEscaped(cmd: string, args: string[], options?: vscode.ExecS
     if (options?.env) {
         const envStr = Object.entries(options.env)
             .map(([k, v]) => {
-                if (ENV_KEY_REGEX.test(k) ===  false) {
+                if (ENV_KEY_REGEX.test(k) === false) {
                     throw new Error(`Bad env key: '${k}'`);
                 }
                 return `${k}=${shellEscapeArg(v)}`;
@@ -90,18 +90,20 @@ function toReadWriteStream(stream: Stream.Duplex, logger: Log): ReadWriteStream 
     };
 }
 
-function getFileType(mode: number) {
+export function getFileType(mode: number) {
     const S_IFMT = 0o0170000;  // bit mask for the file type bit field
     enum modes {
         S_IFDIR = 0o0040000, // directory
         S_IFREG = 0o0100000, // regular file
         S_IFLNK = 0o0120000, // symbolic link
+        S_IFSOCK = 0o140000,  // socket
     }
-    const ftype = mode & S_IFMT;
-    if ((ftype & modes.S_IFDIR) === modes.S_IFDIR) { return vscode.FileType.Directory; }
-    else if ((ftype & modes.S_IFLNK) === modes.S_IFLNK) { return vscode.FileType.SymbolicLink; }
-    else if ((ftype & modes.S_IFREG) === modes.S_IFREG) { return vscode.FileType.File; }
-    else { return vscode.FileType.Unknown; }
+    const fmode = mode & S_IFMT;
+
+    if (fmode === modes.S_IFLNK) { return vscode.FileType.SymbolicLink; }
+    else if (fmode === modes.S_IFREG) { return vscode.FileType.File; }
+    else if (fmode === modes.S_IFDIR) { return vscode.FileType.Directory; }
+    return vscode.FileType.Unknown;
 }
 
 export class SSHExecServerFileSystem implements vscode.RemoteFileSystem, vscode.Disposable {
@@ -159,8 +161,8 @@ export class SSHExecServerFileSystem implements vscode.RemoteFileSystem, vscode.
             for (const segment of segments.reverse()) {
                 await new Promise<void>((resolve, reject) => {
                     this.sftp.mkdir(segment, (err) => {
-                        if (err) {reject(err);}
-                        else {resolve();}
+                        if (err) { reject(err); }
+                        else { resolve(); }
                     });
                 });
             }
@@ -204,16 +206,16 @@ export class SSHExecServerFileSystem implements vscode.RemoteFileSystem, vscode.
 
         return new Promise((resolve, reject) => {
             this.conn.getClient().openssh_forwardOutStreamLocal(sockPath, (err: Error | undefined, chan: ClientChannel) => {
-                if (err) {return reject(err);}
+                if (err) { return reject(err); }
 
                 resolve({
                     stream: toReadWriteStream(chan, this.logger),
                     done: new Promise((res, rej) => {
                         chan.on('close', () => res());
                         chan.on('exit', (exitCode: number | null, signalName?: string, didCoreDump?: boolean, description?: string) => {
-                            if (exitCode === 0) return res();
+                            if (exitCode === 0) { return res(); }
 
-                            void(didCoreDump);
+                            void (didCoreDump);
                             this.logger.error(`SFTP.connect: error: exitCode=${exitCode}, signalName=${signalName}, description=${description}`);
                             rej({ status: exitCode ?? (signalName ? 128 : 0) });
                         });
@@ -391,9 +393,9 @@ export class SSHExecServer implements vscode.ExecServer, vscode.Disposable {
             done: new Promise((resolve, reject) => {
                 chan.on('close', () => resolve());
                 chan.on('exit', (exitCode: number | null, signalName?: string, didCoreDump?: boolean, description?: string) => {
-                    if (exitCode === 0) return resolve();
+                    if (exitCode === 0) { return resolve(); }
 
-                    void(didCoreDump);
+                    void (didCoreDump);
                     this.logger.error(`SSHExecServer.tcpConnect: error: exitCode=${exitCode}, signalName=${signalName}, description=${description}`);
                     reject({ status: exitCode ?? (signalName ? 128 : 0) });
                 });
