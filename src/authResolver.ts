@@ -106,6 +106,48 @@ export function getProxyJumpPort(dest: SSHDestination, config: Record<string, st
     return (config['Port'] && parseInt(config['Port'], 10)) || dest.port || 22;
 }
 
+export const MAX_PROXY_JUMPS = 10;
+
+export type ProxyJumpHop = [SSHDestination, Record<string, string>];
+
+/**
+ * The hops of a `ProxyJump` value, in the order they have to be connected to.
+ *
+ * A jump host can declare a `ProxyJump` of its own, which has to be traversed
+ * before that host is reachable, so the chain is expanded depth first. `path`
+ * carries the hosts already being resolved, so a config that jumps back to one
+ * of them is reported instead of recursing forever.
+ */
+export function resolveProxyJumps(
+    value: string,
+    getHostConfiguration: (host: string) => Record<string, string>,
+    path: string[] = []
+): ProxyJumpHop[] {
+    const hops: ProxyJumpHop[] = [];
+
+    for (const entry of value.split(',').filter(i => !!i.trim())) {
+        const dest = SSHDestination.parse(entry);
+        const config = getHostConfiguration(dest.hostname);
+        const host = dest.hostname.toLowerCase();
+
+        if (path.includes(host)) {
+            throw new Error(`ProxyJump loops back to '${dest.hostname}' (${[...path, host].join(' -> ')})`);
+        }
+
+        if (path.length >= MAX_PROXY_JUMPS) {
+            throw new Error(`ProxyJump chain is longer than ${MAX_PROXY_JUMPS} hops`);
+        }
+
+        if (config['ProxyJump']) {
+            hops.push(...resolveProxyJumps(config['ProxyJump'], getHostConfiguration, [...path, host]));
+        }
+
+        hops.push([dest, config]);
+    }
+
+    return hops;
+}
+
 export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode.Disposable {
 
     private proxyConnections: SSHConnection[] = [];
@@ -174,12 +216,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 // Create proxy jump connections if any
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
                 if (sshHostConfig['ProxyJump']) {
-                    const proxyJumps = sshHostConfig['ProxyJump'].split(',').filter(i => !!i.trim())
-                        .map(i => {
-                            const proxy = SSHDestination.parse(i);
-                            const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
-                            return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
-                        });
+                    const proxyJumps = resolveProxyJumps(
+                        sshHostConfig['ProxyJump'],
+                        (host) => sshconfig.getHostConfiguration(host)
+                    );
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
                         const proxyHostName = proxyHostConfig['HostName'] || proxy.hostname;
