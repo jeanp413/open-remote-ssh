@@ -122,28 +122,22 @@ export async function installCodeServer(
     logger: Log,
     extensionPath: string
 ): Promise<ServerInstallResult> {
-    let shell = 'powershell';
+    let shell = 'bash';
 
     // detect platform and shell for windows
     if (!platform || platform === 'windows') {
-        const result = await conn.exec('uname -s');
+        const { stdout } = await conn.exec('echo %COMSPEC%~$PSHOME');
+        const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
 
-        if (result.stdout) {
-            if (result.stdout.includes('windows32')) {
-                platform = 'windows';
-            } else if (result.stdout.includes('MINGW64')) {
-                platform = 'windows';
-                shell = 'bash';
-            }
-        } else if (result.stderr) {
-            if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
-                platform = 'windows';
-            }
-
-            if (result.stderr.includes('is not recognized as an internal or external command')) {
-                platform = 'windows';
-                shell = 'cmd';
-            }
+        if (comspec && comspec !== '%COMSPEC%') {
+            platform = 'windows';
+            shell = 'cmd';
+        } else if (pshome) {
+            shell = 'powershell';
+            platform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
+        } else if (!platform) {
+            const { stdout: uname } = await conn.exec('uname -s');
+            platform = /MINGW|MSYS|CYGWIN/i.test(uname) ? 'windows' : 'linux';
         }
 
         if (platform) {
@@ -165,7 +159,7 @@ export async function installCodeServer(
         commit: vscodeServerConfig.commit,
         quality: vscodeServerConfig.quality,
         release: bestRelease.build,
-        extensionIds : sanitizeExtensionIds(extensionIds),
+        extensionIds: sanitizeExtensionIds(extensionIds),
         envVariables,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
