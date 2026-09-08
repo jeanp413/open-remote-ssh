@@ -73,7 +73,7 @@
 		"taze": "19.14.1",
 		"ts-loader": "9.6.0",
 		"tsc-watch": "7.2.1",
-		"typescript": "5.9.3",
+		"typescript": "6.0.3",
 		"typescript-eslint": "8.61.0",
 		"vitest": "4.1.10",
 		"webpack": "5.107.2",
