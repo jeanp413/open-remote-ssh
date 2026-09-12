@@ -1,11 +1,9 @@
 import { spawn } from 'child_process';
 // eslint-disable-next-line no-duplicate-imports
 import type { ChildProcess } from 'child_process';
-import { randomUUID } from 'crypto';
+import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 import * as net from 'net';
-import * as os from 'os';
-import * as path from 'path';
 import type { Log } from '../common/logger';
 import { findRandomPort } from '../common/ports';
 import { isWindows } from '../common/platform';
@@ -236,7 +234,10 @@ export default class NativeSSHConnection implements SSHClient {
     }
 
     private spawnMasterProcess(socksPort?: number): Promise<void> {
-        this.controlPath = path.join(os.tmpdir(), `open-remote-ssh-${randomUUID()}`);
+        // Unix domain sockets are limited to ~104 bytes on macOS, and the
+        // default temp dir there (/var/folders/…) is too long on its own.
+        // /tmp keeps the path short on every platform the master runs on.
+        this.controlPath = `/tmp/open-remote-ssh-${randomBytes(6).toString('hex')}`;
         this.masterSocksPort = socksPort;
         const args = buildMasterArgs(this.config, this.controlPath, socksPort);
         this.logger.trace(`Starting ssh ControlMaster: ${SSH_CLIENT} ${args.join(' ')}`);
