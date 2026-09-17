@@ -1,3 +1,4 @@
+#!/bin/bash
 # Server installation script
 
 TMP_DIR="${XDG_RUNTIME_DIR:-"/tmp"}"
@@ -149,11 +150,10 @@ fi
 
 # Create installation folder
 if [[ ! -d $SERVER_DIR ]]; then
-  mkdir -p $SERVER_DIR
-  if (( $? > 0 )); then
+  mkdir -p $SERVER_DIR || (
     echo "Error: creating server install directory"
     print_install_results_and_exit 1
-  fi
+  )
 fi
 
 # adjust platform for vscodium download, if needed
@@ -174,14 +174,14 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
       ;;
   esac
 
-  pushd $SERVER_DIR > /dev/null
+  pushd "$SERVER_DIR" > /dev/null || exit
 
   if command -v wget >/dev/null 2>&1; then
-    wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   elif command -v curl >/dev/null 2>&1; then
-    curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   elif command -v fetch >/dev/null 2>&1; then
-    fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   else
     echo "Error: no tool to download server binary"
     print_install_results_and_exit 1
@@ -193,19 +193,17 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     print_install_results_and_exit 1
   fi
 
-  tar -xOf vscode-server.tar.gz > /dev/null 2>&1
-  if (( $? > 0 )); then
+  tar -xOf vscode-server.tar.gz > /dev/null 2>&1 ||(
     echo "Error downloaded tarball is corrupt or incomplete"
     rm -rf vscode-server.tar.gz
     print_install_results_and_exit 1
-  fi
+  )
 
-  tar -xf vscode-server.tar.gz --strip-components 1
-  if (( $? > 0 )); then
+  tar -xf vscode-server.tar.gz --strip-components 1 || (
     echo "Error while extracting server contents"
     rm -rf vscode-server.tar.gz
     print_install_results_and_exit 1
-  fi
+  )
 
   if [[ ! -f $SERVER_SCRIPT ]] || [[ ! -s $SERVER_SCRIPT ]]; then
     rm -rf $SERVER_DIR/*
@@ -215,7 +213,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
   rm -f vscode-server.tar.gz
 
-  popd > /dev/null
+  popd > /dev/null || exit
 else
   echo "Server script already installed in $SERVER_SCRIPT"
 fi
@@ -233,9 +231,9 @@ fi
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
   SERVER_PID="$(cat $SERVER_PIDFILE)"
-  SERVER_RUNNING_PROCESS="$(ps -o pid,args | grep $SERVER_PID | grep $SERVER_SCRIPT)"
+  SERVER_RUNNING_PROCESS="$( ps -o pid,args | grep $SERVER_PID | grep $SERVER_SCRIPT )"
 else
-  SERVER_RUNNING_PROCESS="$((ps -o pid,args -A || ps -o pid,args) | grep $SERVER_SCRIPT | grep -v grep)"
+  SERVER_RUNNING_PROCESS="$( (ps -o pid,args -A || ps -o pid,args) | grep $SERVER_SCRIPT | grep -v grep )"
 fi
 
 if [[ -z $SERVER_RUNNING_PROCESS ]]; then
