@@ -94,6 +94,60 @@ function splitProxyCommand(value: string | string[]): string[] {
     return out;
 }
 
+/**
+ * The port a `ProxyJump` hop listens on.
+ *
+ * A jump host does not inherit the target's `Port`; ssh falls back to 22 for it.
+ * Both the connection made to a hop and the `forwardOut` that reaches the next
+ * one must agree on this, otherwise the first hop of a target declared on a
+ * non-default port is dialed on that port instead of its own.
+ */
+export function getProxyJumpPort(dest: SSHDestination, config: Record<string, string>): number {
+    return (config['Port'] && parseInt(config['Port'], 10)) || dest.port || 22;
+}
+
+export const MAX_PROXY_JUMPS = 10;
+
+export type ProxyJumpHop = [SSHDestination, Record<string, string>];
+
+/**
+ * The hops of a `ProxyJump` value, in the order they have to be connected to.
+ *
+ * A jump host can declare a `ProxyJump` of its own, which has to be traversed
+ * before that host is reachable, so the chain is expanded depth first. `path`
+ * carries the hosts already being resolved, so a config that jumps back to one
+ * of them is reported instead of recursing forever.
+ */
+export function resolveProxyJumps(
+    value: string,
+    getHostConfiguration: (host: string) => Record<string, string>,
+    path: string[] = []
+): ProxyJumpHop[] {
+    const hops: ProxyJumpHop[] = [];
+
+    for (const entry of value.split(',').filter(i => !!i.trim())) {
+        const dest = SSHDestination.parse(entry);
+        const config = getHostConfiguration(dest.hostname);
+        const host = dest.hostname.toLowerCase();
+
+        if (path.includes(host)) {
+            throw new Error(`ProxyJump loops back to '${dest.hostname}' (${[...path, host].join(' -> ')})`);
+        }
+
+        if (path.length >= MAX_PROXY_JUMPS) {
+            throw new Error(`ProxyJump chain is longer than ${MAX_PROXY_JUMPS} hops`);
+        }
+
+        if (config['ProxyJump']) {
+            hops.push(...resolveProxyJumps(config['ProxyJump'], getHostConfiguration, [...path, host]));
+        }
+
+        hops.push([dest, config]);
+    }
+
+    return hops;
+}
+
 export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode.Disposable {
 
     private proxyConnections: SSHConnection[] = [];
@@ -162,17 +216,15 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 // Create proxy jump connections if any
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
                 if (sshHostConfig['ProxyJump']) {
-                    const proxyJumps = sshHostConfig['ProxyJump'].split(',').filter(i => !!i.trim())
-                        .map(i => {
-                            const proxy = SSHDestination.parse(i);
-                            const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
-                            return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
-                        });
+                    const proxyJumps = resolveProxyJumps(
+                        sshHostConfig['ProxyJump'],
+                        (host) => sshconfig.getHostConfiguration(host)
+                    );
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
                         const proxyHostName = proxyHostConfig['HostName'] || proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
-                        const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : (proxy.port || sshPort);
+                        const proxyPort = getProxyJumpPort(proxy, proxyHostConfig);
 
                         const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                         const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
@@ -197,7 +249,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                         const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                         const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
-                        const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(nextProxyJump[1]['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
+                        const destPort = nextProxyJump ? getProxyJumpPort(nextProxyJump[0], nextProxyJump[1]) : sshPort;
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
