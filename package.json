@@ -36,7 +36,7 @@
 		"release": "release-it",
 		"test": "vitest run --reporter tree",
 		"test:coverage": "vitest run --reporter tree --coverage --coverage.reporter text",
-		"test:images": "./dockerfiles/build.sh",
+		"test:images": "bash ./dockerfiles/build.sh",
 		"test:ui": "vitest --ui --coverage",
 		"test:watch": "vitest",
 		"update:artifacts": "artifact update",
