@@ -8,7 +8,7 @@ RUN Write-Host "Downloading OpenSSH version ${env:OPENSSH_VERSION}..." ; \
     # Force TLS 1.2 for the connection
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
     \
-    $url = "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$($env:OPENSSH_VERSION)/OpenSSH-Win64.zip"; \
+    $url = "https://github.com/PowerShell/Win32-OpenSSH/releases/download/${env:OPENSSH_VERSION}/OpenSSH-Win64.zip"; \
     $dest = "C:/OpenSSH-Win64.zip"; \
     \
     # Download the file
