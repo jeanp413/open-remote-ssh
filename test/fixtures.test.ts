@@ -91,7 +91,7 @@ for (const file of files.value) {
 
       const hostPort = getMappedPort(containerName);
 
-      await waitForSSHReady(server.username, server.password, hostPort, 60_000);
+      await waitForSSHReady(server.username, server.password, hostPort, 60_000, containerName);
     }, 120_000);
 
     afterAll(() => {
@@ -122,6 +122,6 @@ for (const file of files.value) {
 
       expect(result).toBeDefined();
       expect(result.host).to.eql('127.0.0.1');
-    }, 300_000);
+    }, 60_000);
   });
 }
