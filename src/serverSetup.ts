@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Log } from './common/logger';
 import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
-import SSHConnection from './ssh/sshConnection';
+import type { SSHClient } from './ssh/sshClient';
 import { fetchRelease, IRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
 
@@ -111,7 +111,7 @@ export class ServerInstallError extends Error {
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
 export async function installCodeServer(
-    conn: SSHConnection,
+    conn: SSHClient,
     serverDownloadUrlTemplate: string | undefined,
     serverVersion: ServerVersion,
     extensionIds: string[],

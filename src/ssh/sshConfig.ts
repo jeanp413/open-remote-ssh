@@ -53,6 +53,8 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'proxyjump': 'ProxyJump',
     'proxycommand': 'ProxyCommand',
     'include': 'Include',
+    'gssapiauthentication': 'GSSAPIAuthentication',
+    'gssapidelegatecredentials': 'GSSAPIDelegateCredentials',
 };
 
 function normalizeProp(prop: Directive) {
