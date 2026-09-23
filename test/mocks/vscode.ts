@@ -89,6 +89,13 @@ const workspace = {
     registerResourceLabelFormatter: vi.fn()
 };
 
+enum FileType {
+    Unknown = 0,
+    File = 1,
+    Directory = 2,
+    SymbolicLink = 64,
+}
+
 export {
     commands,
     env,
@@ -97,6 +104,7 @@ export {
     RemoteAuthorityResolverContext,
     RemoteAuthorityResolverError,
     ResolvedAuthority,
+    FileType,
     window,
     version,
     workspace,
