@@ -167,6 +167,41 @@ describe('NativeSSHConnection', () => {
             .rejects.toThrow('kex_exchange_identification');
     });
 
+    it('treats a daemonized ControlPersist master as ready', async () => {
+        const children = mockSpawn(args => {
+            if (args.includes('check')) {
+                // The daemonized master answers the control socket.
+                return spawnCheck(0);
+            }
+            // ControlPersist: the foreground master exits 0 after forking.
+            const master = new FakeChildProcess();
+            queueMicrotask(() => master.simulateExit(0));
+            return master;
+        });
+
+        await new NativeSSHConnection(baseConfig).connect();
+        expect(children[0].exitCode).toBe(0);
+    });
+
+    it('stops a daemonized master through the control socket on close', async () => {
+        mockSpawn(args => {
+            if (args.includes('check')) {
+                return spawnCheck(0);
+            }
+            const master = new FakeChildProcess();
+            queueMicrotask(() => master.simulateExit(0));
+            return master;
+        });
+
+        const connection = new NativeSSHConnection(baseConfig);
+        await connection.connect();
+        await connection.close();
+
+        const exitArgs = spawnMock.mock.calls.find(([, args]) => (args as string[]).includes('exit'))![1] as string[];
+        expect(exitArgs).toContain('-O');
+        expect(exitArgs[exitArgs.length - 1]).toBe('k8s-dev');
+    });
+
     it('times out when the master never becomes ready', async () => {
         vi.useFakeTimers();
         try {

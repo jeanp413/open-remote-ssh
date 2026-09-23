@@ -200,6 +200,12 @@ export default class NativeSSHConnection implements SSHClient {
     private readonly config: NativeSSHConnectConfig;
     /** ControlMaster process owning the single authenticated connection (POSIX only). */
     private master: ChildProcess | undefined;
+    /**
+     * Set when the master daemonized (ControlPersist in the user's config):
+     * the foreground process is gone, the control socket serves on, and the
+     * daemon must be shut down through `-O exit` instead of a kill.
+     */
+    private masterDaemonized = false;
     private controlPath: string | undefined;
     /** Local port of the `-D` listener opened on the master, when enabled. */
     private masterSocksPort: number | undefined;
@@ -271,7 +277,19 @@ export default class NativeSSHConnection implements SSHClient {
                 resolve();
             };
 
-            const onExit = (code: number | null, signal: string | null) => settle(new Error(this.formatMasterError(code, signal)));
+            const onExit = (code: number | null, signal: string | null) => {
+                // With ControlPersist in the user's config the master
+                // daemonizes once authenticated: the foreground process exits
+                // 0 while the control socket keeps serving. Let the check
+                // probe have the final word before declaring a failure.
+                void this.checkMasterAlive().then(alive => {
+                    if (alive) {
+                        this.masterDaemonized = true;
+                        return settle();
+                    }
+                    settle(new Error(this.formatMasterError(code, signal)));
+                });
+            };
             master.once('exit', onExit);
 
             const poll = () => {
@@ -488,6 +506,19 @@ export default class NativeSSHConnection implements SSHClient {
 
     async close(): Promise<void> {
         await this.closeTunnel();
+        if (this.masterDaemonized) {
+            // The daemonized master lives outside our process tree, so it can
+            // only be reached through the control socket.
+            this.masterDaemonized = false;
+            await new Promise<void>(resolve => {
+                const args = [...buildSshOptions(this.config, this.controlPath), '-O', 'exit', '--', this.config.destination];
+                this.logger.trace(`Stopping ssh ControlMaster: ${SSH_CLIENT} ${args.join(' ')}`);
+                const quit = spawn(SSH_CLIENT, args, { stdio: ['ignore', 'ignore', 'ignore'] });
+                quit.on('error', () => resolve());
+                quit.on('close', () => resolve());
+            });
+            return;
+        }
         if (this.master) {
             const master = this.master;
             this.master = undefined;
