@@ -22,6 +22,40 @@ $SERVER_ARCH=
 $SERVER_CONNECTION_TOKEN=
 $SERVER_DOWNLOAD_URL="%%SERVER_DOWNLOAD_URL%%"
 $SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
+$MODIFY_PRODUCT_JSON=%%MODIFY_PRODUCT_JSON%%
+
+# Read the commit recorded in the installed server's product.json, or $null if
+# the file is absent or has no commit field.
+function Get-InstalledServerCommit {
+  $productJson = "$SERVER_DIR\product.json"
+  if(!(Test-Path $productJson)) {
+    return $null
+  }
+  $match = [regex]::Match((Get-Content -Raw $productJson), '"commit"\s*:\s*"([0-9a-fA-F]{7,})"')
+  if($match.Success) {
+    return $match.Groups[1].Value
+  }
+  return $null
+}
+
+# The server is installed under a directory named after the *client's* commit,
+# but nothing about the download guarantees the payload matches it. A
+# serverDownloadUrlTemplate that is not uniquely keyed per commit -- for example
+# one keyed on ${version} where two releases can share a version -- may serve a
+# different build, which then fails client/server validation. Verifying here
+# means a wrong payload is replaced rather than reused for the lifetime of the
+# directory.
+#
+# Skipped when the commit is being rewritten deliberately (serverValidation
+# 'force') or when validation is off ('skip'). A missing commit is treated as
+# valid so that servers built without a product.json keep working.
+function Test-ServerCommitIsValid {
+  if($MODIFY_PRODUCT_JSON -or $SERVER_VALIDATION_FLAG) {
+    return $True
+  }
+  $installed = Get-InstalledServerCommit
+  return (!$installed -or $installed -eq $DISTRO_COMMIT)
+}
 
 $LISTENING_ON=
 $OS_RELEASE_ID=
@@ -71,6 +105,14 @@ if(!(Test-Path $SERVER_DIR)) {
 
 cd $SERVER_DIR
 
+# Discard an installed server whose commit doesn't match this client, so that a
+# payload downloaded from a stale or ambiguous URL is replaced instead of being
+# reused on every subsequent connection. See Test-ServerCommitIsValid above.
+if((Test-Path $SERVER_SCRIPT) -and !(Test-ServerCommitIsValid)) {
+  "Installed server commit $(Get-InstalledServerCommit) does not match $DISTRO_COMMIT, reinstalling"
+  Remove-Item -Recurse -Force "$SERVER_DIR\*"
+}
+
 # Check if server script is already installed
 if(!(Test-Path $SERVER_SCRIPT)) {
   if(Test-Path vscode-server.tar.gz) {
@@ -112,13 +154,21 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     "Error while installing the server binary"
     exit 1
   }
+
+  if(!(Test-ServerCommitIsValid)) {
+    $downloadedCommit = Get-InstalledServerCommit
+    Remove-Item -Recurse -Force "$SERVER_DIR\*"
+    "Error: downloaded server commit $downloadedCommit does not match $DISTRO_COMMIT"
+    "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a `${commit} keyed URL cannot be ambiguous"
+    exit 1
+  }
 }
 else {
   "Server script already installed in $SERVER_SCRIPT"
 }
 
 # Modify the commit in the remote server to match the local value
-if(%%MODIFY_PRODUCT_JSON%%) {
+if($MODIFY_PRODUCT_JSON) {
   echo "Will modify product.json on remote to match the commit value"
   (Get-Content -Raw "$SERVER_DIR\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",') |
   Set-Content -NoNewLine "$SERVER_DIR\product.json"
