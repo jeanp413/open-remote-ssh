@@ -40,6 +40,12 @@ function isIncludeDirective(line: Line): line is Section {
     return isDirective(line) && line.param === 'Include' && !!line.value;
 }
 
+// Special names declared by system-wide config fragments, e.g. `.host` and `machine/.host` in systemd.
+// They aren't regular SSH aliases the user configured, so they shouldn't be listed.
+function isSpecialHost(value: string) {
+    return /(^|\/)\./.test(value);
+}
+
 const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'host': 'Host',
     'hostname': 'HostName',
@@ -147,7 +153,7 @@ export default class SSHConfiguration {
                 const values = Array.isArray(line.value) ? line.value.map(v => v.val) : [line.value];
                 for (const value of values) {
                     const isPattern = /^!/.test(value) || /[?*]/.test(value);
-                    if (!isPattern) {
+                    if (!isPattern && !isSpecialHost(value)) {
                         hosts.add(value);
                     }
                 }
