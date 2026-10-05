@@ -17,6 +17,7 @@
 	"main": "./lib/extension.js",
 	"browser": "./lib/extension.js",
 	"scripts": {
+		"audit": "better-npm-audit audit",
 		"audit:fix": "npm audit fix --min-release-age=0",
 		"build": "npm run clean && npm run compile:src && npm run bundle",
 		"bundle": "webpack --mode production",
@@ -27,7 +28,7 @@
 		"compile:src": "tsc -b",
 		"compile:test": "tsc -p test",
 		"lint": "eslint",
-		"lint:all": "npm run lint:package && npm audit && npm run ci:lint && npm run lint",
+		"lint:all": "npm run lint:package && npm run audit && npm run ci:lint && npm run lint",
 		"lint:fix": "eslint --fix",
 		"lint:package": "fixpack || true",
 		"package": "rimraf *.vsix && vsce package",
@@ -73,6 +74,7 @@
 		"@vscode/vsce": "3.9.2",
 		"@zokugun/fs-extra-plus": "0.5.0",
 		"@zokugun/xtry": "0.11.6",
+		"better-npm-audit": "3.11.0",
 		"eslint": "10.10.0",
 		"eslint-plugin-jsdoc": "62.9.0",
 		"fixpack": "4.0.0",
@@ -443,6 +445,7 @@
 			"content-type": "2.1.0"
 		},
 		"release-it": {
+			"basic-ftp": "6.2.1",
 			"undici": "7.29.1"
 		}
 	},
