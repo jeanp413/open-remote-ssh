@@ -444,8 +444,10 @@
 		"@octokit/request": {
 			"content-type": "2.1.0"
 		},
+		"get-uri": {
+			"basic-ftp": "6.2.1"
+		},
 		"release-it": {
-			"basic-ftp": "6.2.1",
 			"undici": "7.29.1"
 		}
 	},
