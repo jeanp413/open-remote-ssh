@@ -41,6 +41,7 @@
 		"test:ui": "vitest --ui --coverage",
 		"test:unit": "vitest run --reporter tree --config vitest.unit.config.mts",
 		"test:watch": "vitest",
+		"test:windows": "vitest run --reporter tree --config vitest.windows.config.mts",
 		"update:artifacts": "artifact update",
 		"update:ci": "pinact run -min-age 7 -update",
 		"update:deps": "taze --all",

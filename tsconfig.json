@@ -48,6 +48,7 @@
 		"node_modules",
 		"test",
 		"vitest.config.mts",
-		"vitest.unit.config.mts"
+		"vitest.unit.config.mts",
+		"vitest.windows.config.mts"
 	]
 }

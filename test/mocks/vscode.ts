@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 type ProgressTask = <R>(progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken) => Promise<R>;
 
 let $password: string = '';
+const $configuration: Record<string, unknown> = {};
 
 const commands = {
     executeCommand: vi.fn(),
@@ -11,6 +12,30 @@ const commands = {
 
 const env = {
     appRoot: '/bin/vscodium/app'
+};
+
+/**
+ * Point `vscode.env.appRoot` at a real directory, for suites that run against
+ * the real filesystem instead of `memfs`.
+ */
+const setAppRoot = (appRoot: string) => {
+    env.appRoot = appRoot;
+};
+
+/**
+ * Seed `workspace.getConfiguration(section).get(key)`, keyed `section.key`.
+ * Unset keys keep returning the caller's default.
+ */
+const setConfiguration = (values: Record<string, unknown>) => {
+    for (const [key, value] of Object.entries(values)) {
+        $configuration[key] = value;
+    }
+};
+
+const resetConfiguration = () => {
+    for (const key of Object.keys($configuration)) {
+        delete $configuration[key];
+    }
 };
 
 class ExtensionContext {
@@ -82,8 +107,12 @@ const window = {
 };
 
 const workspace = {
-    getConfiguration: vi.fn(() => ({
-        get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    getConfiguration: vi.fn((section?: string) => ({
+        get: vi.fn((key: string, defaultValue?: unknown) => {
+            const qualified = section ? `${section}.${key}` : key;
+
+            return qualified in $configuration ? $configuration[qualified] : defaultValue;
+        }),
         update: vi.fn(() => Promise.resolve())
     })),
     registerResourceLabelFormatter: vi.fn()
@@ -97,6 +126,9 @@ export {
     RemoteAuthorityResolverContext,
     RemoteAuthorityResolverError,
     ResolvedAuthority,
+    resetConfiguration,
+    setAppRoot,
+    setConfiguration,
     window,
     version,
     workspace,
