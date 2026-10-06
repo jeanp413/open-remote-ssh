@@ -60,7 +60,7 @@ class TunnelInfo implements vscode.Disposable {
  * Array inputs are passed through for defensive compatibility with older
  * ssh-config versions.
  */
-function splitProxyCommand(value: string | string[]): string[] {
+export function splitProxyCommand(value: string | string[]): string[] {
     if (Array.isArray(value)) {return value.slice();}
     const out: string[] = [];
     let cur = '';

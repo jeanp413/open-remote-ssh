@@ -47,6 +47,7 @@
 		".vscode-test",
 		"node_modules",
 		"test",
-		"vitest.config.mts"
+		"vitest.config.mts",
+		"vitest.unit.config.mts"
 	]
 }
