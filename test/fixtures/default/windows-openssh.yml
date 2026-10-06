@@ -1,11 +1,11 @@
 client:
   files:
-    /etc/ssh/ssh_config: >
+    'C:\ProgramData\ssh\ssh_config': >
       Host test
         HostName 127.0.0.1
         Port 2222
         User openremotessh
-        Password openremotessh
+        Password Open-Remote-SSH-1
     /bin/vscodium/app/product.json: >
       {
         "nameShort": "VSCodium",
@@ -22,4 +22,4 @@ server:
   image: local-windows-openssh
   platform: windows
   username: openremotessh
-  password: openremotessh
+  password: Open-Remote-SSH-1
