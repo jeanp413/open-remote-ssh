@@ -1,0 +1,9 @@
+# Both install scripts are read from disk on the client and handed to a shell on
+# the remote, so they must keep LF endings even when checked out on Windows.
+#
+# A CRLF checkout breaks both remotes, differently:
+#   - bash rejects every line of the .sh as `$'\r': command not found`
+#   - PowerShell sees the .ps1 as a single line, since a bare CR is not a line
+#     separator, and fails with `Unexpected token`
+*.sh text eol=lf
+*.ps1 text eol=lf

@@ -419,7 +419,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         }
                     })
                     .on('listening', () => resolve(server))
-                    .listen(localPort);
+                    .listen(localPort, '127.0.0.1');
             });
             disposables.push({
                 dispose: () => forwardingServer.close(() => {

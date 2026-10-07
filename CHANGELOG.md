@@ -1,3 +1,9 @@
+## 0.4.0
+
+- feat: list hosts from multi-name `Host` lines and nested `Includes` (#332)
+- enhance: support simple `ps` binary (#348)
+- fix(security): bind local port to local ip. (#360)
+
 ## 0.3.1
 
 - fix(windows): use improved command to test archive (#331)
