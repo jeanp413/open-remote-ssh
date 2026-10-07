@@ -14,6 +14,13 @@ if [[ -n "${PULL_REQUEST_ID}" ]]; then
   git config --global user.name "${GITHUB_USERNAME} CI"
   git fetch --unshallow || true
   git fetch origin "pull/${PULL_REQUEST_ID}/head"
-  git checkout FETCH_HEAD
-  git merge --no-edit "origin/${BRANCH_NAME}"
+
+  PR_TREE=$( git rev-parse 'FETCH_HEAD^{tree}' )
+
+  if git log --format=%T "origin/${BRANCH_NAME}" | grep --quiet --fixed-strings "${PR_TREE}"; then
+    git checkout "origin/${BRANCH_NAME}"
+  else
+    git checkout FETCH_HEAD
+    git merge --no-edit "origin/${BRANCH_NAME}"
+  fi
 fi
