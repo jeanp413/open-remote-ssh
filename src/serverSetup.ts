@@ -1,8 +1,10 @@
+import type { ServerValidation, ServerVersion } from './server-config/types';
+
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Log } from './common/logger';
-import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
+import { getServerConfig } from './server-config/get-server-config';
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
@@ -153,7 +155,7 @@ export async function installCodeServer(
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
-    const vscodeServerConfig = await getVSCodeServerConfig();
+    const vscodeServerConfig = await getServerConfig();
 
     // Get the version and release
     const serverDownloadUrlTemplateFinal = serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE;
