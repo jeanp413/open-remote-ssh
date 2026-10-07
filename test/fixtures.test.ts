@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import fse from '@zokugun/fs-extra-plus/sync';
-import { xtry } from '@zokugun/xtry/sync';
+import { xtry, xtryAsync } from '@zokugun/xtry/sync';
 import { vol } from 'memfs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import YAML from 'yaml';
@@ -51,7 +51,7 @@ for (const file of files.value) {
     throw document.error;
   }
 
-  const { client, server } = document.value as { client: ClientOptions; server: ServerOptions };
+  const { client, server, error: expectedError } = document.value as { client: ClientOptions; error?: string; server: ServerOptions };
   const containerName = `open-remote-ssh-test-${randomUUID()}`;
 
   if ((server.platform === 'windows') !== (process.platform === 'win32')) {
@@ -118,10 +118,27 @@ for (const file of files.value) {
       const remoteSSHResolver = new RemoteSSHResolver(extContext, logger);
       const remoteContext = new vscode.RemoteAuthorityResolverContext();
       const authority = getRemoteAuthority('test');
-      const result = await remoteSSHResolver.resolve(authority, remoteContext);
 
-      expect(result).toBeDefined();
-      expect(result.host).to.eql('127.0.0.1');
+      if (expectedError) {
+        logger.capture();
+
+        const result = await xtryAsync(async () => await remoteSSHResolver.resolve(authority, remoteContext));
+
+        expect(result.fails).toBe(true);
+
+        const messages = logger.messages();
+
+        if (!messages.includes(expectedError)) {
+          console.log(messages);
+        }
+
+        expect(messages).to.contains(expectedError);
+      } else {
+        const result = await remoteSSHResolver.resolve(authority, remoteContext);
+
+        expect(result).toBeDefined();
+        expect(result.host).to.eql('127.0.0.1');
+      }
     }, 60_000);
   });
 }
