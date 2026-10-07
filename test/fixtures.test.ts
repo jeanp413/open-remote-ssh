@@ -130,14 +130,6 @@ for (const file of files.value) {
 
         if (!messages.includes(expectedError)) {
           console.log(messages);
-          console.log(expectedError);
-
-          console.log(messages.includes('\r'));
-          console.log(expectedError.includes('\r'));
-
-          for(const line of expectedError.split(/\r?\n/)) {
-            console.log(line, messages.includes(line));
-          }
         }
 
         expect(messages).to.contains(expectedError);

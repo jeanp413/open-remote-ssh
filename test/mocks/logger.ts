@@ -38,7 +38,7 @@ export class Log {
             this._messages.push(`[${level}  - ${this.now()}] ${message}`);
 
              if (data) {
-                this._messages.push(toString(data));
+                this._messages.push(toString(data).replaceAll('\r', ''));
             }
         }
     }
