@@ -132,6 +132,9 @@ for (const file of files.value) {
           console.log(messages);
           console.log(expectedError);
 
+          console.log(messages.includes('\r'));
+          console.log(expectedError.includes('\r'));
+
           for(const line of expectedError.split(/\r?\n/)) {
             console.log(line, messages.includes(line));
           }
