@@ -15,17 +15,21 @@ const ROOT = fse.join('.', 'test', 'fixtures', 'default');
 const SERVER_SETUP_BASH = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
 const SERVER_SETUP_POWERSHELL = fse.readFile('./src/scripts/server-setup.ps1', 'utf8').value!;
 
-type ClientOptions = {
-  files: Record<string, string>;
-  /** When set, the hosts the SSH config is expected to declare. */
-  hosts?: string[];
-};
-
-type ServerOptions = {
-  image: string;
-  username: string;
-  password: string;
-  platform?: 'linux' | 'windows';
+type TestDocument = {
+  client: {
+    files: Record<string, string>;
+  };
+  error?: string;
+  server: {
+    image: string;
+    username: string;
+    password: string;
+    platform?: 'linux' | 'windows';
+  };
+  tests?: {
+    // The hosts the SSH config is expected to have.
+    hosts?: string[];
+  };
 };
 
 const files = fse.walk(ROOT, {
@@ -51,7 +55,7 @@ for (const file of files.value) {
     throw document.error;
   }
 
-  const { client, server, error: expectedError } = document.value as { client: ClientOptions; error?: string; server: ServerOptions };
+  const { client, server, error: expectedError, tests } = document.value as TestDocument;
   const containerName = `open-remote-ssh-test-${randomUUID()}`;
 
   if ((server.platform === 'windows') !== (process.platform === 'win32')) {
@@ -107,10 +111,10 @@ for (const file of files.value) {
 
       vscode.window.setPassword(server.password);
 
-      if (client.hosts) {
+      if (tests?.hosts) {
         const config = await SSHConfiguration.loadFromFS();
 
-        expect(config.getAllConfiguredHosts()).to.eql(client.hosts);
+        expect(config.getAllConfiguredHosts()).to.eql(tests.hosts);
       }
 
       const logger = new Log('Remote - SSH');

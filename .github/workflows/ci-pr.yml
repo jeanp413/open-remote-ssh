@@ -1,6 +1,14 @@
 name: "CI - Pull Request: Build, Test & Lint"
 
 on:
+  workflow_dispatch:
+    inputs:
+      debug:
+        type: boolean
+        description: Debug
+      checkout_pr:
+        type: string
+        description: Checkout PR
   pull_request:
     branches:
       - master
@@ -18,6 +26,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Switch to relevant PR
+        env:
+          PULL_REQUEST_ID: ${{ github.event.inputs.checkout_pr }}
+        run: ./.github/scripts/get_pr.sh
 
       - name: Install zizmor
         run: |
@@ -42,6 +55,8 @@ jobs:
           npm run test:images
 
       - name: Test
+        env:
+          DEBUG: ${{ github.event.inputs.debug }}
         run: |
           npm run test
 
