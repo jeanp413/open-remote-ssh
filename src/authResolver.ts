@@ -1,3 +1,6 @@
+import type { ParsedKey } from 'ssh2-streams';
+import type { ServerVersion } from './server-config/types';
+
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
@@ -5,7 +8,6 @@ import * as stream from 'stream';
 import { SocksClient, SocksClientOptions } from 'socks';
 import * as vscode from 'vscode';
 import * as ssh2 from 'ssh2';
-import type { ParsedKey } from 'ssh2-streams';
 import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
@@ -17,7 +19,6 @@ import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
-import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;

@@ -125,7 +125,14 @@ for (const file of files.value) {
         const result = await xtryAsync(async () => await remoteSSHResolver.resolve(authority, remoteContext));
 
         expect(result.fails).toBe(true);
-        expect(logger.messages()).to.contains(expectedError);
+
+        const messages = logger.messages();
+
+        if (!messages.includes(expectedError)) {
+          console.log(messages);
+        }
+
+        expect(messages).to.contains(expectedError);
       } else {
         const result = await remoteSSHResolver.resolve(authority, remoteContext);
 

@@ -61,7 +61,7 @@ export class Log {
         this._messages = [];
     }
 
-    public messages() {
-        return this._messages?.join('\n');
+    public messages(): string {
+        return this._messages!.join('\n');
     }
 }
