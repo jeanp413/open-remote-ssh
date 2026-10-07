@@ -8,6 +8,8 @@ DISTRO_COMMIT="%%DISTRO_COMMIT%%"
 DISTRO_QUALITY="%%DISTRO_QUALITY%%"
 DISTRO_VSCODIUM_RELEASE="%%DISTRO_VSCODIUM_RELEASE%%"
 
+MODIFY_PRODUCT_JSON="%%MODIFY_PRODUCT_JSON%%"
+
 SERVER_APP_NAME="%%SERVER_APP_NAME%%"
 SERVER_INITIAL_EXTENSIONS="%%SERVER_INITIAL_EXTENSIONS%%"
 SERVER_LISTEN_FLAG="%%SERVER_LISTEN_FLAG%%"
@@ -22,12 +24,20 @@ SERVER_ARCH=
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
 SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
-MODIFY_PRODUCT_JSON="%%MODIFY_PRODUCT_JSON%%"
 
 LISTENING_ON=
 OS_RELEASE_ID=
 ARCH=
 PLATFORM=
+
+# Get commit from installed server's product.json
+get_installed_commit() {
+  if [[ ! -f "$SERVER_DIR/product.json" ]]; then
+    return ""
+  fi
+
+  sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{7,\}\)".*/\1/p' "$SERVER_DIR/product.json" 2>/dev/null | head -n 1
+}
 
 # Mimic output from logs of remote-ssh extension
 print_install_results_and_exit() {
@@ -45,39 +55,27 @@ print_install_results_and_exit() {
   exit 0
 }
 
-# Print the commit recorded in the installed server's product.json, or nothing
-# if the file is absent or has no commit field.
-installed_server_commit() {
-  [[ -f "$SERVER_DIR/product.json" ]] || return 0
-  sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{7,\}\)".*/\1/p' \
-    "$SERVER_DIR/product.json" 2>/dev/null | head -n 1
-}
-
-# The server is installed under a directory named after the *client's* commit,
-# but nothing about the download guarantees the payload matches it. A
-# serverDownloadUrlTemplate that is not uniquely keyed per commit -- for example
-# one keyed on ${version} where two releases can share a version -- may serve a
-# different build, which then fails client/server validation. Verifying here
-# means a wrong payload is replaced rather than reused for the lifetime of the
-# directory.
+# Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
 #
-# Skipped when the commit is being rewritten deliberately (serverValidation
-# 'force', which sets MODIFY_PRODUCT_JSON) or when validation is off
-# ('skip', which sets SERVER_VALIDATION_FLAG). An empty or unreadable commit is
-# treated as valid so that servers built without a product.json keep working.
-server_commit_is_valid() {
-  if [[ "$MODIFY_PRODUCT_JSON" == "true" ]] || [[ -n "$SERVER_VALIDATION_FLAG" ]]; then
-    return 0
-  fi
-
-  if ! command -v sed >/dev/null 2>&1; then
+# The install directory is named for the client's commit, but the download URL may still return a different build
+# (for example, when a version-keyed URL is shared by releases with different commits).
+# Reject a present server whose product.json records a different commit,
+# so it can be replaced by a fresh download instead of being reused under the wrong directory name.
+#
+# The validation is bypassed when:
+# - no server installed
+# - empty or unreadable commit
+# - "serverValidation": "force"
+# - "serverValidation": "skip"
+validate_installed_commit() {
+  if [[ ! -f $SERVER_SCRIPT ]] || [[ "$MODIFY_PRODUCT_JSON" == "true" ]] || [[ -n "$SERVER_VALIDATION_FLAG" ]]; then
     return 0
   fi
 
   local installed
-  installed="$(installed_server_commit)"
+  installed="$(get_installed_commit)"
 
-  [[ -z $installed ]] || [[ $installed == "$DISTRO_COMMIT" ]]
+  [[ -z "$installed" ]] || [[ "$installed" == "$DISTRO_COMMIT" ]]
 }
 
 LOCKFILE="$TMP_DIR/server_install.lock"
@@ -199,11 +197,9 @@ fi
 
 SERVER_DOWNLOAD_URL="$(echo "%%SERVER_DOWNLOAD_URL_TEMPLATE%%" | sed "s/\${quality}/$DISTRO_QUALITY/g" | sed "s/\${version}/$DISTRO_VERSION/g" | sed "s/\${commit}/$DISTRO_COMMIT/g" | sed "s/\${os}/$PLATFORM/g" | sed "s/\${arch}/$SERVER_ARCH/g" | sed "s/\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
 
-# Discard an installed server whose commit doesn't match this client, so that a
-# payload downloaded from a stale or ambiguous URL is replaced instead of being
-# reused on every subsequent connection. See server_commit_is_valid above.
-if [[ -f $SERVER_SCRIPT ]] && ! server_commit_is_valid; then
-  echo "Installed server commit $(installed_server_commit) does not match $DISTRO_COMMIT, reinstalling"
+# Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
+if ! validate_installed_commit; then
+  echo "Installed server commit $(get_installed_commit) does not match $DISTRO_COMMIT, reinstalling"
   rm -rf "$SERVER_DIR"/*
 fi
 
@@ -237,7 +233,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     print_install_results_and_exit 1
   fi
 
-  tar -xOf vscode-server.tar.gz > /dev/null 2>&1 ||(
+  tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (
     echo "Error downloaded tarball is corrupt or incomplete"
     rm -rf vscode-server.tar.gz
     print_install_results_and_exit 1
@@ -249,23 +245,22 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     print_install_results_and_exit 1
   )
 
+  rm -f vscode-server.tar.gz
+
+  popd > /dev/null || exit
+
   if [[ ! -f $SERVER_SCRIPT ]] || [[ ! -s $SERVER_SCRIPT ]]; then
     rm -rf $SERVER_DIR/*
     echo "Error: server contents are corrupted"
     print_install_results_and_exit 1
   fi
 
-  if ! server_commit_is_valid; then
-    DOWNLOADED_COMMIT="$(installed_server_commit)"
+  if ! validate_installed_commit; then
     rm -rf "$SERVER_DIR"/*
-    echo "Error: downloaded server commit $DOWNLOADED_COMMIT does not match $DISTRO_COMMIT"
+    echo "Error: downloaded server commit $(get_installed_commit) does not match $DISTRO_COMMIT"
     echo "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a \${commit} keyed URL cannot be ambiguous"
     print_install_results_and_exit 1
   fi
-
-  rm -f vscode-server.tar.gz
-
-  popd > /dev/null || exit
 else
   echo "Server script already installed in $SERVER_SCRIPT"
 fi

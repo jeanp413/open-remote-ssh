@@ -8,6 +8,8 @@ $DISTRO_COMMIT="%%DISTRO_COMMIT%%"
 $DISTRO_QUALITY="%%DISTRO_QUALITY%%"
 $DISTRO_VSCODIUM_RELEASE="%%DISTRO_VSCODIUM_RELEASE%%"
 
+$MODIFY_PRODUCT_JSON=%%MODIFY_PRODUCT_JSON%%
+
 $SERVER_APP_NAME="%%SERVER_APP_NAME%%"
 $SERVER_INITIAL_EXTENSIONS="%%SERVER_INITIAL_EXTENSIONS%%"
 $SERVER_LISTEN_FLAG="%%SERVER_LISTEN_FLAG%%"
@@ -22,45 +24,28 @@ $SERVER_ARCH=
 $SERVER_CONNECTION_TOKEN=
 $SERVER_DOWNLOAD_URL="%%SERVER_DOWNLOAD_URL%%"
 $SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
-$MODIFY_PRODUCT_JSON=%%MODIFY_PRODUCT_JSON%%
-
-# Read the commit recorded in the installed server's product.json, or $null if
-# the file is absent or has no commit field.
-function Get-InstalledServerCommit {
-  $productJson = "$SERVER_DIR\product.json"
-  if(!(Test-Path $productJson)) {
-    return $null
-  }
-  $match = [regex]::Match((Get-Content -Raw $productJson), '"commit"\s*:\s*"([0-9a-fA-F]{7,})"')
-  if($match.Success) {
-    return $match.Groups[1].Value
-  }
-  return $null
-}
-
-# The server is installed under a directory named after the *client's* commit,
-# but nothing about the download guarantees the payload matches it. A
-# serverDownloadUrlTemplate that is not uniquely keyed per commit -- for example
-# one keyed on ${version} where two releases can share a version -- may serve a
-# different build, which then fails client/server validation. Verifying here
-# means a wrong payload is replaced rather than reused for the lifetime of the
-# directory.
-#
-# Skipped when the commit is being rewritten deliberately (serverValidation
-# 'force') or when validation is off ('skip'). A missing commit is treated as
-# valid so that servers built without a product.json keep working.
-function Test-ServerCommitIsValid {
-  if($MODIFY_PRODUCT_JSON -or $SERVER_VALIDATION_FLAG) {
-    return $True
-  }
-  $installed = Get-InstalledServerCommit
-  return (!$installed -or $installed -eq $DISTRO_COMMIT)
-}
 
 $LISTENING_ON=
 $OS_RELEASE_ID=
 $ARCH=
 $PLATFORM="win32"
+
+# Get commit from installed server's product.json
+function Get-InstalledCommit() {
+  $productJson = "$SERVER_DIR\product.json"
+
+  if(!(Test-Path $productJson)) {
+    return $null
+  }
+
+  $match = [regex]::Match((Get-Content -Raw $productJson), '"commit"\s*:\s*"([0-9a-fA-F]{7,})"')
+
+  if($match.Success) {
+    return $match.Groups[1].Value
+  }
+
+  return $null
+}
 
 function printInstallResults($code) {
   "%%SCRIPT_ID%%: start"
@@ -76,6 +61,28 @@ function printInstallResults($code) {
   "%%SCRIPT_ID%%: end"
 }
 
+# Test the commit of the installed server against the expected one (DISTRO_COMMIT)
+#
+# The install directory is named for the client's commit, but the download URL may still return a different build
+# (for example, when a version-keyed URL is shared by releases with different commits).
+# Reject a present server whose product.json records a different commit,
+# so it can be replaced by a fresh download instead of being reused under the wrong directory name.
+#
+# The validation is bypassed when:
+# - no server installed
+# - empty or unreadable commit
+# - "serverValidation": "force"
+# - "serverValidation": "skip"
+function Test-InstalledCommit() {
+  if(!(Test-Path $SERVER_SCRIPT) -or $MODIFY_PRODUCT_JSON -or $SERVER_VALIDATION_FLAG) {
+    return $True
+  }
+
+  $installed = Get-InstalledCommit
+
+  return (!$installed -or $installed -eq $DISTRO_COMMIT)
+}
+
 # Check machine architecture
 $ARCH=$env:PROCESSOR_ARCHITECTURE
 # Use x64 version for ARM64, as it's not yet available.
@@ -86,6 +93,12 @@ else {
   "Error architecture not supported: $ARCH"
   printInstallResults 1
   exit 0
+}
+
+# Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
+if(!(Test-InstalledCommit)) {
+  "Installed server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT, reinstalling"
+  Remove-Item -Recurse -Force "$SERVER_DIR\*"
 }
 
 # Create installation folder
@@ -104,14 +117,6 @@ if(!(Test-Path $SERVER_DIR)) {
 }
 
 cd $SERVER_DIR
-
-# Discard an installed server whose commit doesn't match this client, so that a
-# payload downloaded from a stale or ambiguous URL is replaced instead of being
-# reused on every subsequent connection. See Test-ServerCommitIsValid above.
-if((Test-Path $SERVER_SCRIPT) -and !(Test-ServerCommitIsValid)) {
-  "Installed server commit $(Get-InstalledServerCommit) does not match $DISTRO_COMMIT, reinstalling"
-  Remove-Item -Recurse -Force "$SERVER_DIR\*"
-}
 
 # Check if server script is already installed
 if(!(Test-Path $SERVER_SCRIPT)) {
@@ -155,10 +160,9 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     exit 1
   }
 
-  if(!(Test-ServerCommitIsValid)) {
-    $downloadedCommit = Get-InstalledServerCommit
+  if(!(Test-InstalledCommit)) {
     Remove-Item -Recurse -Force "$SERVER_DIR\*"
-    "Error: downloaded server commit $downloadedCommit does not match $DISTRO_COMMIT"
+    "Error: downloaded server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT"
     "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a `${commit} keyed URL cannot be ambiguous"
     exit 1
   }
