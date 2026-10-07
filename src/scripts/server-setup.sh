@@ -33,7 +33,7 @@ PLATFORM=
 # Get commit from installed server's product.json
 get_installed_commit() {
   if [[ ! -f "$SERVER_DIR/product.json" ]]; then
-    return ""
+    return 0
   fi
 
   sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{7,\}\)".*/\1/p' "$SERVER_DIR/product.json" 2>/dev/null | head -n 1
@@ -250,15 +250,19 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
   popd > /dev/null || exit
 
   if [[ ! -f $SERVER_SCRIPT ]] || [[ ! -s $SERVER_SCRIPT ]]; then
-    rm -rf $SERVER_DIR/*
     echo "Error: server contents are corrupted"
+
+    rm -rf $SERVER_DIR/*
+
     print_install_results_and_exit 1
   fi
 
   if ! validate_installed_commit; then
-    rm -rf "$SERVER_DIR"/*
     echo "Error: downloaded server commit $(get_installed_commit) does not match $DISTRO_COMMIT"
     echo "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a \${commit} keyed URL cannot be ambiguous"
+
+    rm -rf "$SERVER_DIR"/*
+
     print_install_results_and_exit 1
   fi
 else

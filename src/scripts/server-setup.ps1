@@ -98,6 +98,7 @@ else {
 # Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
 if(!(Test-InstalledCommit)) {
   "Installed server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT, reinstalling"
+
   Remove-Item -Recurse -Force "$SERVER_DIR\*"
 }
 
@@ -161,9 +162,11 @@ if(!(Test-Path $SERVER_SCRIPT)) {
   }
 
   if(!(Test-InstalledCommit)) {
-    Remove-Item -Recurse -Force "$SERVER_DIR\*"
     "Error: downloaded server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT"
     "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a `${commit} keyed URL cannot be ambiguous"
+
+    Remove-Item -Recurse -Force "$SERVER_DIR\*"
+
     exit 1
   }
 }
