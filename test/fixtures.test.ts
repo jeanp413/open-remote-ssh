@@ -19,16 +19,17 @@ type TestDocument = {
   client: {
     files: Record<string, string>;
   };
-  error?: string;
   server: {
     image: string;
     username: string;
     password: string;
     platform?: 'linux' | 'windows';
   };
-  tests?: {
+  test: {
+    error?: string[] | string;
     // The hosts the SSH config is expected to have.
     hosts?: string[];
+    output?: string[] | string;
   };
 };
 
@@ -55,7 +56,7 @@ for (const file of files.value) {
     throw document.error;
   }
 
-  const { client, server, error: expectedError, tests } = document.value as TestDocument;
+  const { client, server, test } = document.value as TestDocument;
   const containerName = `open-remote-ssh-test-${randomUUID()}`;
 
   if ((server.platform === 'windows') !== (process.platform === 'win32')) {
@@ -111,10 +112,10 @@ for (const file of files.value) {
 
       vscode.window.setPassword(server.password);
 
-      if (tests?.hosts) {
+      if (test?.hosts) {
         const config = await SSHConfiguration.loadFromFS();
 
-        expect(config.getAllConfiguredHosts()).to.eql(tests.hosts);
+        expect(config.getAllConfiguredHosts()).to.eql(test.hosts);
       }
 
       const logger = new Log('Remote - SSH');
@@ -123,25 +124,36 @@ for (const file of files.value) {
       const remoteContext = new vscode.RemoteAuthorityResolverContext();
       const authority = getRemoteAuthority('test');
 
-      if (expectedError) {
+      if (test?.error || test?.output) {
         logger.capture();
+      }
 
+      if (test?.error) {
         const result = await xtryAsync(async () => await remoteSSHResolver.resolve(authority, remoteContext));
 
         expect(result.fails).toBe(true);
-
-        const messages = logger.messages();
-
-        if (!messages.includes(expectedError)) {
-          console.log(messages);
-        }
-
-        expect(messages).to.contains(expectedError);
       } else {
         const result = await remoteSSHResolver.resolve(authority, remoteContext);
 
         expect(result).toBeDefined();
         expect(result.host).to.eql('127.0.0.1');
+      }
+
+      if (test?.error || test?.output) {
+        const expected = test?.error || test?.output;
+        const messages = logger.messages();
+
+        if (Array.isArray(expected)) {
+          for (const message of expected) {
+            expect(messages).to.contains(message);
+          }
+        } else {
+          if (!messages.includes(expected!)) {
+            console.log(messages);
+          }
+
+          expect(messages).to.contains(expected!);
+        }
       }
     }, 60_000);
   });
