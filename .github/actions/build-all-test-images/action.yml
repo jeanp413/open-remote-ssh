@@ -5,42 +5,42 @@ runs:
   steps:
     - name: Build or restore alpine-bash image
       if: runner.os == 'Linux'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: alpine-bash
         context: dockerfiles/alpine-bash
         context-hash: ${{ hashFiles('dockerfiles/alpine-bash/**') }}
     - name: Build or restore ubuntu-bash image
       if: runner.os == 'Linux'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: ubuntu-bash
         context: dockerfiles/ubuntu-bash
         context-hash: ${{ hashFiles('dockerfiles/ubuntu-bash/**') }}
     - name: Build or restore ubuntu-fish image
       if: runner.os == 'Linux'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: ubuntu-fish
         context: dockerfiles/ubuntu-fish
         context-hash: ${{ hashFiles('dockerfiles/ubuntu-fish/**') }}
     - name: Build or restore ubuntu-noflock image
       if: runner.os == 'Linux'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: ubuntu-noflock
         context: dockerfiles/ubuntu-noflock
         context-hash: ${{ hashFiles('dockerfiles/ubuntu-noflock/**') }}
     - name: Build or restore windows-capability image
       if: runner.os == 'Windows'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: windows-capability
         context: dockerfiles/windows-capability
         context-hash: ${{ hashFiles('dockerfiles/windows-capability/**') }}
     - name: Build or restore windows-openssh image
       if: runner.os == 'Windows'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: windows-openssh
         context: dockerfiles/windows-openssh

@@ -51,7 +51,7 @@ jobs:
           npm run build
 
       - name: Build or restore Docker test images
-        uses: ./.github/actions/build-all-test-images
+        uses: $/.github/actions/build-all-test-images
 
       - name: Test
         env:
@@ -108,7 +108,7 @@ jobs:
           npm run build
 
       - name: Build or restore Docker test images
-        uses: ./.github/actions/build-all-test-images
+        uses: $/.github/actions/build-all-test-images
 
       - name: Test
         env:

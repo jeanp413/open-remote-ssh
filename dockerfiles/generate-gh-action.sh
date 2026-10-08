@@ -39,7 +39,7 @@ for CONTEXT in "${DOCKERFILES_DIR}"/*/; do
   cat >> "${TEMP_FILE}" <<EOF
     - name: Build or restore ${IMAGE} image
       if: runner.os == '${PLATFORM}'
-      uses: ./.github/actions/build-test-image
+      uses: $/.github/actions/build-test-image
       with:
         image: ${IMAGE}
         context: dockerfiles/${IMAGE}
