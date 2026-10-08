@@ -6,7 +6,7 @@ client:
         Port 2222
         User openremotessh
         Password Open-Remote-SSH-1
-        SendEnv LANG LC_*
+        SendEnv COMPUTERNAME USERNAME
     /bin/vscodium/app/product.json: >
       {
         "nameShort": "VSCodium",
