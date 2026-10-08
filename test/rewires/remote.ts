@@ -24,6 +24,8 @@ vi.doMock('glob', async () => {
 	};
 });
 
+vi.doMock('../../src/server-config/get-product-json', () => import('../mocks/get-product-json.js'));
+
 const { getRemoteAuthority, RemoteSSHResolver } = await import('../../src/authResolver.js');
 const { default: SSHConfiguration } = await import('../../src/ssh/sshConfig.js');
 

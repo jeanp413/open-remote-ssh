@@ -8,6 +8,8 @@ $DISTRO_COMMIT="%%DISTRO_COMMIT%%"
 $DISTRO_QUALITY="%%DISTRO_QUALITY%%"
 $DISTRO_VSCODIUM_RELEASE="%%DISTRO_VSCODIUM_RELEASE%%"
 
+$MODIFY_PRODUCT_JSON=%%MODIFY_PRODUCT_JSON%%
+
 $SERVER_APP_NAME="%%SERVER_APP_NAME%%"
 $SERVER_INITIAL_EXTENSIONS="%%SERVER_INITIAL_EXTENSIONS%%"
 $SERVER_LISTEN_FLAG="%%SERVER_LISTEN_FLAG%%"
@@ -28,6 +30,23 @@ $OS_RELEASE_ID=
 $ARCH=
 $PLATFORM="win32"
 
+# Get commit from installed server's product.json
+function Get-InstalledCommit() {
+  $productJson = "$SERVER_DIR\product.json"
+
+  if(!(Test-Path $productJson)) {
+    return $null
+  }
+
+  $match = [regex]::Match((Get-Content -Raw $productJson), '"commit"\s*:\s*"([0-9a-fA-F]{7,})"')
+
+  if($match.Success) {
+    return $match.Groups[1].Value
+  }
+
+  return $null
+}
+
 function printInstallResults($code) {
   "%%SCRIPT_ID%%: start"
   "exitCode==$code=="
@@ -42,6 +61,28 @@ function printInstallResults($code) {
   "%%SCRIPT_ID%%: end"
 }
 
+# Test the commit of the installed server against the expected one (DISTRO_COMMIT)
+#
+# The install directory is named for the client's commit, but the download URL may still return a different build
+# (for example, when a version-keyed URL is shared by releases with different commits).
+# Reject a present server whose product.json records a different commit,
+# so it can be replaced by a fresh download instead of being reused under the wrong directory name.
+#
+# The validation is bypassed when:
+# - no server installed
+# - empty or unreadable commit
+# - "serverValidation": "force"
+# - "serverValidation": "skip"
+function Test-InstalledCommit() {
+  if(!(Test-Path $SERVER_SCRIPT) -or $MODIFY_PRODUCT_JSON -or $SERVER_VALIDATION_FLAG) {
+    return $True
+  }
+
+  $installed = Get-InstalledCommit
+
+  return (!$installed -or $installed -eq $DISTRO_COMMIT)
+}
+
 # Check machine architecture
 $ARCH=$env:PROCESSOR_ARCHITECTURE
 # Use x64 version for ARM64, as it's not yet available.
@@ -52,6 +93,13 @@ else {
   "Error architecture not supported: $ARCH"
   printInstallResults 1
   exit 0
+}
+
+# Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
+if(!(Test-InstalledCommit)) {
+  "Installed server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT, reinstalling"
+
+  Remove-Item -Recurse -Force "$SERVER_DIR\*"
 }
 
 # Create installation folder
@@ -112,13 +160,22 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     "Error while installing the server binary"
     exit 1
   }
+
+  if(!(Test-InstalledCommit)) {
+    "Error: downloaded server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT"
+    "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a `${commit} keyed URL cannot be ambiguous"
+
+    Remove-Item -Recurse -Force "$SERVER_DIR\*"
+
+    exit 1
+  }
 }
 else {
   "Server script already installed in $SERVER_SCRIPT"
 }
 
 # Modify the commit in the remote server to match the local value
-if(%%MODIFY_PRODUCT_JSON%%) {
+if($MODIFY_PRODUCT_JSON) {
   echo "Will modify product.json on remote to match the commit value"
   (Get-Content -Raw "$SERVER_DIR\product.json") -replace '"commit": "[0-9a-f]+",', ('"commit": "' + $DISTRO_COMMIT + '",') |
   Set-Content -NoNewLine "$SERVER_DIR\product.json"
