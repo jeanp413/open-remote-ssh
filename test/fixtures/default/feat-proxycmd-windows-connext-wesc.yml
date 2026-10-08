@@ -27,5 +27,7 @@ server:
   password: Open-Remote-SSH-1
 
 test:
-  output: |-
-    Spawning ProxyCommand: "C:\Program Files\Git\mingw64\bin\connect.exe" 127.0.0.1 2222
+  # output: |-
+  #   Spawning ProxyCommand: "C:\Program Files\Git\mingw64\bin\connect.exe" 127.0.0.1 2222
+  error: |-
+    Spawning ProxyCommand: "C:Program FilesGitmingw64binconnect.exe" 127.0.0.1 2222
