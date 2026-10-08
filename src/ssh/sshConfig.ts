@@ -61,6 +61,8 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'proxyjump': 'ProxyJump',
     'proxycommand': 'ProxyCommand',
     'include': 'Include',
+    'userknownhostsfile': 'UserKnownHostsFile',
+    'globalknownhostsfile': 'GlobalKnownHostsFile',
 };
 
 function normalizeProp(prop: Directive) {
