@@ -3,7 +3,7 @@
 import { EventEmitter } from 'events';
 import * as net from 'net';
 import * as fs from 'fs';
-import { Client, ClientChannel, ClientErrorExtensions, ExecOptions, ShellOptions, ConnectConfig } from 'ssh2';
+import { Client, ClientChannel, ClientErrorExtensions, ExecOptions, ShellOptions, ConnectConfig, SFTPWrapper } from 'ssh2';
 import { Server } from 'net';
 import socks from 'simple-socks';
 // eslint-disable-next-line no-duplicate-imports
@@ -372,6 +372,35 @@ export default class SSHConnection extends EventEmitter {
         }
 
         return Promise.resolve();
+    }
+
+    getClient(): Client {
+        if(!this.sshConnection) {
+            throw new Error('Not connected');
+        }
+
+        return this.sshConnection;
+    }
+
+    createSftp(): Promise<SFTPWrapper> {
+        const ssh = this.sshConnection;
+
+        if(!ssh) {
+            throw new Error('Not connected');
+        }
+
+        const sftp: Promise<SFTPWrapper> = new Promise((resolve, reject) => {
+            ssh.sftp((err: Error | undefined, sftp: SFTPWrapper) => {
+                if (err) {
+                    return reject(err);
+                }
+                else {
+                    resolve(sftp);
+                }
+            });
+        });
+
+        return sftp;
     }
 
     private createSshForwardTarget(destination: DestinationInfo, origin: OriginInfo, callback: ConnectionOptionsCallback) {
