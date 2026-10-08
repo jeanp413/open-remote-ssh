@@ -1,0 +1,8 @@
+git:
+  commitMessage: v${version}
+  tagName: v${version}
+  tagAnnotation: Release version ${version}
+  requireCleanWorkingDir: false
+npm:
+  publish: false
+disable-metrics: true
