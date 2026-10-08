@@ -27,6 +27,6 @@ server:
   password: Open-Remote-SSH-1
 
 test:
-  output: |-
-    $env:COMPUTERNAME="runner
-    $env:USERNAME="runneradmin"
+  output:
+    - $env:COMPUTERNAME="runner
+    - $env:USERNAME="runneradmin"
