@@ -60,6 +60,7 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'preferredauthentications': 'PreferredAuthentications',
     'proxyjump': 'ProxyJump',
     'proxycommand': 'ProxyCommand',
+    'sendenv': 'SendEnv',
     'include': 'Include',
 };
 

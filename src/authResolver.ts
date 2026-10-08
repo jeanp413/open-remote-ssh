@@ -29,6 +29,37 @@ export function getRemoteAuthority(host: string) {
     return `${REMOTE_SSH_AUTHORITY}+${host}`;
 }
 
+/**
+ * Convert a glob-style pattern (used in SendEnv) to a regular expression.
+ * Supports * (matches any characters) and ? (matches single character).
+ */
+function globToRegex(pattern: string): RegExp {
+    // Escape special regex characters except * and ?
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    // Convert glob wildcards to regex
+    const regexPattern = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+    return new RegExp(`^${regexPattern}$`);
+}
+
+/**
+ * Filter environment variables based on SendEnv patterns.
+ * Patterns can include wildcards like LC_* or exact names like LANG.
+ */
+function filterEnvBySendEnv(sendEnvPatterns: string[]): Record<string, string> {
+    const result: Record<string, string> = {};
+
+    for (const pattern of sendEnvPatterns) {
+        const regex = globToRegex(pattern);
+        for (const [key, value] of Object.entries(process.env)) {
+            if (regex.test(key) && value !== undefined) {
+                result[key] = value;
+            }
+        }
+    }
+
+    return result;
+}
+
 class TunnelInfo implements vscode.Disposable {
     constructor(
         readonly localPort: number,
@@ -180,6 +211,22 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const identitiesOnly = (sshHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                 const identityKeys = await gatherIdentityFiles(identityFiles, this.sshAgentSock, identitiesOnly, this.logger);
 
+                // Extract SendEnv configuration and filter local environment variables
+                this.logger.trace(`SSH config raw SendEnv value: ${JSON.stringify(sshHostConfig['SendEnv'])}`);
+                const sendEnvRaw = sshHostConfig['SendEnv'];
+                const sendEnvPatterns: string[] = sendEnvRaw
+                    ? (Array.isArray(sendEnvRaw) ? sendEnvRaw : [sendEnvRaw])
+                    : [];
+                this.logger.trace(`SendEnv patterns after normalization: ${JSON.stringify(sendEnvPatterns)}`);
+                const sendEnvVars = sendEnvPatterns.length > 0 ? filterEnvBySendEnv(sendEnvPatterns) : {};
+                if (sendEnvPatterns.length > 0) {
+                    if (Object.keys(sendEnvVars).length > 0) {
+                        this.logger.info(`SendEnv: Sending ${Object.keys(sendEnvVars).length} environment variable(s) to remote: ${Object.keys(sendEnvVars).join(', ')}`);
+                    } else {
+                        this.logger.trace(`SendEnv: No local environment variables matched patterns: ${sendEnvPatterns.join(', ')}`);
+                    }
+                }
+
                 // Create proxy jump connections if any
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
                 if (sshHostConfig['ProxyJump']) {
@@ -292,6 +339,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     serverVersion,
                     defaultExtensions,
                     [],
+                    sendEnvVars,
                     remotePlatformMap[sshDest.hostname],
                     remoteServerListenOnSocket,
                     customInstallPath,
