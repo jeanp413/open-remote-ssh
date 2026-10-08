@@ -130,6 +130,18 @@ function splitProxyCommand(value: string | string[]): string[] {
     return out;
 }
 
+/**
+ * The port a `ProxyJump` hop listens on.
+ *
+ * A jump host does not inherit the target's `Port`; ssh falls back to 22 for it.
+ * Both the connection made to a hop and the `forwardOut` that reaches the next
+ * one must agree on this, otherwise the first hop of a target declared on a
+ * non-default port is dialed on that port instead of its own.
+ */
+export function getProxyJumpPort(dest: SSHDestination, config: Record<string, string>): number {
+    return (config['Port'] && parseInt(config['Port'], 10)) || dest.port || 22;
+}
+
 export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode.Disposable {
 
     private proxyConnections: SSHConnection[] = [];
@@ -238,9 +250,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         });
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
-                        const proxyHostName = proxyHostConfig['HostName'] ? SSHConfiguration.interpolate(sshHostConfig['HostName'], { '%': '%', 'h': proxy.hostname }) : proxy.hostname;
+                        const proxyHostName = proxyHostConfig['HostName'] ? SSHConfiguration.interpolate(proxyHostConfig['HostName'], { '%': '%', 'h': proxy.hostname }) : proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
-                        const proxyPort = proxyHostConfig['Port'] ? parseInt(proxyHostConfig['Port'], 10) : (proxy.port || sshPort);
+                        const proxyPort = getProxyJumpPort(proxy, proxyHostConfig);
 
                         const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                         const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
@@ -265,7 +277,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                         const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                         const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
-                        const destPort = nextProxyJump ? ((nextProxyJump[1]['Port'] && parseInt(nextProxyJump[1]['Port'], 10)) || nextProxyJump[0].port || 22) : sshPort;
+                        const destPort = nextProxyJump ? getProxyJumpPort(nextProxyJump[0], nextProxyJump[1]) : sshPort;
                         proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
