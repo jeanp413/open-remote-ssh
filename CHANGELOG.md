@@ -1,3 +1,51 @@
+## 0.4.0
+
+- feat: list hosts from multi-name `Host` lines and nested `Includes` (#332)
+- enhance: support simple `ps` binary (#348)
+- fix(security): bind local port to local ip. (#360)
+
+## 0.3.1
+
+- fix(windows): use improved command to test archive (#331)
+
+## 0.3.0
+
+- feat: list configured SSH hosts in the Connect to Host prompt (#319)
+- feat: support `ForwardAgent` (#310)
+- feat: support PEM-encoded password-protected ssh keys (#249)
+- feat: add tests (#314)
+- enhance: add integrity check of the archive (#323)
+- enhance: fall back to private key when .pub file parsing fails (#268)
+- feat: use official simple-socks (#324)
+- fix(alpine): pass flock and expose error on missing libstdc++ (#315)
+- fix: sanitize the extension ids (#321)
+- fix(macos): use a fixed file descriptor due to bash3 (#326)
+
+## 0.2.0
+- feat: add compatibility with Code-OSS (#189)
+- remodel: use base64 encoding for install script to support csh/tcsh login shells (#296)
+- enhance(linux): use `flock` to prevent multiple server install scripts running in parallel (#285)
+- enhance: increase polling loop to aid slowish machines (#290)
+- refactor: rename `serverBinaryName` setting (#280)
+- refactor: extract install scripts from `serverSetup.ts` into script files (#287)
+
+## 0.1.2
+- fix: split ProxyCommand into argv tokens before spawn (#274)
+
+## 0.1.1
+- don't assume `ProxyCommand` value's type (#270)
+
+## 0.1.0
+- replace `which` with `command -v` (#215)
+- allow automatic download of remote extension host on FreeBSD (#244)
+- add remote.SSH.serverInstallPath option (#259)
+- cleanup on errors (#172)
+- typo `attemp` -> `attempt` (#185)
+- use original ssh-config dependency (#267)
+
+## 0.0.49
+- remove default `remote.SSH.serverDownloadUrlTemplate`
+
 ## 0.0.48
 - Support `%n` in ProxyCommand
 - fix: add missing direct @types/ssh2-stream dependency (#177)
