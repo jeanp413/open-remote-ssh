@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Server installation script
 
 TMP_DIR="${XDG_RUNTIME_DIR:-"/tmp"}"
