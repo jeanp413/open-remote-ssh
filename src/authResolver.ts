@@ -203,7 +203,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         });
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
-                        const proxyHostName = proxyHostConfig['HostName'] ? SSHConfiguration.interpolate(sshHostConfig['HostName'], { '%': '%', 'h': proxy.hostname }) : proxy.hostname;
+                        const proxyHostName = proxyHostConfig['HostName'] ? SSHConfiguration.interpolate(proxyHostConfig['HostName'], { '%': '%', 'h': proxy.hostname }) : proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
                         const proxyPort = getProxyJumpPort(proxy, proxyHostConfig);
 

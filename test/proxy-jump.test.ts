@@ -94,7 +94,7 @@ beforeAll(async () => {
 
   jumpPort = getMappedPort(jumpName);
 
-  await waitForSSHReady(USERNAME, PASSWORD, jumpPort, 60_000);
+  await waitForSSHReady(USERNAME, PASSWORD, jumpPort, 60_000, jumpName);
   await waitForTargetReady(60_000);
 }, 180_000);
 
