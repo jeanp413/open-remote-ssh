@@ -1,11 +1,11 @@
 client:
   files:
-    /etc/ssh/ssh_config: >
+    'C:\ProgramData\ssh\ssh_config': >
       Host test
         HostName 127.0.0.1
         Port 2222
         User openremotessh
-        Password openremotessh
+        Password Open-Remote-SSH-1
         SendEnv LANG LC_*
     /bin/vscodium/app/product.json: >
       {
@@ -21,6 +21,7 @@ client:
       }
 
 server:
-  image: local-ubuntu-bash
+  image: local-windows-capability
+  platform: windows
   username: openremotessh
-  password: openremotessh
+  password: Open-Remote-SSH-1
