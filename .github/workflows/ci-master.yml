@@ -37,9 +37,8 @@ jobs:
         run: |
           npm run build
 
-      - name: Build Images
-        run: |
-          npm run test:images
+      - name: Build or restore Docker test images
+        uses: $/.github/actions/build-all-test-images
 
       - name: Test
         run: |
@@ -86,9 +85,8 @@ jobs:
         run: |
           npm run build
 
-      - name: Build Images
-        run: |
-          npm run test:images
+      - name: Build or restore Docker test images
+        uses: $/.github/actions/build-all-test-images
 
       - name: Test
         run: |
