@@ -339,7 +339,7 @@ export default class SSHConnection extends EventEmitter {
                     server.close();
                     reject(err);
                     delete this.activeTunnels[SSHTunnelConfig.name!];
-                }).listen(SSHTunnelConfig.localPort);
+                }).listen(SSHTunnelConfig.localPort, '127.0.0.1');
             });
         }
     }

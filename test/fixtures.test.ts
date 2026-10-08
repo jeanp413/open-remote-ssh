@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import fse from '@zokugun/fs-extra-plus/sync';
-import { xtry } from '@zokugun/xtry/sync';
+import { xtry, xtryAsync } from '@zokugun/xtry/sync';
 import { vol } from 'memfs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import YAML from 'yaml';
@@ -12,18 +12,26 @@ import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
 
 const ROOT = fse.join('.', 'test', 'fixtures', 'default');
-const SERVER_SETUP = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
+const SERVER_SETUP_BASH = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
+const SERVER_SETUP_POWERSHELL = fse.readFile('./src/scripts/server-setup.ps1', 'utf8').value!;
 
-type ClientOptions = {
-  files: Record<string, string>;
-  /** When set, the hosts the SSH config is expected to declare. */
-  hosts?: string[];
-};
-
-type ServerOptions = {
-  image: string;
-  username: string;
-  password: string;
+type TestDocument = {
+  client: {
+    files: Record<string, string>;
+  };
+  server: {
+    image: string;
+    username: string;
+    password: string;
+    platform?: 'linux' | 'windows';
+  };
+  test: {
+    either?: string[] | string;
+    error?: string[] | string;
+    // The hosts the SSH config is expected to have.
+    hosts?: string[];
+    output?: string[] | string;
+  };
 };
 
 const files = fse.walk(ROOT, {
@@ -49,8 +57,12 @@ for (const file of files.value) {
     throw document.error;
   }
 
-  const { client, server } = document.value as { client: ClientOptions; server: ServerOptions };
+  const { client, server, test } = document.value as TestDocument;
   const containerName = `open-remote-ssh-test-${randomUUID()}`;
+
+  if ((server.platform === 'windows') !== (process.platform === 'win32')) {
+    continue;
+  }
 
   describe(name, async () => {
     beforeAll(async () => {
@@ -85,7 +97,7 @@ for (const file of files.value) {
 
       const hostPort = getMappedPort(containerName);
 
-      await waitForSSHReady(server.username, server.password, hostPort, 60_000);
+      await waitForSSHReady(server.username, server.password, hostPort, 60_000, containerName);
     }, 120_000);
 
     afterAll(() => {
@@ -95,15 +107,16 @@ for (const file of files.value) {
     it(`test-${name}`, async () => {
       vol.fromJSON({
         ...client.files,
-        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP,
+        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP_BASH,
+        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.ps1': SERVER_SETUP_POWERSHELL,
       });
 
       vscode.window.setPassword(server.password);
 
-      if (client.hosts) {
+      if (test?.hosts) {
         const config = await SSHConfiguration.loadFromFS();
 
-        expect(config.getAllConfiguredHosts()).to.eql(client.hosts);
+        expect(config.getAllConfiguredHosts()).to.eql(test.hosts);
       }
 
       const logger = new Log('Remote - SSH');
@@ -111,10 +124,40 @@ for (const file of files.value) {
       const remoteSSHResolver = new RemoteSSHResolver(extContext, logger);
       const remoteContext = new vscode.RemoteAuthorityResolverContext();
       const authority = getRemoteAuthority('test');
-      const result = await remoteSSHResolver.resolve(authority, remoteContext);
+      const expectedMessages = test?.error || test?.output || test?.either;
 
-      expect(result).toBeDefined();
-      expect(result.host).to.eql('127.0.0.1');
+      if (expectedMessages) {
+        logger.capture();
+      }
+
+      if (test?.error || test?.either) {
+        const result = await xtryAsync(async () => await remoteSSHResolver.resolve(authority, remoteContext));
+
+        if (test?.error) {
+          expect(result.fails).toBe(true);
+        }
+      } else {
+        const result = await remoteSSHResolver.resolve(authority, remoteContext);
+
+        expect(result).toBeDefined();
+        expect(result.host).to.eql('127.0.0.1');
+      }
+
+      if (expectedMessages) {
+        const messages = logger.messages();
+
+        if (Array.isArray(expectedMessages)) {
+          for (const message of expectedMessages) {
+            expect(messages).to.contains(message);
+          }
+        } else {
+          if (!messages.includes(expectedMessages)) {
+            console.log(messages);
+          }
+
+          expect(messages).to.contains(expectedMessages);
+        }
+      }
     }, 60_000);
   });
 }

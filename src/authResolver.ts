@@ -1,3 +1,6 @@
+import type { ParsedKey } from 'ssh2-streams';
+import type { ServerVersion } from './server-config/types';
+
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
@@ -5,11 +8,10 @@ import * as stream from 'stream';
 import { SocksClient, SocksClientOptions } from 'socks';
 import * as vscode from 'vscode';
 import * as ssh2 from 'ssh2';
-import type { ParsedKey } from 'ssh2-streams';
 import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
-import SSHConfiguration from './ssh/sshConfig';
+import SSHConfiguration, { HostConfiguration } from './ssh/sshConfig';
 import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, removeHostFromEntry, findConflictingEntries, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
@@ -18,7 +20,6 @@ import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows } from './common/platform';
 import * as os from 'os';
-import { ServerVersion } from './serverConfig';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -58,7 +59,11 @@ class TunnelInfo implements vscode.Disposable {
  * This helper mirrors OpenSSH's own ProxyCommand tokenization:
  * - whitespace separates tokens (outside quotes)
  * - double quotes group a single token
- * - backslash escapes the next character
+ * - backslash escapes the next character (on non-Windows platforms)
+ *
+ * On Windows, backslash is the path separator and is NOT treated as an
+ * escape character. This matches the behavior of Windows OpenSSH, which
+ * does not support backslash escaping in ProxyCommand values.
  *
  * Array inputs are passed through for defensive compatibility with older
  * ssh-config versions.
@@ -72,7 +77,7 @@ function splitProxyCommand(value: string | string[]): string[] {
     let hasToken = false;
     while (i < value.length) {
         const ch = value[i];
-        if (ch === '\\' && i + 1 < value.length) {
+        if (!isWindows && ch === '\\' && i + 1 < value.length) {
             cur += value[i + 1];
             i += 2;
             hasToken = true;
@@ -161,18 +166,34 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             try {
                 const sshconfig = await SSHConfiguration.loadFromFS();
                 const sshHostConfig = sshconfig.getHostConfiguration(sshDest.hostname);
-                const sshHostName = sshHostConfig['HostName'] ? sshHostConfig['HostName'].replace('%h', sshDest.hostname) : sshDest.hostname;
+                const sshHostName = sshHostConfig['HostName'] ? SSHConfiguration.interpolate(sshHostConfig['HostName'], { '%': '%', 'h': sshDest.hostname }) : sshDest.hostname;
                 const sshUser = sshHostConfig['User'] || sshDest.user || os.userInfo().username || ''; // https://github.com/openssh/openssh-portable/blob/5ec5504f1d328d5bfa64280cd617c3efec4f78f3/sshconnect.c#L1561-L1562
                 const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : (sshDest.port || 22);
 
-                this.sshAgentSock = sshHostConfig['IdentityAgent'] || process.env['SSH_AUTH_SOCK'] || (isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined);
+                const valuesToInterpolate = {
+                    '%': '%',
+                    'd': os.homedir(),
+                    'h': sshHostName,
+                    'i': os.userInfo().uid.toString(),
+                    'k': sshHostConfig['HostKeyAlias'] || sshDest.hostname,
+                    'L': os.hostname(),
+                    'l': os.hostname(),
+                    'n': sshDest.hostname,
+                    'p': (sshDest.port || 22).toString(),
+                    'r': sshUser,
+                    'u': os.userInfo().username || '',
+                };
+                const interpolatePath = (value: string) => SSHConfiguration.interpolate(value, valuesToInterpolate);
+
+                const identityAgent = sshHostConfig['IdentityAgent'] ? interpolatePath(sshHostConfig['IdentityAgent']) : undefined;
+                this.sshAgentSock = identityAgent || process.env['SSH_AUTH_SOCK'] || (isWindows ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined);
                 this.sshAgentSock = this.sshAgentSock ? untildify(this.sshAgentSock) : undefined;
                 const agentForward = enableAgentForwarding && (sshHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                 const agent = agentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
 
                 const preferredAuthentications = sshHostConfig['PreferredAuthentications'] ? sshHostConfig['PreferredAuthentications'].split(',').map(s => s.trim()) : ['publickey', 'password', 'keyboard-interactive'];
 
-                const identityFiles: string[] = (sshHostConfig['IdentityFile'] as unknown as string[]) || [];
+                const identityFiles: string[] = (sshHostConfig['IdentityFile']?.map(f => untildify(interpolatePath(f)))) || [];
                 const identitiesOnly = (sshHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                 const identityKeys = await gatherIdentityFiles(identityFiles, this.sshAgentSock, identitiesOnly, this.logger);
 
@@ -180,22 +201,22 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
                 if (sshHostConfig['ProxyJump']) {
                     const proxyJumps = sshHostConfig['ProxyJump'].split(',').filter(i => !!i.trim())
-                        .map(i => {
+                        .map((i): [SSHDestination, HostConfiguration] => {
                             const proxy = SSHDestination.parse(i);
                             const proxyHostConfig = sshconfig.getHostConfiguration(proxy.hostname);
-                            return [proxy, proxyHostConfig] as [SSHDestination, Record<string, string>];
+                            return [proxy, proxyHostConfig];
                         });
 
                     for (let i = 0; i < proxyJumps.length; i++) {
                         const [proxy, proxyHostConfig] = proxyJumps[i];
-                        const proxyHostName = proxyHostConfig['HostName'] || proxy.hostname;
+                        const proxyHostName = proxyHostConfig['HostName'] ? SSHConfiguration.interpolate(sshHostConfig['HostName'], { '%': '%', 'h': proxy.hostname }) : proxy.hostname;
                         const proxyUser = proxyHostConfig['User'] || proxy.user || sshUser;
                         const proxyPort = getProxyJumpPort(proxy, proxyHostConfig);
 
                         const proxyAgentForward = enableAgentForwarding && (proxyHostConfig['ForwardAgent'] || 'no').toLowerCase() === 'yes';
                         const proxyAgent = proxyAgentForward && this.sshAgentSock ? new ssh2.OpenSSHAgent(this.sshAgentSock) : undefined;
 
-                        const proxyIdentityFiles: string[] = (proxyHostConfig['IdentityFile'] as unknown as string[]) || [];
+                        const proxyIdentityFiles: string[] = (proxyHostConfig['IdentityFile']?.map(f => untildify(interpolatePath(f)))) || [];
                         const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                         const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
@@ -221,14 +242,22 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 } else if (sshHostConfig['ProxyCommand']) {
                     let proxyArgs = splitProxyCommand(sshHostConfig['ProxyCommand'] as unknown as string | string[])
-                        .map((arg) => arg.replace('%h', sshHostName).replace('%n', sshDest.hostname).replace('%p', sshPort.toString()).replace('%r', sshUser));
+                        .map((arg) => SSHConfiguration.interpolate(arg, {
+                            '%': '%',
+                            'h': sshHostName,
+                            'n': sshDest.hostname,
+                            'p': sshPort.toString(),
+                            'r': sshUser,
+                        }));
                     let proxyCommand = proxyArgs.shift()!;
 
                     let options = {};
-                    if (isWindows && /\.(bat|cmd)$/.test(proxyCommand)) {
+                    if (isWindows && (/\.(bat|cmd)$/.test(proxyCommand) || proxyCommand.includes(' '))) {
                         proxyCommand = `"${proxyCommand}"`;
                         proxyArgs = proxyArgs.map((arg) => arg.includes(' ') ? `"${arg}"` : arg);
                         options = { shell: true, windowsHide: true, windowsVerbatimArguments: true };
+                    } else {
+                        options = { shell: true };
                     }
 
                     this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
@@ -597,7 +626,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         }
                     })
                     .on('listening', () => resolve(server))
-                    .listen(localPort);
+                    .listen(localPort, '127.0.0.1');
             });
             disposables.push({
                 dispose: () => forwardingServer.close(() => {

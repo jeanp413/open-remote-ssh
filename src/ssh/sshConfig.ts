@@ -7,9 +7,9 @@ import { exists as fileExists, normalizeToSlash, untildify } from '../common/fil
 import { isWindows } from '../common/platform';
 import { glob } from 'glob';
 
-// Only a few directives might return an array
-// https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L10
 export type HostConfiguration = {
+    // Only a few directives might return an array
+    // https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L10
     CanonicalDomains?: string | string[];
     GlobalKnownHostsFile?: string | string[];
     Host?: string | string[];
@@ -18,6 +18,13 @@ export type HostConfiguration = {
     ProxyCommand?: string | string[];
     SendEnv?: string | string[];
     UserKnownHostsFile?: string | string[];
+
+    // https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L169
+    IdentityFile?: string[];
+    LocalForward?: string[];
+    RemoteForward?: string[];
+    DynamicForward?: string[];
+    CertificateFile?: string[];
 } & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
@@ -130,6 +137,22 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
 }
 
 export default class SSHConfiguration {
+
+    static interpolate(str: string, values: Record<string, string>): string {
+        const results: string[] = [];
+        for (let i = 0; i < str.length; i++) {
+            if (str[i] === '%' && i + 1 < str.length) {
+                const next = str[i + 1];
+                if (next in values) {
+                    results.push(values[next]);
+                    i++;
+                    continue;
+                }
+            }
+            results.push(str[i]);
+        }
+        return results.join('');
+    }
 
     static async loadFromFS(): Promise<SSHConfiguration> {
         const config = await parseSSHConfigFromFile(getSSHConfigPath(), true);
