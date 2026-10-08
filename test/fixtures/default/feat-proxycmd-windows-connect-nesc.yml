@@ -28,4 +28,4 @@ server:
 
 test:
   output: |-
-    Spawning ProxyCommand: connect.exe 127.0.0.1 2222
+    Spawning ProxyCommand: "connect.exe" 127.0.0.1 2222
