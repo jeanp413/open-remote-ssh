@@ -26,6 +26,7 @@ type TestDocument = {
     platform?: 'linux' | 'windows';
   };
   test: {
+    either?: string[] | string;
     error?: string[] | string;
     // The hosts the SSH config is expected to have.
     hosts?: string[];
@@ -123,15 +124,18 @@ for (const file of files.value) {
       const remoteSSHResolver = new RemoteSSHResolver(extContext, logger);
       const remoteContext = new vscode.RemoteAuthorityResolverContext();
       const authority = getRemoteAuthority('test');
+      const expectedMessages = test?.error || test?.output || test?.either;
 
-      if (test?.error || test?.output) {
+      if (expectedMessages) {
         logger.capture();
       }
 
-      if (test?.error) {
+      if (test?.error || test?.either) {
         const result = await xtryAsync(async () => await remoteSSHResolver.resolve(authority, remoteContext));
 
-        expect(result.fails).toBe(true);
+        if (test?.error) {
+          expect(result.fails).toBe(true);
+        }
       } else {
         const result = await remoteSSHResolver.resolve(authority, remoteContext);
 
@@ -139,20 +143,19 @@ for (const file of files.value) {
         expect(result.host).to.eql('127.0.0.1');
       }
 
-      if (test?.error || test?.output) {
-        const expected = test?.error || test?.output;
+      if (expectedMessages) {
         const messages = logger.messages();
 
-        if (Array.isArray(expected)) {
-          for (const message of expected) {
+        if (Array.isArray(expectedMessages)) {
+          for (const message of expectedMessages) {
             expect(messages).to.contains(message);
           }
         } else {
-          if (!messages.includes(expected!)) {
+          if (!messages.includes(expectedMessages)) {
             console.log(messages);
           }
 
-          expect(messages).to.contains(expected!);
+          expect(messages).to.contains(expectedMessages);
         }
       }
     }, 60_000);
