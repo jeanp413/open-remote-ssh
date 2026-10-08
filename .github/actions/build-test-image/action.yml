@@ -1,0 +1,51 @@
+name: Build or restore Docker image
+description: Restore an exact-context image cache or build the image, saving caches only from master
+inputs:
+  image:
+    description: Image name without the local- prefix
+    required: true
+  context:
+    description: Docker build context directory
+    required: true
+  context-hash:
+    description: Hash of all files in the Docker build context
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Restore image cache
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/${{ inputs.image }}.tar
+        key: docker-image-v1-${{ runner.os }}-${{ inputs.image }}-${{ inputs.context-hash }}
+
+    - name: Load image
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      env:
+        IMAGE_ARCHIVE: ${{ runner.temp }}/${{ inputs.image }}.tar
+      run: docker load --input "$IMAGE_ARCHIVE"
+
+    - name: Build image
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        CONTEXT: ${{ inputs.context }}
+      run: docker build -t "local-$IMAGE" "$CONTEXT"
+
+    - name: Archive image
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        IMAGE_ARCHIVE: ${{ runner.temp }}/${{ inputs.image }}.tar
+      run: docker save --output "$IMAGE_ARCHIVE" "local-$IMAGE"
+
+    - name: Save image cache
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/${{ inputs.image }}.tar
+        key: docker-image-v1-${{ runner.os }}-${{ inputs.image }}-${{ inputs.context-hash }}
