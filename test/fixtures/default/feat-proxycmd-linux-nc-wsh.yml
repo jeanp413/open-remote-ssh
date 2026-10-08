@@ -1,16 +1,12 @@
 client:
   files:
-    /etc/ssh/ssh_config: |
-      Host *
-        StrictHostKeyChecking no
-
-      Include config.d/*
-    /etc/ssh/config.d/hosts: |
-      Host test alias
+    /etc/ssh/ssh_config: >
+      Host test
         HostName 127.0.0.1
         Port 2222
         User openremotessh
         Password openremotessh
+        ProxyCommand sh -c 'nc %h %p'
     /bin/vscodium/app/product.json: >
       {
         "nameShort": "VSCodium",
@@ -30,6 +26,5 @@ server:
   password: openremotessh
 
 test:
-  hosts:
-    - test
-    - alias
+  output: |-
+    Spawning ProxyCommand: sh -c 'nc 127.0.0.1 2222'

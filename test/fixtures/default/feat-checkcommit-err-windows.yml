@@ -25,6 +25,7 @@ server:
   username: openremotessh
   password: Open-Remote-SSH-1
 
-error: |-
-  Error: downloaded server commit 824c4c46a288b839f13b24022655329c2aeb9f81 does not match 4c0b0c6cc561d2d3636d1ec250935431876ce4dc
-  Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a ${commit} keyed URL cannot be ambiguous
+test:
+  error: |-
+    Error: downloaded server commit 824c4c46a288b839f13b24022655329c2aeb9f81 does not match 4c0b0c6cc561d2d3636d1ec250935431876ce4dc
+    Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a ${commit} keyed URL cannot be ambiguous
