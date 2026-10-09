@@ -140,12 +140,12 @@
 					"default": true
 				},
 				"remote.SSH.forwardPorts": {
-					"type": "array",
-					"items": {
+					"type": "object",
+					"additionalProperties": {
 						"type": "string"
 					},
-					"description": "Ports to forward for specific SSH hosts, using %host%:PORT (for example 10.10.10.10:11434 or host.com:11434) (fixes Windows not automatically adding the forwards).",
-					"default": [],
+					"description": "Ports to forward for specific SSH hosts. Use the format 'hostA': \"11434,12345\" or 'hostA': \"8080\". This setting ensures that ports are automatically added for forwards.",
+					"default": {},
 					"scope": "application"
 				},
 				"remote.SSH.serverDownloadUrlTemplate": {

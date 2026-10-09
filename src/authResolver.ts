@@ -185,29 +185,36 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
 
         // Read configured forwards for the SSH alias used by this connection.
-        const configuredForwardPorts = remoteSSHconfig
-        .get<string[]>('forwardPorts', [])
-        .flatMap((entry) => {
-            // Split each entry into its host alias and port.
-            const separator = entry.lastIndexOf(':');
-            if (separator < 1) {
+        const configuredForwardPorts: number[] = Object.entries(remoteSSHconfig.get('forwardPorts', {}))
+        .flatMap(([host, ports]) => {
+            if (host !== sshDest.hostname) {
                 return [];
             }
 
-            const host = entry.slice(0, separator).trim();
-            const port = Number(entry.slice(separator + 1));
-
-            // Ignore entries for other hosts and invalid TCP ports.
-            if (
-                host !== sshDest.hostname ||
-                !Number.isInteger(port) ||
-                port < 1 ||
-                port > 65535
-            ) {
+            if (typeof ports !== 'string') {
+                this.logger.error(
+                    `Invalid forwardPorts configuration for host '${host}': expected a string`
+                );
                 return [];
             }
 
-            return [port];
+            return ports.split(',').flatMap(value => {
+                const port = Number(value.trim());
+
+                if (
+                    value.trim() === '' ||
+                    !Number.isInteger(port) ||
+                    port < 1 ||
+                    port > 65535
+                ) {
+                    this.logger.error(
+                        `Invalid port value: '${value}' (must be an integer between 1 and 65535)`
+                    );
+                    return [];
+                }
+
+                return [port];
+            });
         });
 
         return vscode.window.withProgress({
