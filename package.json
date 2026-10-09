@@ -139,6 +139,15 @@
 					"scope": "application",
 					"default": true
 				},
+				"remote.SSH.forwardPorts": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Ports to forward for specific SSH hosts, using %host%:PORT (for example 10.10.10.10:11434 or host.com:11434) (fixes Windows not automatically adding the forwards).",
+					"default": [],
+					"scope": "application"
+				},
 				"remote.SSH.serverDownloadUrlTemplate": {
 					"type": "string",
 					"description": "The URL from where the vscode server will be downloaded. You can use the following variables and they will be replaced dynamically:\n- ${quality}: vscode server quality, e.g. stable or insiders\n- ${version}: vscode server version, e.g. 1.69.0\n- ${commit}: vscode server release commit\n- ${arch}: vscode server arch, e.g. x64, armhf, arm64\n- ${release}: release number, vscodium only https://github.com/VSCodium/vscodium/pull/1192",
