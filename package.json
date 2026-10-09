@@ -71,7 +71,7 @@
 		"@typescript-eslint/parser": "8.71.0",
 		"@vitest/coverage-v8": "4.1.11",
 		"@vitest/ui": "4.1.11",
-		"@vscode/vsce": "3.9.2",
+		"@vscode/vsce": "^4.0.0",
 		"@zokugun/fs-extra-plus": "0.5.0",
 		"@zokugun/xtry": "0.11.6",
 		"better-npm-audit": "3.11.0",
