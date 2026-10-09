@@ -71,7 +71,7 @@
 		"@typescript-eslint/parser": "8.71.0",
 		"@vitest/coverage-v8": "4.1.11",
 		"@vitest/ui": "4.1.11",
-		"@vscode/vsce": "3.9.2",
+		"@vscode/vsce": "^4.0.0",
 		"@zokugun/fs-extra-plus": "0.5.0",
 		"@zokugun/xtry": "0.11.6",
 		"better-npm-audit": "3.11.0",
@@ -138,6 +138,15 @@
 					"markdownDescription": "Enable fixing the remote environment so that the SSH config option `ForwardAgent` will take effect as expected from VS Code's remote extension host.",
 					"scope": "application",
 					"default": true
+				},
+				"remote.SSH.forwardPorts": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Ports to forward for specific SSH hosts, using %host%:PORT (for example 10.10.10.10:11434 or host.com:11434) (fixes Windows not automatically adding the forwards).",
+					"default": [],
+					"scope": "application"
 				},
 				"remote.SSH.serverDownloadUrlTemplate": {
 					"type": "string",

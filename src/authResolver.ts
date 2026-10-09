@@ -184,6 +184,32 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
         const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
 
+        // Read configured forwards for the SSH alias used by this connection.
+        const configuredForwardPorts = remoteSSHconfig
+        .get<string[]>('forwardPorts', [])
+        .flatMap((entry) => {
+            // Split each entry into its host alias and port.
+            const separator = entry.lastIndexOf(':');
+            if (separator < 1) {
+                return [];
+            }
+
+            const host = entry.slice(0, separator).trim();
+            const port = Number(entry.slice(separator + 1));
+
+            // Ignore entries for other hosts and invalid TCP ports.
+            if (
+                host !== sshDest.hostname ||
+                !Number.isInteger(port) ||
+                port < 1 ||
+                port > 65535
+            ) {
+                return [];
+            }
+
+            return [port];
+        });
+
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${sshDest.hostname}`,
             location: vscode.ProgressLocation.Notification,
@@ -379,6 +405,38 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const tunnelConfig = await this.openTunnel(0, installResult.listeningOn);
                 this.tunnels.push(tunnelConfig);
 
+                // Track successfully opened forwards so VSCodium can discover them.
+                const forwardedPorts = new Set<number>();
+                const environmentTunnels: vscode.TunnelDescription[] = [];
+
+                for (const port of configuredForwardPorts) {
+                    // Skip duplicate ports in the setting.
+                    if (forwardedPorts.has(port)) {
+                        continue;
+                    }
+                    forwardedPorts.add(port);
+
+                    // Open the SSH forward and retain it for disposal.
+                    const configuredTunnel = await this.openTunnel(port, port);
+                    this.tunnels.push(configuredTunnel);
+
+                    // Advertise the actual local port and the remote loopback address.
+                    environmentTunnels.push({
+                        remoteAddress: {
+                            host: '127.0.0.1',
+                            port
+                        },
+                        localAddress: {
+                            host: '127.0.0.1',
+                            port: configuredTunnel.localPort
+                        }
+                    });
+
+                    this.logger.info(
+                        `Forwarded configured port ${port} for ${sshDest.hostname}`
+                    );
+                }
+
                 // Enable ports view
                 vscode.commands.executeCommand('setContext', 'forwardedPortsViewEnabled', true);
 
@@ -394,8 +452,19 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
                 });
 
-                const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
+                // Return the existing VS Code server connection unchanged.
+                const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority(
+                    '127.0.0.1',
+                    tunnelConfig.localPort,
+                    installResult.connectionToken
+                );
+
+                // Preserve the existing extension host environment.
                 resolvedResult.extensionHostEnv = envVariables;
+
+                // Advertise configured forwards that this resolver has already opened.
+                resolvedResult.environmentTunnels = environmentTunnels;
+
                 return resolvedResult;
             } catch (e: unknown) {
                 this.logger.error(`Error resolving authority`, e);
