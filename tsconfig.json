@@ -1,5 +1,6 @@
 {
 	"compilerOptions": {
+		"rootDir": "./src",
 		"target": "es2020",
 		"lib": [
 			"ES2016",
@@ -35,10 +36,17 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"forceConsistentCasingInFileNames": true,
-		"esModuleInterop": true
+		"esModuleInterop": true,
+		"types": [
+			"node",
+			"ssh2",
+			"ssh2-streams"
+		]
 	},
 	"exclude": [
+		".vscode-test",
 		"node_modules",
-		".vscode-test"
+		"test",
+		"vitest.config.mts"
 	]
 }

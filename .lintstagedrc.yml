@@ -1,0 +1,5 @@
+./package.json:
+  - fixpack
+  - npm run audit
+.github/workflows/*.yml: zizmor
+"*.ts": eslint

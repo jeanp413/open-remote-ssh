@@ -1,0 +1,24 @@
+client:
+  files:
+    /etc/ssh/ssh_config: >
+      Host test
+        HostName 127.0.0.1
+        Port 2222
+        User openremotessh
+        Password openremotessh
+    /bin/vscodium/app/product.json: >
+      {
+        "nameShort": "VSCodium",
+        "nameLong": "VSCodium",
+        "applicationName": "codium",
+        "quality": "stable",
+        "commit": "4c0b0c6cc561d2d3636d1ec250935431876ce4dc",
+        "version": "1.126.04524",
+        "serverApplicationName": "codium-server",
+        "serverDataFolderName": ".vscodium-server",
+        "serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/1.126.04524/vscodium-reh-${os}-${arch}-1.126.04524.tar.gz"
+      }
+server:
+  image: local-ubuntu-noflock
+  username: openremotessh
+  password: openremotessh
