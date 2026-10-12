@@ -11,7 +11,7 @@ import * as ssh2 from 'ssh2';
 import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
-import SSHConfiguration from './ssh/sshConfig';
+import SSHConfiguration, { type HostConfiguration } from './ssh/sshConfig';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
@@ -144,7 +144,7 @@ export function getProxyJumpPort(dest: SSHDestination, config: Record<string, st
 
 export const MAX_PROXY_JUMPS = 10;
 
-export type ProxyJumpHop = [SSHDestination, Record<string, string>];
+export type ProxyJumpHop = [SSHDestination, HostConfiguration];
 
 /**
  * The hops of a `ProxyJump` value, in the order they have to be connected to.
