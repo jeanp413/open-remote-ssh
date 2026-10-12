@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Server installation script
 
+%%SEND_ENV_VAR_LINES%%
+
 TMP_DIR="${XDG_RUNTIME_DIR:-"/tmp"}"
 
 DISTRO_VERSION="%%DISTRO_VERSION%%"

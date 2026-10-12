@@ -1,5 +1,7 @@
 # Server installation script
 
+%%SEND_ENV_VAR_LINES%%
+
 $TMP_DIR="$env:TEMP\$([System.IO.Path]::GetRandomFileName())"
 $ProgressPreference = "SilentlyContinue"
 
