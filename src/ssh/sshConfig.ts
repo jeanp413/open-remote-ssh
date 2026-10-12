@@ -7,9 +7,9 @@ import { exists as fileExists, normalizeToSlash, untildify } from '../common/fil
 import { isWindows } from '../common/platform';
 import { glob } from 'glob';
 
-// Only a few directives might return an array
-// https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L10
 export type HostConfiguration = {
+    // Only a few directives might return an array
+    // https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L10
     CanonicalDomains?: string | string[];
     GlobalKnownHostsFile?: string | string[];
     Host?: string | string[];
@@ -18,6 +18,13 @@ export type HostConfiguration = {
     ProxyCommand?: string | string[];
     SendEnv?: string | string[];
     UserKnownHostsFile?: string | string[];
+
+    // https://github.com/cyjake/ssh-config/blob/master/src/ssh-config.ts#L169
+    IdentityFile?: string[];
+    LocalForward?: string[];
+    RemoteForward?: string[];
+    DynamicForward?: string[];
+    CertificateFile?: string[];
 } & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
@@ -36,6 +43,10 @@ function isHostSection(line: Line): line is Section {
     return isDirective(line) && line.param === 'Host' && !!line.value && !!(line as Section).config;
 }
 
+function isSection(line: Line): line is Section {
+    return isDirective(line) && !!(line as Section).config;
+}
+
 function isIncludeDirective(line: Line): line is Section {
     return isDirective(line) && line.param === 'Include' && !!line.value;
 }
@@ -49,6 +60,7 @@ function isSpecialHost(value: string) {
 const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'host': 'Host',
     'hostname': 'HostName',
+    'hostkeyalias': 'HostKeyAlias',
     'user': 'User',
     'port': 'Port',
     'identityagent': 'IdentityAgent',
@@ -58,7 +70,9 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'preferredauthentications': 'PreferredAuthentications',
     'proxyjump': 'ProxyJump',
     'proxycommand': 'ProxyCommand',
+    'sendenv': 'SendEnv',
     'include': 'Include',
+    'match': 'Match',
 };
 
 function normalizeProp(prop: Directive) {
@@ -70,7 +84,7 @@ function normalizeSSHConfig(config: SSHConfig) {
         if (isDirective(line)) {
             normalizeProp(line);
         }
-        if (isHostSection(line)) {
+        if (isSection(line)) {
             normalizeSSHConfig(line.config);
         }
     }
@@ -104,11 +118,11 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
         const line = config[i];
         if (isIncludeDirective(line)) {
             includedConfigs.push([i, await resolveInclude(line, userConfig)]);
-        } else if (isHostSection(line)) {
+        } else if (isSection(line)) {
             // ssh config has no block terminator, so an `Include` written after a
-            // `Host` block is parsed as a child of that block. ssh reads the file
-            // linearly, so any `Host` the included file declares ends the enclosing
-            // block — the included lines belong next to it, not inside it.
+            // `Host` or `Match` block is parsed as a child of that block. ssh reads
+            // the file linearly, so any `Host` the included file declares ends the
+            // enclosing block — the included lines belong next to it, not inside it.
             const hoisted: SSHConfig[] = [];
             for (let j = line.config.length - 1; j >= 0; j--) {
                 const child = line.config[j];
@@ -133,6 +147,22 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean) {
 }
 
 export default class SSHConfiguration {
+
+    static interpolate(str: string, values: Record<string, string>): string {
+        const results: string[] = [];
+        for (let i = 0; i < str.length; i++) {
+            if (str[i] === '%' && i + 1 < str.length) {
+                const next = str[i + 1];
+                if (next in values) {
+                    results.push(values[next]);
+                    i++;
+                    continue;
+                }
+            }
+            results.push(str[i]);
+        }
+        return results.join('');
+    }
 
     static async loadFromFS(): Promise<SSHConfiguration> {
         const config = await parseSSHConfigFromFile(getSSHConfigPath(), true);
