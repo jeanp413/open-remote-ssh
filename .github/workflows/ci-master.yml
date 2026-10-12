@@ -93,3 +93,62 @@ jobs:
       - name: Test
         run: |
           npm run test -- --run test/fixtures.test.ts
+
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      - name: Unit tests
+        run: |
+          npm run test:unit
+
+  windows-wsl:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      # Real Linux sshd for the Windows client to connect to. The runner image
+      # ships WSL2 but registers no distribution, so the suite installs one on
+      # first use; this step fails the job early if WSL itself is unavailable.
+      - name: Check WSL2
+        shell: pwsh
+        run: |
+          wsl --version
+          wsl --status
+
+      - name: Windows tests
+        run: |
+          npm run test:windows

@@ -18,6 +18,7 @@ export default defineConfig(
         '**/lib/',
         '**/*.d.ts',
         '**/*.js',
+        '**/*.cjs',
     ]),
     {
         plugins: {
