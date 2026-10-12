@@ -266,7 +266,7 @@ export async function installCodeServer(
         serverArch: detectedArch,
     };
 
-    const commandOutput = await runInstallScript(conn, platform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+    const commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
 
     return parseInstallOutput(commandOutput, installOptions, scriptId, envVariables, logger);
 }
