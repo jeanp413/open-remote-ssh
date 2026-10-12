@@ -180,7 +180,20 @@ export async function installCodeServer(
         serverValidation: vscodeServerConfig.serverValidation,
     };
 
-    let commandOutput: { stdout: string; stderr: string };
+    const commandOutput = await runInstallScript(conn, platform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+    return parseInstallOutput(commandOutput, scriptId, envVariables, logger);
+}
+
+async function runInstallScript(
+    conn: SSHConnection,
+    platform: string | undefined,
+    shell: string,
+    installOptions: ServerInstallOptions,
+    vscodeServerConfig: { serverDataFolderName: string; commit: string },
+    scriptId: string,
+    logger: Log,
+    extensionPath: string
+): Promise<{ stdout: string; stderr: string }> {
     if (platform === 'windows') {
         const installServerScript = generatePowerShellInstallScript(installOptions, extensionPath);
 
@@ -227,7 +240,7 @@ export async function installCodeServer(
             throw new ServerInstallError(`Not supported shell: ${shell}`);
         }
 
-        commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
+        return await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
         const installServerScript = generateBashInstallScript(installOptions, extensionPath);
 
@@ -235,9 +248,16 @@ export async function installCodeServer(
         // Use base64 encoding to avoid shell quoting issues across different login shells (bash, csh, tcsh, fish).
         // csh cannot handle multi-line strings inside single quotes with -c, so piping via base64 is the most portable approach.
         const base64Script = Buffer.from(installServerScript).toString('base64');
-        commandOutput = await conn.exec(`echo ${base64Script} | base64 -d | bash -l`);
+        return await conn.exec(`echo ${base64Script} | base64 -d | bash -l`);
     }
+}
 
+function parseInstallOutput(
+    commandOutput: { stdout: string; stderr: string },
+    scriptId: string,
+    envVariables: string[],
+    logger: Log
+): ServerInstallResult {
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
     }
