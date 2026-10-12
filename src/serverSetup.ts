@@ -1,8 +1,10 @@
+import type { ServerValidation, ServerVersion } from './server-config/types';
+
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Log } from './common/logger';
-import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
+import { getServerConfig } from './server-config/get-server-config';
 import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
@@ -82,6 +84,7 @@ export type ServerInstallOptions = {
     release?: string;
     extensionIds: string[];
     envVariables: string[];
+    sendEnvVars: Record<string, string>;
     useSocketPath: boolean;
     serverApplicationName: string;
     serverDataFolderName: string;
@@ -116,6 +119,7 @@ export async function installCodeServer(
     serverVersion: ServerVersion,
     extensionIds: string[],
     envVariables: string[],
+    sendEnvVars: Record<string, string>,
     platform: string | undefined,
     useSocketPath: boolean,
     customInstallPath: string | undefined,
@@ -153,7 +157,7 @@ export async function installCodeServer(
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
-    const vscodeServerConfig = await getVSCodeServerConfig();
+    const vscodeServerConfig = await getServerConfig();
 
     // Get the version and release
     const serverDownloadUrlTemplateFinal = serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE;
@@ -167,6 +171,7 @@ export async function installCodeServer(
         release: bestRelease.build,
         extensionIds : sanitizeExtensionIds(extensionIds),
         envVariables,
+        sendEnvVars,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
@@ -293,7 +298,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -302,6 +307,7 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"`
         : '--port=0';
     const envVarLines = envVariables.map(envVar => `  echo "${envVar}==$${envVar}=="`).join('\n');
+    const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `export ${key}="${value.replace(/"/g, '\\"')}"`).join('\n');
 
     return compileTemplate('server-setup.sh', {
         DISTRO_VERSION: version,
@@ -317,12 +323,13 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         SERVER_DOWNLOAD_URL_TEMPLATE: serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'),
         SCRIPT_ID: id,
         ENV_VAR_LINES: envVarLines,
+        SEND_ENV_VAR_LINES: sendEnvVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? 'true' : 'false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
     }, extensionPath);
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -338,6 +345,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"`
         : '--port=0';
     const envVarLines = envVariables.map(envVar => `    "$${envVar}==$${envVar}=="`).join('\n');
+    const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `$env:${key}="${value.replace(/"/g, '`"')}"`).join('\n');
 
     return compileTemplate('server-setup.ps1', {
         DISTRO_VERSION: version,
@@ -353,6 +361,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         SERVER_DOWNLOAD_URL: downloadUrl,
         SCRIPT_ID: id,
         ENV_VAR_LINES: envVarLines,
+        SEND_ENV_VAR_LINES: sendEnvVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
     }, extensionPath);
