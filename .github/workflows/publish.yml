@@ -104,7 +104,7 @@ jobs:
 
       - name: Release
         if: env.RELEASE_EXISTS == 'no'
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
             ${{ env.VSIX_NAME }}
@@ -129,7 +129,7 @@ jobs:
 
       - name: Publish to Open VSX Registry
         if: env.PUBLISH_OPENVSX == 'yes'
-        uses: HaaLeo/publish-vscode-extension@ca5561daa085dee804bf9f37fe0165785a9b14db # v2.0.0
+        uses: HaaLeo/publish-vscode-extension@1b8df468b849f76a143b8c18bf0ffa2075398d12 # v2.1.0
         with:
           extensionFile: ${{ env.VSIX_NAME }}
           pat: ${{ secrets.OPEN_VSX_PAT }}
@@ -137,7 +137,7 @@ jobs:
 
       # - name: Publish to Visual Studio Code Marketplace
       #   if: env.PUBLISH_VSCODE == 'yes'
-      #   uses: HaaLeo/publish-vscode-extension@ca5561daa085dee804bf9f37fe0165785a9b14db # v2.0.0
+      #   uses: HaaLeo/publish-vscode-extension@1b8df468b849f76a143b8c18bf0ffa2075398d12 # v2.1.0
       #   with:
       #     extensionFile: ${{ env.VSIX_NAME }}
       #     pat: ${{ secrets.TOKEN_VSCODE }}
