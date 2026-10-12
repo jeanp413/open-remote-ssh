@@ -17,6 +17,7 @@ import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
+import type { RemotePlatform } from './types';
 import { isWindows } from './common/platform';
 import * as os from 'os';
 
@@ -221,7 +222,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const serverDownloadUrlTemplate = remoteSSHconfig.get<string>('serverDownloadUrlTemplate');
         const serverVersion = remoteSSHconfig.get<ServerVersion>('serverVersion', 'match');
         const defaultExtensions = remoteSSHconfig.get<string[]>('defaultExtensions', []);
-        const remotePlatformMap = remoteSSHconfig.get<Record<string, string>>('remotePlatform', {});
+        const remotePlatformMap = remoteSSHconfig.get<Record<string, RemotePlatform>>('remotePlatform', {});
         const remoteServerListenOnSocket = remoteSSHconfig.get<boolean>('remoteServerListenOnSocket', false)!;
         const connectTimeout = remoteSSHconfig.get<number>('connectTimeout', 60)!;
         const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
