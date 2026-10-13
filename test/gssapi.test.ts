@@ -88,17 +88,18 @@ beforeAll(async () => {
     IMAGE,
   ]);
 
+  hostPort = getMappedPort(containerName);
+
+  await waitForSSHReady(USERNAME, PASSWORD, hostPort, 60_000, containerName);
+
   // The fixture's PUBLIC_KEY env lands in /config/.ssh, which sshd does not
   // consult; install the key in the user's home instead so the local ssh
-  // client can authenticate non-interactively.
+  // client can authenticate non-interactively. The user only exists once
+  // the container's entrypoint has run, so this has to wait for readiness.
   runDocker([
     'exec', containerName, 'sh', '-c',
     `mkdir -p /home/${USERNAME}/.ssh && echo '${publicKey}' > /home/${USERNAME}/.ssh/authorized_keys && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.ssh && chmod 700 /home/${USERNAME}/.ssh && chmod 600 /home/${USERNAME}/.ssh/authorized_keys`,
   ]);
-
-  hostPort = getMappedPort(containerName);
-
-  await waitForSSHReady(USERNAME, PASSWORD, hostPort, 60_000);
 }, 120_000);
 
 afterAll(() => {
