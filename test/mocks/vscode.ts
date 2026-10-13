@@ -7,6 +7,11 @@ let $password: string = '';
 let $warningAnswer: string | undefined = undefined;
 let $config: Record<string, unknown> = {};
 
+const DEFAULT_CONFIG: Record<string, unknown> = {
+    verifyKnownHosts: 'accept',
+    verifyUnknownHosts: 'accept',
+};
+
 const commands = {
     executeCommand: vi.fn(),
 };
@@ -92,7 +97,7 @@ const window = {
 
 const workspace = {
     getConfiguration: vi.fn(() => ({
-        get: vi.fn((key: string, defaultValue?: unknown) => (key in $config ? $config[key] : defaultValue)),
+        get: vi.fn((key: string, defaultValue?: unknown) => (key in $config ? $config[key] : DEFAULT_CONFIG[key] ?? defaultValue)),
         update: vi.fn(() => Promise.resolve())
     })),
     registerResourceLabelFormatter: vi.fn(),
