@@ -11,6 +11,14 @@ client:
         Port 2222
         User openremotessh
         Password openremotessh
+    /etc/ssh/config.d/systemd-ssh-proxy: |
+      Host .host machine/.host
+        ProxyCommand /usr/lib/systemd/systemd-ssh-proxy unix/run/ssh-unix-local/socket %p
+        CheckHostIP no
+
+      Host unix/* vsock/* machine/*
+        ProxyCommand /usr/lib/systemd/systemd-ssh-proxy %h %p
+        UserKnownHostsFile /dev/null
     /bin/vscodium/app/product.json: >
       {
         "nameShort": "VSCodium",

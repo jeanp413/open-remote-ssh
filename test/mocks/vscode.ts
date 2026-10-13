@@ -96,12 +96,12 @@ const workspace = {
         update: vi.fn(() => Promise.resolve())
     })),
     registerResourceLabelFormatter: vi.fn(),
-    setConfig: (key: string, value: unknown) => {
+    resetConfiguration: () => {
+        $config = {};
+    },
+    setConfiguration: (key: string, value: unknown) => {
         $config[key] = value;
     },
-    resetConfig: () => {
-        $config = {};
-    }
 };
 
 export {

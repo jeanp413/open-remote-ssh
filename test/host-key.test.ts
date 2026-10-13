@@ -101,7 +101,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(() => {
-  vscode.workspace.resetConfig();
+  vscode.workspace.resetConfiguration();
   runDocker(['rm', '-f', containerName], true);
 });
 
@@ -142,7 +142,7 @@ it('refuses to connect when the recorded key differs and verifyKnownHosts is rej
   forgedBase64 = Buffer.concat([length, typeBuffer, Buffer.alloc(32, 0x42)]).toString('base64');
   vol.writeFileSync(KNOWN_HOSTS, `${name} ${keyType} ${forgedBase64}\n`);
 
-  vscode.workspace.setConfig('verifyKnownHosts', 'reject');
+  vscode.workspace.setConfiguration('verifyKnownHosts', 'reject');
 
   await expect(resolveTestHost()).rejects.toThrow();
 
@@ -155,7 +155,7 @@ it('refuses to connect when the recorded key differs and verifyKnownHosts is rej
 }, 60_000);
 
 it('cancelling the changed-key prompt refuses the connection', async () => {
-  vscode.workspace.setConfig('verifyKnownHosts', 'ask');
+  vscode.workspace.setConfiguration('verifyKnownHosts', 'ask');
   vscode.window.setWarningAnswer(undefined);
 
   await expect(resolveTestHost()).rejects.toThrow();
@@ -164,7 +164,7 @@ it('cancelling the changed-key prompt refuses the connection', async () => {
 }, 60_000);
 
 it('accepting the changed-key prompt updates the entry and connects', async () => {
-  vscode.workspace.setConfig('verifyKnownHosts', 'ask');
+  vscode.workspace.setConfiguration('verifyKnownHosts', 'ask');
   vscode.window.setWarningAnswer('Update and Connect');
 
   const result = await resolveTestHost();
@@ -191,7 +191,7 @@ it('refuses when a wildcard line would keep trusting the old key', async () => {
   const sharedLine = `${name},*.nowhere.invalid ${keyType} ${forgedBase64}`;
   vol.writeFileSync(KNOWN_HOSTS, `${sharedLine}\n`);
 
-  vscode.workspace.setConfig('verifyKnownHosts', 'ask');
+  vscode.workspace.setConfiguration('verifyKnownHosts', 'ask');
   vscode.window.setWarningAnswer('Update and Connect');
 
   await expect(resolveTestHost()).rejects.toThrow();
