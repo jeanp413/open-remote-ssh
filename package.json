@@ -132,7 +132,7 @@
 						"Refuse to connect."
 					],
 					"description": "What to do when a host is not present in known_hosts.",
-					"default": "accept",
+					"default": "ask",
 					"scope": "application"
 				},
 				"remote.SSH.verifyKnownHosts": {
@@ -148,7 +148,7 @@
 						"Refuse to connect, like OpenSSH's `strict`."
 					],
 					"description": "What to do when a host presents a different key than the one recorded in known_hosts. A changed host key can mean the server was reinstalled — or that the connection is being intercepted.",
-					"default": "ask",
+					"default": "reject",
 					"scope": "application"
 				},
 				"remote.SSH.defaultExtensions": {
