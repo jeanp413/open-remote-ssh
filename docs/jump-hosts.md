@@ -25,6 +25,21 @@ Host deep
     ProxyJump bastion,inner
 ```
 
+A hop's own `ProxyJump` is followed as well, so the same chain can also be declared
+host by host:
+
+```
+Host inner
+    HostName 10.1.0.1
+    ProxyJump bastion
+
+Host deep
+    HostName 10.1.0.5
+    ProxyJump inner
+```
+
+A chain that loops back on itself is reported as an error.
+
 A hop can also be written inline as `[user@]host[:port]` without a `Host` block of
 its own, e.g. `ProxyJump alice@bastion.example.com:2222`.
 
@@ -47,9 +62,7 @@ connection to the next hop is opened as a forwarded channel.
 
 **Limitations**
 
-- `ProxyJump` set inside a hop's own `Host` block is ignored
-  ([#109](https://github.com/jeanp413/open-remote-ssh/issues/109)). List the whole
-  chain on the target instead, e.g. `ProxyJump bastion,inner`.
 - `ProxyJump none` is not recognized yet. It is treated as a host named `none`. To
-  exclude a host from a wildcard, use a negated pattern instead: `Host * !bastion`.
+  exclude a host from a wildcard (e.g. the bastion itself), use a negated pattern
+  instead: `Host * !bastion`.
 - If both `ProxyJump` and `ProxyCommand` are set, `ProxyJump` is used.
