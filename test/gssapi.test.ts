@@ -59,7 +59,7 @@ function hostConfigLines(gssapi: boolean): string[] {
 
 beforeAll(async () => {
   vol.reset();
-  vscode.clearConfiguration();
+  vscode.workspace.resetConfiguration();
 
   execFileSync('ssh-keygen', ['-t', 'ed25519', '-N', '', '-q', '-f', identityKeyPath]);
 
@@ -107,7 +107,7 @@ afterAll(() => {
   for (const file of [configPath, identityKeyPath, `${identityKeyPath}.pub`, knownHostsPath]) {
     fs.rmSync(file, { force: true });
   }
-  vscode.clearConfiguration();
+  vscode.workspace.resetConfiguration();
 });
 
 it('connects through the local ssh client when GSSAPI is requested', async () => {
@@ -118,7 +118,7 @@ it('connects through the local ssh client when GSSAPI is requested', async () =>
     '/bin/vscodium/app/product.json': PRODUCT_JSON,
     '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP,
   });
-  vscode.setConfiguration('remote.SSH.configFile', configPath);
+  vscode.workspace.setConfiguration('configFile', configPath);
 
   const logger = new Log('Remote - SSH');
   const extContext = new vscode.ExtensionContext();

@@ -4,6 +4,13 @@ import * as vscode from 'vscode';
 type ProgressTask = <R>(progress: vscode.Progress<{ message?: string; increment?: number }>, token: vscode.CancellationToken) => Promise<R>;
 
 let $password: string = '';
+let $warningAnswer: string | undefined = undefined;
+let $config: Record<string, unknown> = {};
+
+const DEFAULT_CONFIG: Record<string, unknown> = {
+    verifyKnownHosts: 'accept',
+    verifyUnknownHosts: 'accept',
+};
 
 const commands = {
     executeCommand: vi.fn(),
@@ -62,6 +69,13 @@ const window = {
     setPassword: (password: string) => {
         $password = password;
     },
+    setWarningAnswer: (answer: string | undefined) => {
+        $warningAnswer = answer;
+    },
+    showWarningMessage: vi.fn(async (_message: string, _options?: vscode.MessageOptions, ...items: string[]) => {
+        return $warningAnswer !== undefined && items.includes($warningAnswer) ? $warningAnswer : undefined;
+    }),
+    showErrorMessage: vi.fn(async () => undefined),
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showInputBox: async (options?: vscode.InputBoxOptions, _token?: vscode.CancellationToken) => {
         if(options?.title?.startsWith('Enter password for')) {
@@ -81,44 +95,21 @@ const window = {
     },
 };
 
-// In-memory overrides for `workspace.getConfiguration().get` lookups; tests
-// use `setConfiguration` to control settings like `remote.SSH.configFile`.
-// The map lives on globalThis because `vi.resetModules()` (used by the
-// resolver rewire) re-instantiates this module, which would otherwise cut
-// tests off from the instance the resolver ends up using.
-const globalSettings = globalThis as { __openRemoteSshTestConfiguration?: Map<string, unknown> };
-const configuration: Map<string, unknown> = globalSettings.__openRemoteSshTestConfiguration ??= new Map();
-
 const workspace = {
-    getConfiguration: vi.fn((section?: string) => ({
-        // Accepts both the scoped key written by `setConfiguration`
-        // (`remote.SSH.configFile`) and the section-relative one (`configFile`).
-        get: vi.fn((key: string, defaultValue?: unknown) => {
-            const scoped = section ? `${section}.${key}` : key;
-            if (configuration.has(scoped)) {
-                return configuration.get(scoped);
-            }
-            if (configuration.has(key)) {
-                return configuration.get(key);
-            }
-            return defaultValue;
-        }),
+    getConfiguration: vi.fn(() => ({
+        get: vi.fn((key: string, defaultValue?: unknown) => (key in $config ? $config[key] : DEFAULT_CONFIG[key] ?? defaultValue)),
         update: vi.fn(() => Promise.resolve())
     })),
-    registerResourceLabelFormatter: vi.fn()
+    registerResourceLabelFormatter: vi.fn(),
+    resetConfiguration: () => {
+        $config = {};
+    },
+    setConfiguration: (key: string, value: unknown) => {
+        $config[key] = value;
+    },
 };
 
-/** Overrides a configuration value for the current test file. */
-function setConfiguration(key: string, value: unknown): void {
-    configuration.set(key, value);
-}
-
-function clearConfiguration(): void {
-    configuration.clear();
-}
-
 export {
-    clearConfiguration,
     commands,
     env,
     ExtensionContext,
@@ -126,7 +117,6 @@ export {
     RemoteAuthorityResolverContext,
     RemoteAuthorityResolverError,
     ResolvedAuthority,
-    setConfiguration,
     window,
     version,
     workspace,
