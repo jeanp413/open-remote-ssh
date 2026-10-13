@@ -165,7 +165,7 @@ export function parseMachineArch(stdout: string): Architecture {
     }
 }
 
-export async function detectPlatform(conn: Pick<SSHConnection, 'exec'>, platform: RemotePlatform | undefined, logger: Pick<Log, 'trace'>): Promise<DetectedPlatform> {
+export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: Pick<Log, 'trace'>): Promise<DetectedPlatform> {
     let detectedPlatform: Platform;
     let detectedShell: Shell = 'bash';
 
@@ -272,7 +272,7 @@ export async function installCodeServer(
 }
 
 async function runInstallScript(
-    conn: SSHConnection,
+    conn: SSHClient,
     platform: string | undefined,
     shell: string,
     installOptions: ServerInstallOptions,
