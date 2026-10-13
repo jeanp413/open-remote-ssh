@@ -4,8 +4,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Log } from './common/logger';
+import type { SSHClient } from './ssh/sshClient';
 import { getServerConfig } from './server-config/get-server-config';
-import SSHConnection from './ssh/sshConnection';
 import { fetchRelease, IRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
 import { RemotePlatform } from './types';
@@ -165,7 +165,7 @@ export function parseMachineArch(stdout: string): Architecture {
     }
 }
 
-export async function detectPlatform(conn: Pick<SSHConnection, 'exec'>, platform: RemotePlatform | undefined, logger: Pick<Log, 'trace'>): Promise<DetectedPlatform> {
+export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: Pick<Log, 'trace'>): Promise<DetectedPlatform> {
     let detectedPlatform: Platform;
     let detectedShell: Shell = 'bash';
 
@@ -225,7 +225,7 @@ export async function detectPlatform(conn: Pick<SSHConnection, 'exec'>, platform
 }
 
 export async function installCodeServer(
-    conn: SSHConnection,
+    conn: SSHClient,
     serverDownloadUrlTemplate: string | undefined,
     serverVersion: ServerVersion,
     extensionIds: string[],
@@ -272,7 +272,7 @@ export async function installCodeServer(
 }
 
 async function runInstallScript(
-    conn: SSHConnection,
+    conn: SSHClient,
     platform: string | undefined,
     shell: string,
     installOptions: ServerInstallOptions,

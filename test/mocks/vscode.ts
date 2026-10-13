@@ -81,15 +81,44 @@ const window = {
     },
 };
 
+// In-memory overrides for `workspace.getConfiguration().get` lookups; tests
+// use `setConfiguration` to control settings like `remote.SSH.configFile`.
+// The map lives on globalThis because `vi.resetModules()` (used by the
+// resolver rewire) re-instantiates this module, which would otherwise cut
+// tests off from the instance the resolver ends up using.
+const globalSettings = globalThis as { __openRemoteSshTestConfiguration?: Map<string, unknown> };
+const configuration: Map<string, unknown> = globalSettings.__openRemoteSshTestConfiguration ??= new Map();
+
 const workspace = {
-    getConfiguration: vi.fn(() => ({
-        get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    getConfiguration: vi.fn((section?: string) => ({
+        // Accepts both the scoped key written by `setConfiguration`
+        // (`remote.SSH.configFile`) and the section-relative one (`configFile`).
+        get: vi.fn((key: string, defaultValue?: unknown) => {
+            const scoped = section ? `${section}.${key}` : key;
+            if (configuration.has(scoped)) {
+                return configuration.get(scoped);
+            }
+            if (configuration.has(key)) {
+                return configuration.get(key);
+            }
+            return defaultValue;
+        }),
         update: vi.fn(() => Promise.resolve())
     })),
     registerResourceLabelFormatter: vi.fn()
 };
 
+/** Overrides a configuration value for the current test file. */
+function setConfiguration(key: string, value: unknown): void {
+    configuration.set(key, value);
+}
+
+function clearConfiguration(): void {
+    configuration.clear();
+}
+
 export {
+    clearConfiguration,
     commands,
     env,
     ExtensionContext,
@@ -97,6 +126,7 @@ export {
     RemoteAuthorityResolverContext,
     RemoteAuthorityResolverError,
     ResolvedAuthority,
+    setConfiguration,
     window,
     version,
     workspace,

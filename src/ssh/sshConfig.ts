@@ -73,6 +73,8 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'sendenv': 'SendEnv',
     'include': 'Include',
     'match': 'Match',
+    'gssapiauthentication': 'GSSAPIAuthentication',
+    'gssapidelegatecredentials': 'GSSAPIDelegateCredentials',
 };
 
 function normalizeProp(prop: Directive) {
