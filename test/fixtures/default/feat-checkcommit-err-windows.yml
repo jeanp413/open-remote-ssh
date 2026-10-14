@@ -20,7 +20,7 @@ client:
       }
 
 server:
-  image: local-windows-openssh
+  image: local-windows-en-powershell-cmd
   platform: windows
   username: openremotessh
   password: Open-Remote-SSH-1

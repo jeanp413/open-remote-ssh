@@ -21,7 +21,7 @@ client:
       }
 
 server:
-  image: local-windows-capability
+  image: local-windows-en-builtin-cmd
   platform: windows
   username: openremotessh
   password: Open-Remote-SSH-1
