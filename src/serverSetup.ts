@@ -127,6 +127,10 @@ export type DetectedPlatform = {
 };
 
 export function parseKernelName(stdout: string): Platform {
+    if(/MINGW|MSYS|CYGWIN/i.test(stdout)) {
+        return 'windows';
+    }
+
     switch (stdout) {
         case 'Darwin':
             return 'darwin';
@@ -181,11 +185,11 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
             detectedShell = 'powershell';
             detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
         } else if (!platform) {
-            const { stdout: uname } = await conn.exec('uname -s');
+            const result = await conn.exec('uname -s');
 
-            detectedPlatform = /MINGW|MSYS|CYGWIN/i.test(uname) ? 'windows' : 'linux';
+            detectedPlatform = parseKernelName(result.stdout.trim());
         } else {
-             detectedPlatform = 'windows';
+            detectedPlatform = 'windows';
         }
     } else if (platform === 'macos') {
         detectedPlatform = 'darwin';

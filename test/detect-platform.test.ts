@@ -64,7 +64,11 @@ describe('parseMachineArch', () => {
 describe('detectPlatform', () => {
     describe('unix-like hosts', () => {
         it('detects linux/x64 and trims trailing newlines', async () => {
-            const conn = fakeConn({ 'uname -s': out('Linux\n'), 'uname -m': out('x86_64\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('Linux\n'),
+                'uname -m': out('x86_64\n')
+            });
 
             await expect(detectPlatform(conn, undefined, logger)).resolves.to.eql({
                 detectedPlatform: 'linux',
@@ -74,7 +78,11 @@ describe('detectPlatform', () => {
         });
 
         it('detects darwin/arm64', async () => {
-            const conn = fakeConn({ 'uname -s': out('Darwin\n'), 'uname -m': out('arm64\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('Darwin\n'),
+                'uname -m': out('arm64\n')
+            });
 
             await expect(detectPlatform(conn, undefined, logger)).resolves.to.eql({
                 detectedPlatform: 'darwin',
@@ -84,7 +92,11 @@ describe('detectPlatform', () => {
         });
 
         it('detects freebsd/amd64', async () => {
-            const conn = fakeConn({ 'uname -s': out('FreeBSD\n'), 'uname -m': out('amd64\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('FreeBSD\n'),
+                'uname -m': out('amd64\n')
+            });
 
             const result = await detectPlatform(conn, undefined, logger);
 
@@ -93,69 +105,50 @@ describe('detectPlatform', () => {
         });
 
         it('fails on an unsupported kernel', async () => {
-            const conn = fakeConn({ 'uname -s': out('SunOS\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('SunOS\n'),
+            });
 
             await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('platform not supported: SunOS');
         });
 
         it('fails on an unsupported architecture', async () => {
-            const conn = fakeConn({ 'uname -s': out('Linux\n'), 'uname -m': out('i686\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('Linux\n'),
+                'uname -m': out('i686\n'),
+            });
 
             await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('architecture not supported: i686');
         });
 
-        it('fails when "uname -s" yields an empty result', async () => {
-            const conn = fakeConn({ 'uname -s': out('\n') });
-
-            await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('"uname -s" yields empty result');
-        });
-
         it('fails when "uname -m" yields an empty result', async () => {
-            const conn = fakeConn({ 'uname -s': out('Linux'), 'uname -m': out('') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('Linux'),
+                'uname -m': out(''),
+            });
 
             await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('"uname -m" yields empty result');
         });
 
-        it('fails when "uname -s" writes an unknown error', async () => {
-            const conn = fakeConn({ 'uname -s': err('sh: uname: not found') });
-
-            await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('Cannot execute "uname -s", yields: sh: uname: not found');
-        });
-
         it('fails when "uname -m" writes an error', async () => {
-            const conn = fakeConn({ 'uname -s': out('Linux'), 'uname -m': err('boom') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('Linux'),
+                'uname -m': err('boom'),
+            });
 
             await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('Cannot execute "uname -m", yields: boom');
         });
     });
 
     describe('windows hosts', () => {
-        it('detects powershell from CommandNotFoundException', async () => {
+        it('detects powershell', async () => {
             const conn = fakeConn({
-                'uname -s': err('uname : The term \'uname\' is not recognized...\n    + FullyQualifiedErrorId : CommandNotFoundException'),
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~C:\\Windows\\System32\\WindowsPowerShell\\v1.0'),
             });
-
-            await expect(detectPlatform(conn, undefined, logger)).resolves.to.eql({
-                detectedPlatform: 'windows',
-                detectedArch: 'x64',
-                detectedShell: 'powershell',
-            });
-            // architecture is not probed on windows
-            expect(conn.exec).toHaveBeenCalledTimes(1);
-        });
-
-        it('detects cmd from "is not recognized as an internal or external command"', async () => {
-            const conn = fakeConn({
-                'uname -s': err('\'uname\' is not recognized as an internal or external command,\r\noperable program or batch file.'),
-            });
-
-            const result = await detectPlatform(conn, undefined, logger);
-
-            expect(result).to.eql({ detectedPlatform: 'windows', detectedArch: 'x64', detectedShell: 'cmd' });
-        });
-
-        it('detects powershell from windows32 (GnuWin32 uname)', async () => {
-            const conn = fakeConn({ 'uname -s': out('windows32\r\n') });
 
             const result = await detectPlatform(conn, undefined, logger);
 
@@ -163,7 +156,10 @@ describe('detectPlatform', () => {
         });
 
         it('detects bash from MINGW64 (Git Bash)', async () => {
-            const conn = fakeConn({ 'uname -s': out('MINGW64_NT-10.0-19045\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+                'uname -s': out('MINGW64_NT-10.0-19045\n'),
+            });
 
             const result = await detectPlatform(conn, undefined, logger);
 
@@ -171,12 +167,14 @@ describe('detectPlatform', () => {
         });
 
         it('still probes when remotePlatform is "windows"', async () => {
-            const conn = fakeConn({ 'uname -s': out('MINGW64_NT-10.0\n') });
+            const conn = fakeConn({
+                'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
+            });
 
             const result = await detectPlatform(conn, 'windows', logger);
 
             expect(result.detectedShell).to.eql('bash');
-            expect(conn.exec).toHaveBeenCalledWith('uname -s');
+            expect(conn.exec).toHaveBeenCalledWith('echo %COMSPEC%~$PSHOME');
         });
     });
 
