@@ -127,6 +127,10 @@ export type DetectedPlatform = {
 };
 
 export function parseKernelName(stdout: string): Platform {
+    if(/MINGW|MSYS|CYGWIN/i.test(stdout)) {
+        return 'windows';
+    }
+
     switch (stdout) {
         case 'Darwin':
             return 'darwin';
@@ -169,38 +173,31 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
     let detectedPlatform: Platform;
     let detectedShell: Shell = 'bash';
 
+    // detect platform and shell for windows
     if (!platform || platform === 'windows') {
-        const result = await conn.exec('uname -s');
-        const stdout = result.stdout.trim();
+        const { stdout } = await conn.exec('echo %COMSPEC%~$PSHOME');
+        const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
 
-        if (result.stderr) {
-            if (result.stderr.includes('FullyQualifiedErrorId : CommandNotFoundException')) {
-                detectedPlatform = 'windows';
-                detectedShell = 'powershell';
-            } else if (result.stderr.includes('is not recognized as an internal or external command')) {
-                detectedPlatform = 'windows';
-                detectedShell = 'cmd';
-            } else {
-                throw new ServerInstallError(`Cannot execute "uname -s", yields: ${result.stderr}`);
-            }
-        } else if (stdout.length === 0) {
-            throw new ServerInstallError(`"uname -s" yields empty result`);
-        } else if (stdout.includes('windows32')) {
+        if (comspec && comspec !== '%COMSPEC%') {
             detectedPlatform = 'windows';
+            detectedShell = 'cmd';
+        } else if (pshome) {
             detectedShell = 'powershell';
-        } else if (stdout.includes('MINGW64')) {
-            detectedPlatform = 'windows';
-            detectedShell = 'bash';
-        } else {
-            detectedPlatform = parseKernelName(stdout);
-        }
+            detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
+        } else if (!platform) {
+            const result = await conn.exec('uname -s');
 
-        logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
+            detectedPlatform = parseKernelName(result.stdout.trim());
+        } else {
+            detectedPlatform = 'windows';
+        }
     } else if (platform === 'macos') {
         detectedPlatform = 'darwin';
     } else {
         detectedPlatform = 'linux';
     }
+
+    logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
 
     let detectedArch: Architecture;
 
