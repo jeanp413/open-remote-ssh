@@ -1,11 +1,14 @@
+import type { ServerValidation, ServerVersion } from './server-config/types';
+
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Log } from './common/logger';
-import { getVSCodeServerConfig, ServerVersion, ServerValidation } from './serverConfig';
-import SSHConnection from './ssh/sshConnection';
+import type { SSHClient } from './ssh/sshClient';
+import { getServerConfig } from './server-config/get-server-config';
 import { fetchRelease, IRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
+import { RemotePlatform } from './types';
 
 /**
  * Reads a script template from <extensionPath>/scripts/<templateName> and
@@ -82,12 +85,15 @@ export type ServerInstallOptions = {
     release?: string;
     extensionIds: string[];
     envVariables: string[];
+    sendEnvVars: Record<string, string>;
     useSocketPath: boolean;
     serverApplicationName: string;
     serverDataFolderName: string;
     serverDownloadUrlTemplate: string;
     customInstallPath?: string;
     serverValidation: ServerValidation;
+    serverPlatform: Platform;
+    serverArch: Architecture;
 };
 
 export type ServerInstallResult = {
@@ -110,19 +116,58 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export async function installCodeServer(
-    conn: SSHConnection,
-    serverDownloadUrlTemplate: string | undefined,
-    serverVersion: ServerVersion,
-    extensionIds: string[],
-    envVariables: string[],
-    platform: string | undefined,
-    useSocketPath: boolean,
-    customInstallPath: string | undefined,
-    logger: Log,
-    extensionPath: string
-): Promise<ServerInstallResult> {
-    let shell = 'bash';
+export type Platform = 'alpine' | 'darwin' | 'dragonfly' | 'freebsd' | 'linux' | 'windows';
+export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64';
+export type Shell = 'cmd' | 'powershell' | 'bash';
+
+export type DetectedPlatform = {
+    detectedPlatform: Platform;
+    detectedArch: Architecture;
+    detectedShell: Shell;
+};
+
+export function parseKernelName(stdout: string): Platform {
+    switch (stdout) {
+        case 'Darwin':
+            return 'darwin';
+        case 'Linux':
+            return 'linux';
+        case 'FreeBSD':
+            return 'freebsd';
+        case 'DragonFly':
+            return 'dragonfly';
+        default:
+            throw new ServerInstallError(`platform not supported: ${stdout}`);
+    }
+}
+
+export function parseMachineArch(stdout: string): Architecture {
+    switch (stdout) {
+        case 'x86_64':
+        case 'amd64':
+            return 'x64';
+        case 'armv7l':
+        case 'armv8l':
+            return 'armhf';
+        case 'arm64':
+        case 'aarch64':
+            return 'arm64';
+        case 'ppc64le':
+            return 'ppc64le';
+        case 'riscv64':
+            return 'riscv64';
+        case 'loongarch64':
+            return 'loong64';
+        case 's390x':
+            return 's390x';
+        default:
+            throw new ServerInstallError(`architecture not supported: ${stdout}`);
+    }
+}
+
+export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: Pick<Log, 'trace'>): Promise<DetectedPlatform> {
+    let detectedPlatform: Platform;
+    let detectedShell: Shell = 'bash';
 
     // detect platform and shell for windows
     if (!platform || platform === 'windows') {
@@ -130,24 +175,66 @@ export async function installCodeServer(
         const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
 
         if (comspec && comspec !== '%COMSPEC%') {
-            platform = 'windows';
-            shell = 'cmd';
+            detectedPlatform = 'windows';
+            detectedShell = 'cmd';
         } else if (pshome) {
-            shell = 'powershell';
-            platform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
+            detectedShell = 'powershell';
+            detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
         } else if (!platform) {
             const { stdout: uname } = await conn.exec('uname -s');
-            platform = /MINGW|MSYS|CYGWIN/i.test(uname) ? 'windows' : 'linux';
+
+            detectedPlatform = /MINGW|MSYS|CYGWIN/i.test(uname) ? 'windows' : 'linux';
+        } else {
+             detectedPlatform = 'windows';
+        }
+    } else if (platform === 'macos') {
+        detectedPlatform = 'darwin';
+    } else {
+        detectedPlatform = 'linux';
+    }
+
+    logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
+
+    let detectedArch: Architecture;
+
+    if (detectedPlatform === 'windows') {
+        detectedArch = 'x64';
+    } else {
+        const result = await conn.exec('uname -m');
+        const stdout = result.stdout.trim();
+
+        if (result.stderr) {
+            throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
+        } else if (stdout.length === 0) {
+            throw new ServerInstallError(`"uname -m" yields empty result`);
         }
 
-        if (platform) {
-            logger.trace(`Detected platform: ${platform}, ${shell}`);
-        }
+        detectedArch = parseMachineArch(stdout);
     }
+
+    logger.trace(`Detected architecture: ${detectedArch}`);
+
+    return { detectedPlatform, detectedArch, detectedShell };
+}
+
+export async function installCodeServer(
+    conn: SSHClient,
+    serverDownloadUrlTemplate: string | undefined,
+    serverVersion: ServerVersion,
+    extensionIds: string[],
+    envVariables: string[],
+    sendEnvVars: Record<string, string>,
+    platform: RemotePlatform | undefined,
+    useSocketPath: boolean,
+    customInstallPath: string | undefined,
+    logger: Log,
+    extensionPath: string
+): Promise<ServerInstallResult> {
+    const { detectedPlatform, detectedArch, detectedShell: shell } = await detectPlatform(conn, platform, logger);
 
     const scriptId = crypto.randomBytes(12).toString('hex');
 
-    const vscodeServerConfig = await getVSCodeServerConfig();
+    const vscodeServerConfig = await getServerConfig();
 
     // Get the version and release
     const serverDownloadUrlTemplateFinal = serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE;
@@ -161,15 +248,32 @@ export async function installCodeServer(
         release: bestRelease.build,
         extensionIds: sanitizeExtensionIds(extensionIds),
         envVariables,
+        sendEnvVars,
         useSocketPath,
         serverApplicationName: vscodeServerConfig.serverApplicationName,
         serverDataFolderName: vscodeServerConfig.serverDataFolderName,
         serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
         customInstallPath,
         serverValidation: vscodeServerConfig.serverValidation,
+        serverPlatform: detectedPlatform,
+        serverArch: detectedArch,
     };
 
-    let commandOutput: { stdout: string; stderr: string };
+    const commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+
+    return parseInstallOutput(commandOutput, installOptions, scriptId, envVariables, logger);
+}
+
+async function runInstallScript(
+    conn: SSHClient,
+    platform: string | undefined,
+    shell: string,
+    installOptions: ServerInstallOptions,
+    vscodeServerConfig: { serverDataFolderName: string; commit: string },
+    scriptId: string,
+    logger: Log,
+    extensionPath: string
+): Promise<{ stdout: string; stderr: string }> {
     if (platform === 'windows') {
         const installServerScript = generatePowerShellInstallScript(installOptions, extensionPath);
 
@@ -216,7 +320,7 @@ export async function installCodeServer(
             throw new ServerInstallError(`Not supported shell: ${shell}`);
         }
 
-        commandOutput = await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
+        return await conn.execPartial(command, (stdout: string) => endRegex.test(stdout));
     } else {
         const installServerScript = generateBashInstallScript(installOptions, extensionPath);
 
@@ -224,9 +328,17 @@ export async function installCodeServer(
         // Use base64 encoding to avoid shell quoting issues across different login shells (bash, csh, tcsh, fish).
         // csh cannot handle multi-line strings inside single quotes with -c, so piping via base64 is the most portable approach.
         const base64Script = Buffer.from(installServerScript).toString('base64');
-        commandOutput = await conn.exec(`echo ${base64Script} | base64 -d | bash -l`);
+        return await conn.exec(`echo ${base64Script} | base64 -d | bash -l`);
     }
+}
 
+function parseInstallOutput(
+    commandOutput: { stdout: string; stderr: string },
+    installOptions: ServerInstallOptions,
+    scriptId: string,
+    envVariables: string[],
+    logger: Log
+): ServerInstallResult {
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
     }
@@ -246,6 +358,7 @@ export async function installCodeServer(
         ? parseInt(resultMap.listeningOn, 10)
         : resultMap.listeningOn;
 
+    const { serverArch } = installOptions;
     const remoteEnvVars = Object.fromEntries(Object.entries(resultMap).filter(([key,]) => envVariables.includes(key)));
 
     return {
@@ -254,7 +367,7 @@ export async function installCodeServer(
         connectionToken: resultMap.connectionToken,
         logFile: resultMap.logFile,
         osReleaseId: resultMap.osReleaseId,
-        arch: resultMap.arch,
+        arch: resultMap.arch || serverArch,
         platform: resultMap.platform,
         tmpDir: resultMap.tmpDir,
         ...remoteEnvVars
@@ -287,7 +400,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -296,6 +409,7 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"`
         : '--port=0';
     const envVarLines = envVariables.map(envVar => `  echo "${envVar}==$${envVar}=="`).join('\n');
+    const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `export ${key}="${value.replace(/"/g, '\\"')}"`).join('\n');
 
     return compileTemplate('server-setup.sh', {
         DISTRO_VERSION: version,
@@ -311,12 +425,15 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         SERVER_DOWNLOAD_URL_TEMPLATE: serverDownloadUrlTemplate.replace(/\$\{/g, '\\${'),
         SCRIPT_ID: id,
         ENV_VAR_LINES: envVarLines,
+        SEND_ENV_VAR_LINES: sendEnvVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? 'true' : 'false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
+        SERVER_PLATFORM: serverPlatform,
+        SERVER_ARCH: serverArch,
     }, extensionPath);
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -332,6 +449,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"`
         : '--port=0';
     const envVarLines = envVariables.map(envVar => `    "$${envVar}==$${envVar}=="`).join('\n');
+    const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `$env:${key}="${value.replace(/"/g, '`"')}"`).join('\n');
 
     return compileTemplate('server-setup.ps1', {
         DISTRO_VERSION: version,
@@ -347,6 +465,7 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         SERVER_DOWNLOAD_URL: downloadUrl,
         SCRIPT_ID: id,
         ENV_VAR_LINES: envVarLines,
+        SEND_ENV_VAR_LINES: sendEnvVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
     }, extensionPath);

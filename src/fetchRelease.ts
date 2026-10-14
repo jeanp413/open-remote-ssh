@@ -1,6 +1,7 @@
+import type { ServerVersion } from './server-config/types';
+
 import { Log } from './common/logger';
 import * as semver from 'semver';
-import { ServerVersion } from './serverConfig';
 
 type githubReleasesData = {
     name: string;

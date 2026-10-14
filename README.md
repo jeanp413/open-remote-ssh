@@ -56,6 +56,11 @@ sudo apk add bash libstdc++
 [OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections.
 To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
 
+## SSH configuration guides
+
+- [GSSAPI / Kerberos authentication](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/gssapi-kerberos-authentication.md.md)
+- [Jump hosts](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/jump-hosts.md)
+
 ## Note for VSCode-OSS users
 
 If you are using VSCode-OSS instead of VSCodium, you need some extra steps to make it work.

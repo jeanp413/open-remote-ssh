@@ -1,4 +1,7 @@
+#!/usr/bin/env bash
 # Server installation script
+
+%%SEND_ENV_VAR_LINES%%
 
 TMP_DIR="${XDG_RUNTIME_DIR:-"/tmp"}"
 
@@ -6,6 +9,8 @@ DISTRO_VERSION="%%DISTRO_VERSION%%"
 DISTRO_COMMIT="%%DISTRO_COMMIT%%"
 DISTRO_QUALITY="%%DISTRO_QUALITY%%"
 DISTRO_VSCODIUM_RELEASE="%%DISTRO_VSCODIUM_RELEASE%%"
+
+MODIFY_PRODUCT_JSON="%%MODIFY_PRODUCT_JSON%%"
 
 SERVER_APP_NAME="%%SERVER_APP_NAME%%"
 SERVER_INITIAL_EXTENSIONS="%%SERVER_INITIAL_EXTENSIONS%%"
@@ -17,15 +22,24 @@ SERVER_SCRIPT="$SERVER_DIR/bin/$SERVER_APP_NAME"
 SERVER_LOGFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.log"
 SERVER_PIDFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.pid"
 SERVER_TOKENFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.token"
-SERVER_ARCH=
+SERVER_PLATFORM="%%SERVER_PLATFORM%%"
+SERVER_ARCH="%%SERVER_ARCH%%"
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
 SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
 
 LISTENING_ON=
 OS_RELEASE_ID=
-ARCH=
-PLATFORM=
+PLATFORM=$SERVER_PLATFORM
+
+# Get commit from installed server's product.json
+get_installed_commit() {
+  if [[ ! -f "$SERVER_DIR/product.json" ]]; then
+    return 0
+  fi
+
+  sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{7,\}\)".*/\1/p' "$SERVER_DIR/product.json" 2>/dev/null | head -n 1
+}
 
 # Mimic output from logs of remote-ssh extension
 print_install_results_and_exit() {
@@ -35,12 +49,34 @@ print_install_results_and_exit() {
   echo "connectionToken==$SERVER_CONNECTION_TOKEN=="
   echo "logFile==$SERVER_LOGFILE=="
   echo "osReleaseId==$OS_RELEASE_ID=="
-  echo "arch==$ARCH=="
   echo "platform==$PLATFORM=="
   echo "tmpDir==$TMP_DIR=="
 %%ENV_VAR_LINES%%
   echo "%%SCRIPT_ID%%: end"
   exit 0
+}
+
+# Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
+#
+# The install directory is named for the client's commit, but the download URL may still return a different build
+# (for example, when a version-keyed URL is shared by releases with different commits).
+# Reject a present server whose product.json records a different commit,
+# so it can be replaced by a fresh download instead of being reused under the wrong directory name.
+#
+# The validation is bypassed when:
+# - no server installed
+# - empty or unreadable commit
+# - "serverValidation": "force"
+# - "serverValidation": "skip"
+validate_installed_commit() {
+  if [[ ! -f $SERVER_SCRIPT ]] || [[ "$MODIFY_PRODUCT_JSON" == "true" ]] || [[ -n "$SERVER_VALIDATION_FLAG" ]]; then
+    return 0
+  fi
+
+  local installed
+  installed="$(get_installed_commit)"
+
+  [[ -z "$installed" ]] || [[ "$installed" == "$DISTRO_COMMIT" ]]
 }
 
 LOCKFILE="$TMP_DIR/server_install.lock"
@@ -84,60 +120,6 @@ if ! command -v uname >/dev/null 2>&1; then
   print_install_results_and_exit 1
 fi
 
-KERNEL="$(uname -s)"
-case $KERNEL in
-  Darwin)
-    PLATFORM="darwin"
-    ;;
-  Linux)
-    PLATFORM="linux"
-    ;;
-  FreeBSD)
-    PLATFORM="freebsd"
-    ;;
-  DragonFly)
-    PLATFORM="dragonfly"
-    ;;
-  "")
-    echo "Error: uname -s yields empty result"
-    print_install_results_and_exit 1
-    ;;
-  *)
-    echo "Error: platform not supported: $KERNEL"
-    print_install_results_and_exit 1
-    ;;
-esac
-
-# Check machine architecture
-ARCH="$(uname -m)"
-case $ARCH in
-  x86_64 | amd64)
-    SERVER_ARCH="x64"
-    ;;
-  armv7l | armv8l)
-    SERVER_ARCH="armhf"
-    ;;
-  arm64 | aarch64)
-    SERVER_ARCH="arm64"
-    ;;
-  ppc64le)
-    SERVER_ARCH="ppc64le"
-    ;;
-  riscv64)
-    SERVER_ARCH="riscv64"
-    ;;
-  loongarch64)
-    SERVER_ARCH="loong64"
-    ;;
-  s390x)
-    SERVER_ARCH="s390x"
-    ;;
-  *)
-    echo "Error: architecture not supported: $ARCH"
-    print_install_results_and_exit 1
-    ;;
-esac
-
 # https://www.freedesktop.org/software/systemd/man/os-release.html
 OS_RELEASE_ID="$(grep -i '^ID=' /etc/os-release 2>/dev/null | sed 's/^ID=//gi' | sed 's/"//g')"
 if [[ -z $OS_RELEASE_ID ]]; then
@@ -149,24 +131,29 @@ fi
 
 # Create installation folder
 if [[ ! -d $SERVER_DIR ]]; then
-  mkdir -p $SERVER_DIR
-  if (( $? > 0 )); then
+  mkdir -p $SERVER_DIR || (
     echo "Error: creating server install directory"
     print_install_results_and_exit 1
-  fi
+  )
 fi
 
 # adjust platform for vscodium download, if needed
 if [[ $OS_RELEASE_ID = alpine ]]; then
-  PLATFORM=$OS_RELEASE_ID
+  PLATFORM="alpine"
 fi
 
 SERVER_DOWNLOAD_URL="$(echo "%%SERVER_DOWNLOAD_URL_TEMPLATE%%" | sed "s/\${quality}/$DISTRO_QUALITY/g" | sed "s/\${version}/$DISTRO_VERSION/g" | sed "s/\${commit}/$DISTRO_COMMIT/g" | sed "s/\${os}/$PLATFORM/g" | sed "s/\${arch}/$SERVER_ARCH/g" | sed "s/\${release}/$DISTRO_VSCODIUM_RELEASE/g")"
 
+# Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
+if ! validate_installed_commit; then
+  echo "Installed server commit $(get_installed_commit) does not match $DISTRO_COMMIT, reinstalling"
+  rm -rf "$SERVER_DIR"/*
+fi
+
 # Check if server script is already installed
 if [[ ! -f $SERVER_SCRIPT ]]; then
   case "$PLATFORM" in
-    darwin | linux | alpine | freebsd )
+    alpine | darwin | freebsd | linux )
       ;;
     *)
       echo "Error: '$PLATFORM' needs manual installation of remote extension host"
@@ -174,14 +161,14 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
       ;;
   esac
 
-  pushd $SERVER_DIR > /dev/null
+  pushd "$SERVER_DIR" > /dev/null || exit
 
   if command -v wget >/dev/null 2>&1; then
-    wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   elif command -v curl >/dev/null 2>&1; then
-    curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   elif command -v fetch >/dev/null 2>&1; then
-    fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz $SERVER_DOWNLOAD_URL
+    fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   else
     echo "Error: no tool to download server binary"
     print_install_results_and_exit 1
@@ -193,35 +180,44 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     print_install_results_and_exit 1
   fi
 
-  tar -xOf vscode-server.tar.gz > /dev/null 2>&1
-  if (( $? > 0 )); then
+  tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (
     echo "Error downloaded tarball is corrupt or incomplete"
     rm -rf vscode-server.tar.gz
     print_install_results_and_exit 1
-  fi
+  )
 
-  tar -xf vscode-server.tar.gz --strip-components 1
-  if (( $? > 0 )); then
+  tar -xf vscode-server.tar.gz --strip-components 1 || (
     echo "Error while extracting server contents"
     rm -rf vscode-server.tar.gz
     print_install_results_and_exit 1
-  fi
-
-  if [[ ! -f $SERVER_SCRIPT ]] || [[ ! -s $SERVER_SCRIPT ]]; then
-    rm -rf $SERVER_DIR/*
-    echo "Error: server contents are corrupted"
-    print_install_results_and_exit 1
-  fi
+  )
 
   rm -f vscode-server.tar.gz
 
-  popd > /dev/null
+  popd > /dev/null || exit
+
+  if [[ ! -f $SERVER_SCRIPT ]] || [[ ! -s $SERVER_SCRIPT ]]; then
+    echo "Error: server contents are corrupted"
+
+    rm -rf $SERVER_DIR/*
+
+    print_install_results_and_exit 1
+  fi
+
+  if ! validate_installed_commit; then
+    echo "Error: downloaded server commit $(get_installed_commit) does not match $DISTRO_COMMIT"
+    echo "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a \${commit} keyed URL cannot be ambiguous"
+
+    rm -rf "$SERVER_DIR"/*
+
+    print_install_results_and_exit 1
+  fi
 else
   echo "Server script already installed in $SERVER_SCRIPT"
 fi
 
 # Modify the commit in the remote server to match the local value
-if %%MODIFY_PRODUCT_JSON%%; then
+if [[ "$MODIFY_PRODUCT_JSON" == "true" ]]; then
   if command -v sed >/dev/null 2>&1; then
     echo "Will modify product.json on remote to match the commit value"
     sed -i -E 's/"commit": "[0-9a-f]+",/"commit": "'"$DISTRO_COMMIT"'",/' "$SERVER_DIR/product.json";
@@ -233,9 +229,9 @@ fi
 # Try to find if server is already running
 if [[ -f $SERVER_PIDFILE ]]; then
   SERVER_PID="$(cat $SERVER_PIDFILE)"
-  SERVER_RUNNING_PROCESS="$(ps -o pid,args -p $SERVER_PID | grep $SERVER_SCRIPT)"
+  SERVER_RUNNING_PROCESS="$( ps -o pid,args | grep $SERVER_PID | grep $SERVER_SCRIPT )"
 else
-  SERVER_RUNNING_PROCESS="$(ps -o pid,args -A | grep $SERVER_SCRIPT | grep -v grep)"
+  SERVER_RUNNING_PROCESS="$( (ps -o pid,args -A || ps -o pid,args) | grep $SERVER_SCRIPT | grep -v grep )"
 fi
 
 if [[ -z $SERVER_RUNNING_PROCESS ]]; then
