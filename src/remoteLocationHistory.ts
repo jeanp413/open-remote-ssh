@@ -44,7 +44,7 @@ export function getRemoteWorkspaceLocationData(): [string, string] | undefined {
         return [sshDest.hostname, location.path];
     }
 
-    location = vscode.workspace.workspaceFolders?.[0].uri;
+    location = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (location && location.scheme === 'vscode-remote' && location.authority.startsWith(REMOTE_SSH_AUTHORITY)) {
         const [, host] = location.authority.split('+');
         const sshDest = SSHDestination.parseEncoded(host);
