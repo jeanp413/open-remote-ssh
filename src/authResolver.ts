@@ -137,13 +137,10 @@ function splitProxyCommand(value: string | string[]): string[] {
 }
 
 /**
- * Refuse a ProxyCommand line that a shell is going to run when one of the
- * `%h`, `%n` or `%r` tokens it uses would expand to shell metacharacters.
- *
- * These values can come from the remote authority, so like OpenSSH 9.6
- * (CVE-2023-51385) only plain host and user names are allowed. Tokens the
- * line does not use are not checked, so for instance a local user name with a
- * space only matters when the line uses `%r`.
+ * Throw if a `%h`, `%n` or `%r` token in a ProxyCommand line meant for a shell
+ * expands to more than a plain host or user name. These values can come from
+ * the remote authority (cf. OpenSSH 9.6, CVE-2023-51385). Unused tokens are
+ * skipped, so e.g. a user name with a space only matters if the line uses `%r`.
  */
 function assertShellSafeProxyCommand(line: string, values: Record<string, string>) {
     for (const [, token] of line.matchAll(/%(.)/g)) {
@@ -358,7 +355,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                         }
                     } else if (sshHostConfig['ProxyCommand']) {
-                        const proxyCommandValue = sshHostConfig['ProxyCommand'] as unknown as string | string[];
+                        const proxyCommandValue: string | string[] = sshHostConfig['ProxyCommand'];
                         const proxyCommandLine = [proxyCommandValue].flat().join(' ');
                         const proxyCommandValues = {
                             '%': '%',
@@ -367,34 +364,32 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             'p': sshPort.toString(),
                             'r': sshUser,
                         };
+                        const interpolateProxyCommand = (value: string) => SSHConfiguration.interpolate(value, proxyCommandValues);
 
-                        let child: cp.ChildProcessWithoutNullStreams;
+                        // Like OpenSSH: the shell parses the whole line, quoting included.
+                        let proxyCommand = interpolateProxyCommand(proxyCommandLine);
+                        let proxyArgs: string[] = [];
+                        let options: cp.SpawnOptionsWithoutStdio = { shell: true };
                         if (isWindows) {
-                            // Like Win32-OpenSSH, start the program directly; only
-                            // batch files and program paths with a space need cmd.exe.
-                            let proxyArgs = splitProxyCommand(proxyCommandValue).map((arg) => SSHConfiguration.interpolate(arg, proxyCommandValues));
-                            let proxyCommand = proxyArgs.shift()!;
-
-                            let options = {};
+                            // Like Win32-OpenSSH: no shell, except cmd.exe for batch
+                            // files and program paths with a space.
+                            proxyArgs = splitProxyCommand(proxyCommandValue).map(interpolateProxyCommand);
+                            proxyCommand = proxyArgs.shift()!;
+                            options = {};
                             if (/\.(bat|cmd)$/.test(proxyCommand) || proxyCommand.includes(' ')) {
-                                assertShellSafeProxyCommand(proxyCommandLine, proxyCommandValues);
                                 proxyCommand = `"${proxyCommand}"`;
                                 proxyArgs = proxyArgs.map((arg) => arg.includes(' ') ? `"${arg}"` : arg);
                                 options = { shell: true, windowsHide: true, windowsVerbatimArguments: true };
                             }
-
-                            this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
-                            child = cp.spawn(proxyCommand, proxyArgs, options);
-                        } else {
-                            // Like OpenSSH, let the shell parse the whole line, so
-                            // the quoting in the config is kept.
-                            assertShellSafeProxyCommand(proxyCommandLine, proxyCommandValues);
-                            const proxyCommand = SSHConfiguration.interpolate(proxyCommandLine, proxyCommandValues);
-
-                            this.logger.trace(`Spawning ProxyCommand: ${proxyCommand}`);
-                            child = cp.spawn(proxyCommand, { shell: true });
                         }
 
+                        if (options.shell) {
+                            assertShellSafeProxyCommand(proxyCommandLine, proxyCommandValues);
+                        }
+
+                        this.logger.trace(`Spawning ProxyCommand: ${[proxyCommand, ...proxyArgs].join(' ')}`);
+
+                        const child = cp.spawn(proxyCommand, proxyArgs, options);
                         proxyStream = stream.Duplex.from({ readable: child.stdout, writable: child.stdin });
                         this.proxyCommandProcess = child;
                     }
