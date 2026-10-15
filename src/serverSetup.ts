@@ -189,7 +189,7 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
             const uname = /==(.*?)==/.exec(result.stdout);
 
             if (uname) {
-                detectedPlatform = parseKernelName(uname[1]);
+                detectedPlatform = parseKernelName(uname[1].trim());
             } else {
                 throw new ServerInstallError(`platform not found: ${result.stdout}`);
             }

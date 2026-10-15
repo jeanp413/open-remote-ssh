@@ -66,7 +66,7 @@ describe('detectPlatform', () => {
         it('detects linux/x64 and trims trailing newlines', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('Linux\n'),
+                'echo "==$(uname -s)=="': out('==Linux==\n'),
                 'uname -m': out('x86_64\n')
             });
 
@@ -80,7 +80,7 @@ describe('detectPlatform', () => {
         it('detects darwin/arm64', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('Darwin\n'),
+                'echo "==$(uname -s)=="': out('==Darwin==\n'),
                 'uname -m': out('arm64\n')
             });
 
@@ -94,7 +94,7 @@ describe('detectPlatform', () => {
         it('detects freebsd/amd64', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('FreeBSD\n'),
+                'echo "==$(uname -s)=="': out('==FreeBSD==\n'),
                 'uname -m': out('amd64\n')
             });
 
@@ -107,7 +107,7 @@ describe('detectPlatform', () => {
         it('fails on an unsupported kernel', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('SunOS\n'),
+                'echo "==$(uname -s)=="': out('==SunOS==\n'),
             });
 
             await expect(detectPlatform(conn, undefined, logger)).rejects.toThrow('platform not supported: SunOS');
@@ -116,7 +116,7 @@ describe('detectPlatform', () => {
         it('fails on an unsupported architecture', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('Linux\n'),
+                'echo "==$(uname -s)=="': out('==Linux==\n'),
                 'uname -m': out('i686\n'),
             });
 
@@ -126,7 +126,7 @@ describe('detectPlatform', () => {
         it('fails when "uname -m" yields an empty result', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('Linux'),
+                'echo "==$(uname -s)=="': out('==Linux=='),
                 'uname -m': out(''),
             });
 
@@ -136,7 +136,7 @@ describe('detectPlatform', () => {
         it('fails when "uname -m" writes an error', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('Linux'),
+                'echo "==$(uname -s)=="': out('==Linux=='),
                 'uname -m': err('boom'),
             });
 
@@ -158,7 +158,7 @@ describe('detectPlatform', () => {
         it('detects bash from MINGW64 (Git Bash)', async () => {
             const conn = fakeConn({
                 'echo %COMSPEC%~$PSHOME': out('%COMSPEC%~\n'),
-                'uname -s': out('MINGW64_NT-10.0-19045\n'),
+                'echo "==$(uname -s)=="': out('==MINGW64_NT-10.0-19045==\n'),
             });
 
             const result = await detectPlatform(conn, undefined, logger);
@@ -185,7 +185,7 @@ describe('detectPlatform', () => {
             const result = await detectPlatform(conn, 'linux', logger);
 
             expect(result).to.eql({ detectedPlatform: 'linux', detectedArch: 'arm64', detectedShell: 'bash' });
-            expect(conn.exec).not.toHaveBeenCalledWith('uname -s');
+            expect(conn.exec).not.toHaveBeenCalledWith('echo "==$(uname -s)=="');
         });
 
         it('maps "macos" to darwin', async () => {
