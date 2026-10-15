@@ -22,9 +22,15 @@ for DIR in ./*; do
       continue
     fi
 
-    echo "Generating local-${DIR}..."
+    IMAGE="local-${DIR}"
 
-    docker build -t "local-${DIR}" "${DIR}"
+    if docker image inspect "${IMAGE}" > /dev/null 2>&1; then
+      echo "Image ${IMAGE} already exists; skipping"
+      continue
+    fi
+
+    echo "Generating ${IMAGE}..."
+    docker build -t "${IMAGE}" "${DIR}"
   fi
 done
 

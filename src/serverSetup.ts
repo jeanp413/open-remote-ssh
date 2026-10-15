@@ -185,9 +185,14 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
             detectedShell = 'powershell';
             detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
         } else if (!platform) {
-            const result = await conn.exec('uname -s');
+            const result = await conn.exec('echo "==$(uname -s)=="');
+            const uname = /==(.*?)==/.exec(result.stdout);
 
-            detectedPlatform = parseKernelName(result.stdout.trim());
+            if (uname) {
+                detectedPlatform = parseKernelName(uname[1].trim());
+            } else {
+                throw new ServerInstallError(`platform not found: ${result.stdout}`);
+            }
         } else {
             detectedPlatform = 'windows';
         }
