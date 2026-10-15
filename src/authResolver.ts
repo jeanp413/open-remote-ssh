@@ -137,6 +137,20 @@ function splitProxyCommand(value: string | string[]): string[] {
 }
 
 /**
+ * Throw if a `%h`, `%n` or `%r` token in a ProxyCommand line meant for a shell
+ * expands to more than a plain host or user name. These values can come from
+ * the remote authority (cf. OpenSSH 9.6, CVE-2023-51385). Unused tokens are
+ * skipped, so e.g. a user name with a space only matters if the line uses `%r`.
+ */
+function assertShellSafeProxyCommand(line: string, values: Record<string, string>) {
+    for (const [, token] of line.matchAll(/%(.)/g)) {
+        if ('hnr'.includes(token) && !/^[\w.@:[\]-]*$/.test(values[token])) {
+            throw new Error(`ProxyCommand: %${token} expands to '${values[token]}', which contains characters other than letters, digits and '_.@:[]-'`);
+        }
+    }
+}
+
+/**
  * The port a `ProxyJump` hop listens on.
  *
  * A jump host does not inherit the target's `Port`; ssh falls back to 22 for it.
@@ -341,26 +355,39 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             proxyStream = await proxyConnection.forwardOut('127.0.0.1', 0, destIP, destPort);
                         }
                     } else if (sshHostConfig['ProxyCommand']) {
-                        let proxyArgs = splitProxyCommand(sshHostConfig['ProxyCommand'] as unknown as string | string[])
-                            .map((arg) => SSHConfiguration.interpolate(arg, {
-                                '%': '%',
-                                'h': sshHostName,
-                                'n': sshDest.hostname,
-                                'p': sshPort.toString(),
-                                'r': sshUser,
-                            }));
-                        let proxyCommand = proxyArgs.shift()!;
+                        const proxyCommandValue: string | string[] = sshHostConfig['ProxyCommand'];
+                        const proxyCommandLine = [proxyCommandValue].flat().join(' ');
+                        const proxyCommandValues = {
+                            '%': '%',
+                            'h': sshHostName,
+                            'n': sshDest.hostname,
+                            'p': sshPort.toString(),
+                            'r': sshUser,
+                        };
+                        const interpolateProxyCommand = (value: string) => SSHConfiguration.interpolate(value, proxyCommandValues);
 
-                        let options = {};
-                        if (isWindows && (/\.(bat|cmd)$/.test(proxyCommand) || proxyCommand.includes(' '))) {
-                            proxyCommand = `"${proxyCommand}"`;
-                            proxyArgs = proxyArgs.map((arg) => arg.includes(' ') ? `"${arg}"` : arg);
-                            options = { shell: true, windowsHide: true, windowsVerbatimArguments: true };
-                        } else {
-                            options = { shell: true };
+                        // Like OpenSSH: the shell parses the whole line, quoting included.
+                        let proxyCommand = interpolateProxyCommand(proxyCommandLine);
+                        let proxyArgs: string[] = [];
+                        let options: cp.SpawnOptionsWithoutStdio = { shell: true };
+                        if (isWindows) {
+                            // Like Win32-OpenSSH: no shell, except cmd.exe for batch
+                            // files and program paths with a space.
+                            proxyArgs = splitProxyCommand(proxyCommandValue).map(interpolateProxyCommand);
+                            proxyCommand = proxyArgs.shift()!;
+                            options = {};
+                            if (/\.(bat|cmd)$/.test(proxyCommand) || proxyCommand.includes(' ')) {
+                                proxyCommand = `"${proxyCommand}"`;
+                                proxyArgs = proxyArgs.map((arg) => arg.includes(' ') ? `"${arg}"` : arg);
+                                options = { shell: true, windowsHide: true, windowsVerbatimArguments: true };
+                            }
                         }
 
-                        this.logger.trace(`Spawning ProxyCommand: ${proxyCommand} ${proxyArgs.join(' ')}`);
+                        if (options.shell) {
+                            assertShellSafeProxyCommand(proxyCommandLine, proxyCommandValues);
+                        }
+
+                        this.logger.trace(`Spawning ProxyCommand: ${[proxyCommand, ...proxyArgs].join(' ')}`);
 
                         const child = cp.spawn(proxyCommand, proxyArgs, options);
                         proxyStream = stream.Duplex.from({ readable: child.stdout, writable: child.stdin });
