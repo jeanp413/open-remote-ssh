@@ -12,7 +12,7 @@ export async function promptOpenRemoteSSHWindow(reuseWindow: boolean) {
         return;
     }
 
-    const sshDest = new SSHDestination(host);
+    const sshDest = SSHDestination.parse(host);
     openRemoteSSHWindow(sshDest.toEncodedString(), reuseWindow);
 }
 
