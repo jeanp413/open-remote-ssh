@@ -272,7 +272,8 @@
 			},
 			{
 				"command": "openremotessh.explorer.emptyWindowInCurrentWindow",
-				"title": "Connect to Host in Current Window"
+				"title": "Connect to Host in Current Window",
+				"icon": "$(arrow-right)"
 			},
 			{
 				"command": "openremotessh.explorer.reopenFolderInCurrentWindow",
@@ -421,6 +422,11 @@
 				}
 			],
 			"view/item/context": [
+				{
+					"command": "openremotessh.explorer.emptyWindowInCurrentWindow",
+					"when": "viewItem =~ /^openremotessh.explorer.host$/",
+					"group": "inline@1"
+				},
 				{
 					"command": "openremotessh.explorer.emptyWindowInNewWindow",
 					"when": "viewItem =~ /^openremotessh.explorer.host$/",
