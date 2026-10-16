@@ -1,3 +1,6 @@
+run:
+  onlyInCI: true
+
 client:
   files:
     'C:\ProgramData\ssh\ssh_config': >

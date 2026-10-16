@@ -1,3 +1,6 @@
+run:
+  onlyInCI: true
+
 client:
   files:
     /etc/ssh/ssh_config: >

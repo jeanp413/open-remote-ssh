@@ -25,6 +25,9 @@ type TestDocument = {
     password: string;
     platform?: 'linux' | 'windows';
   };
+  run?: {
+    onlyInCI?: boolean;
+  };
   test: {
     either?: string[] | string;
     error?: string[] | string;
@@ -57,8 +60,12 @@ for (const file of files.value) {
     throw document.error;
   }
 
-  const { client, server, test } = document.value as TestDocument;
+  const { client, server, test, run } = document.value as TestDocument;
   const containerName = `open-remote-ssh-test-${randomUUID()}`;
+
+  if (run?.onlyInCI && !process.env.CI) {
+    continue;
+  }
 
   if ((server.platform === 'windows') !== (process.platform === 'win32')) {
     continue;
