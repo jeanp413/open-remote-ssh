@@ -277,7 +277,8 @@
 			},
 			{
 				"command": "openremotessh.explorer.reopenFolderInCurrentWindow",
-				"title": "Open on SSH Host in Current Window"
+				"title": "Open on SSH Host in Current Window",
+				"icon": "$(arrow-right)"
 			},
 			{
 				"command": "openremotessh.explorer.reopenFolderInNewWindow",
@@ -441,6 +442,11 @@
 					"command": "openremotessh.explorer.emptyWindowInCurrentWindow",
 					"when": "viewItem =~ /^openremotessh.explorer.host$/",
 					"group": "navigation@1"
+				},
+				{
+					"command": "openremotessh.explorer.reopenFolderInCurrentWindow",
+					"when": "viewItem == openremotessh.explorer.folder",
+					"group": "inline@1"
 				},
 				{
 					"command": "openremotessh.explorer.reopenFolderInNewWindow",
