@@ -67,15 +67,15 @@
 		"@types/ssh2": "0.5.52",
 		"@types/ssh2-streams": "0.1.13",
 		"@types/webpack": "5.28.5",
-		"@typescript-eslint/eslint-plugin": "8.71.0",
-		"@typescript-eslint/parser": "8.71.0",
-		"@vitest/coverage-v8": "4.1.11",
-		"@vitest/ui": "4.1.11",
+		"@typescript-eslint/eslint-plugin": "8.71.2",
+		"@typescript-eslint/parser": "8.71.2",
+		"@vitest/coverage-v8": "4.1.12",
+		"@vitest/ui": "4.1.12",
 		"@vscode/vsce": "3.9.2",
 		"@zokugun/fs-extra-plus": "0.5.0",
 		"@zokugun/xtry": "0.11.6",
 		"better-npm-audit": "3.11.0",
-		"eslint": "10.11.0",
+		"eslint": "10.12.0",
 		"eslint-plugin-jsdoc": "62.9.0",
 		"fixpack": "4.0.0",
 		"husky": "9.1.7",
@@ -87,9 +87,9 @@
 		"ts-loader": "9.6.2",
 		"tsc-watch": "7.2.1",
 		"typescript": "5.9.3",
-		"typescript-eslint": "8.71.0",
+		"typescript-eslint": "8.71.2",
 		"universalify": "2.0.1",
-		"vitest": "4.1.11",
+		"vitest": "4.1.12",
 		"webpack": "5.111.1",
 		"webpack-cli": "7.2.3",
 		"yaml": "2.9.1"
@@ -489,13 +489,7 @@
 			"content-type": "2.1.0"
 		},
 		"get-uri": {
-			"basic-ftp": "6.2.1"
-		},
-		"magicast": {
-			"source-map-js": "1.2.2"
-		},
-		"postcss": {
-			"source-map-js": "1.2.2"
+			"basic-ftp": "6.2.3"
 		},
 		"release-it": {
 			"undici": "7.30.0"
