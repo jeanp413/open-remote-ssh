@@ -1,122 +1,249 @@
-## 0.4.0
+Changelog
+=========
 
-- feat: list hosts from multi-name `Host` lines and nested `Includes` (#332)
-- enhance: support simple `ps` binary (#348)
-- fix(security): bind local port to local ip. (#360)
+All notable changes to this project will be documented in this file.
 
-## 0.3.1
+[v0.4.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.4.0) | 2026-10-05
+--------------------------------------------------------------------------------------
 
-- fix(windows): use improved command to test archive (#331)
+### Security
 
-## 0.3.0
+- bind local port to local ip. (#360)
 
-- feat: list configured SSH hosts in the Connect to Host prompt (#319)
-- feat: support `ForwardAgent` (#310)
-- feat: support PEM-encoded password-protected ssh keys (#249)
-- feat: add tests (#314)
-- enhance: add integrity check of the archive (#323)
-- enhance: fall back to private key when .pub file parsing fails (#268)
-- feat: use official simple-socks (#324)
-- fix(alpine): pass flock and expose error on missing libstdc++ (#315)
-- fix: sanitize the extension ids (#321)
-- fix(macos): use a fixed file descriptor due to bash3 (#326)
+### Changed
 
-## 0.2.0
-- feat: add compatibility with Code-OSS (#189)
-- remodel: use base64 encoding for install script to support csh/tcsh login shells (#296)
-- enhance(linux): use `flock` to prevent multiple server install scripts running in parallel (#285)
-- enhance: increase polling loop to aid slowish machines (#290)
-- refactor: rename `serverBinaryName` setting (#280)
-- refactor: extract install scripts from `serverSetup.ts` into script files (#287)
+- support simple `ps` binary (#348)
 
-## 0.1.2
-- fix: split ProxyCommand into argv tokens before spawn (#274)
+### Added
 
-## 0.1.1
+- list hosts from multi-name `Host` lines and nested `Includes` (#332)
+
+[v0.3.1](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.3.1) | 2026-08-05
+--------------------------------------------------------------------------------------
+
+### Bug fixes
+
+- windows: use improved command to test archive (#331)
+
+[v0.3.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.3.0) | 2026-08-04
+--------------------------------------------------------------------------------------
+
+### Changed
+
+- add integrity check of the archive (#323)
+- fall back to private key when .pub file parsing fails (#268)
+- use official `simple-socks` (#324)
+
+### Fixed
+
+- sanitize the extension ids (#321)
+- alpine: pass flock and expose error on missing libstdc++ (#315)
+- macos: use a fixed file descriptor due to bash3 (#326)
+
+### Added
+
+- list configured SSH hosts in the Connect to Host prompt (#319)
+- support `ForwardAgent` (#310)
+- support PEM-encoded password-protected ssh keys (#249)
+- add tests (#314)
+
+[v0.2.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.2.0) | 2026-07-06
+--------------------------------------------------------------------------------------
+
+### Changed
+
+- use base64 encoding for install script to support csh/tcsh login shells (#296)
+- increase polling loop to aid slowish machines (#290)
+- rename `serverBinaryName` setting (#280)
+- extract install scripts from `serverSetup.ts` into script files (#287)
+
+### Added
+
+- add compatibility with Code-OSS (#189)
+- linux: use `flock` to prevent multiple server install scripts running in parallel (#285)
+
+[v0.1.2](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.1.2) | 2026-05-07
+--------------------------------------------------------------------------------------
+
+### Fixed
+
+- split ProxyCommand into argv tokens before spawn (#274)
+
+[v0.1.1](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.1.1) | 2026-05-03
+--------------------------------------------------------------------------------------
+
+### Fixed
+
 - don't assume `ProxyCommand` value's type (#270)
 
-## 0.1.0
+[v0.1.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.1.0) | 2026-05-02
+--------------------------------------------------------------------------------------
+
+### Changed
+
 - replace `which` with `command -v` (#215)
-- allow automatic download of remote extension host on FreeBSD (#244)
-- add remote.SSH.serverInstallPath option (#259)
 - cleanup on errors (#172)
 - typo `attemp` -> `attempt` (#185)
-- use original ssh-config dependency (#267)
+- use original `ssh-config` dependency (#267)
 
-## 0.0.49
+### Added
+
+- add `remote.SSH.serverInstallPath` option (#259)
+- allow automatic download of remote extension host on FreeBSD (#244)
+
+
+[v0.0.49](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.49) | 2025-04-04
+----------------------------------------------------------------------------------------
+
+### Changed
+
 - remove default `remote.SSH.serverDownloadUrlTemplate`
 
-## 0.0.48
-- Support `%n` in ProxyCommand
-- fix: add missing direct @types/ssh2-stream dependency (#177)
+[v0.0.48](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.48) | 2025-01-09
+----------------------------------------------------------------------------------------
+
+### Fixed
+
+- add missing direct `@types/ssh2-stream` dependency (#177)
 - fix Win32 internal error (#178)
 
-## 0.0.47
-- Add support for loong64 (#175)
-- Add s390x support (#174)
-- Support vscodium alpine reh (#142)
+### Added
 
-## 0.0.46
-- Add riscv64 support (#147)
+- support `%n` in ProxyCommand
 
-## 0.0.45
-- Use windows-x64 server on windows-arm64
+[v0.0.47](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.47) | 2024-11-09
+----------------------------------------------------------------------------------------
 
-## 0.0.44
-- Update ssh2 lib
-- Properly set extensionHost env variables
+### Added
 
-## 0.0.43
-- Fix parsing multiple include directives
+- add support for loong64 (#175)
+- add s390x support (#174)
+- support vscodium alpine reh (#142)
 
-## 0.0.42
-- Fix remote label to show port when connecting to a port other than 22
+[v0.0.46](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.46) | 2024-06-22
+----------------------------------------------------------------------------------------
 
-## 0.0.41
-- Take into account parsed port from ssh destination. Fixes (#110)
+### Added
 
-## 0.0.40
-- Update ssh-config package
+- add riscv64 support (#147)
 
-## 0.0.39
+[v0.0.45](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.45) | 2023-10-16
+----------------------------------------------------------------------------------------
+
+### Changed
+
+- use windows-x64 server on windows-arm64
+
+[v0.0.44](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.44) | 2023-10-01
+----------------------------------------------------------------------------------------
+
+### Fixed
+
+- properly set `extensionHost` env variables
+
+### Changed
+
+- Update `ssh2` lib
+
+[v0.0.43](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.43) | 2023-09-10
+----------------------------------------------------------------------------------------
+
+### Fixed
+
+- parse multiple include directives
+
+[v0.0.42](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.42) | 2023-08-31
+----------------------------------------------------------------------------------------
+
+### Fixed
+
+- remote label to show port when connecting to a port other than 22
+
+[v0.0.41](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.41) | 2023-08-31
+----------------------------------------------------------------------------------------
+
+### Fixed
+
+- take into account parsed port from ssh destination (#110)
+
+[v0.0.40](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.40) | 2023-08-17
+----------------------------------------------------------------------------------------
+
+### Changed
+
+- Update `ssh-config` package
+
+[v0.0.39](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.39) | 2023-06-12
+----------------------------------------------------------------------------------------
+
+### Added
 
 - output error messages when downloading vscode server (#39)
-- Add PreferredAuthentications support (#97)
+- add `PreferredAuthentications` support (#97)
 
-## 0.0.38
+[v0.0.38](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.38) | 2023-06-05
+----------------------------------------------------------------------------------------
 
-- Enable remote support for ppc64le (#93)
+### Added
 
-## 0.0.37
+- enable remote support for ppc64le (#93)
 
-- Default to Current OS User in Connection String if No User Provided (#91)
-- Add support for (unofficial) DragonFly reh (#86)
+[v0.0.37](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.37) | 2023-05-24
+----------------------------------------------------------------------------------------
 
-## 0.0.36
+### Changed
 
-- Make wget support continue download (#85)
+- default to current OS user in connection string if no user provided (#91)
 
-## 0.0.35
+### Added
 
-- Fixes hardcoded agentsock for windows breaks pageant compatibility (#81)
+- add support for (unofficial) DragonFly reh (#86)
 
-## 0.0.34
+[v0.0.36](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.36) | 2023-05-01
+----------------------------------------------------------------------------------------
 
-- Add remote.SSH.connectTimeout setting
-- adding %r username replacement to proxycommand (#77)
+### Changed
 
-## 0.0.33
+- make `wget` support continue download (#85)
 
-- feat: support %r user substitution in proxycommand
+[v0.0.35](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.35) | 2023-04-29
+----------------------------------------------------------------------------------------
 
-## 0.0.32
+### Fixed
 
-- feat: use serverDownloadUrlTemplate from product.json (#59)
+- hardcoded `agentsock` for windows breaks pageant compatibility (#81)
 
-## 0.0.31
+[v0.0.34](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.34) | 2023-04-29
+----------------------------------------------------------------------------------------
 
-- feat: support glob patterns in SSH include directives
+### Added
 
-## 0.0.30
+- add `remote.SSH.connectTimeout` setting
 
-- feat: support file patterns in SSH include directives
+[v0.0.33](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.33) | 2023-04-07
+----------------------------------------------------------------------------------------
+
+### Added
+
+- support `%r` user substitution in `proxycommand`
+
+[v0.0.32](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.32) | 2023-03-26
+----------------------------------------------------------------------------------------
+
+### Added
+
+- use `serverDownloadUrlTemplate` from `product.json` (#59)
+
+[v0.0.31](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.31) | 2023-03-21
+----------------------------------------------------------------------------------------
+
+### Added
+
+- support glob patterns in SSH include directives
+
+[v0.0.30](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.0.30) | 2023-03-11
+----------------------------------------------------------------------------------------
+
+### Added
+
+- support file patterns in SSH include directives

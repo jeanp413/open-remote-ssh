@@ -93,7 +93,7 @@ jobs:
       - name: Get Changelog
         if: env.RELEASE_EXISTS == 'no'
         run: |
-          CHANGELOG_ENTRY=$(node .github/scripts/get-changelog.js ${VERSION})
+          CHANGELOG_ENTRY=$(npx @zokugun/extract-changelog get ${VERSION})
 
           # Properly handle multiline output in GitHub Actions
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
