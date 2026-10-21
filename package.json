@@ -491,6 +491,12 @@
 		"get-uri": {
 			"basic-ftp": "6.2.3"
 		},
+		"magicast": {
+			"source-map-js": "1.2.2"
+		},
+		"postcss": {
+			"source-map-js": "1.2.2"
+		},
 		"release-it": {
 			"undici": "7.30.0"
 		}
