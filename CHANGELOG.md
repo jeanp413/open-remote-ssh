@@ -3,6 +3,41 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+[v0.5.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.5.0) | 2026-10-21
+--------------------------------------------------------------------------------------
+
+### Changed
+
+- move `platform` and `arch` detection from `server-setup.sh` to client side (#371)
+- extract `runInstallScript` and `parseInstallOutput` into separate functions (#370)
+- interpolate more SSH variables (#198)
+- use `env` in shebang (#184)
+- guard `uname` output (#379)
+- windows: improve shell detection logic (#339)
+
+### Fixed
+
+- don't dial a `ProxyJump` hop on the target's port (#337)
+- activating loop if no folders are open (#376)
+- keep `ProxyCommand` quoting when running it through a shell (#378)
+- ui: handle user and port in the Connect to host prompt (#380)
+- ui: hide `systemd-ssh-proxy` special hosts from the target list (#358)
+- ui: show connected host when it contains uppercase letters (#250)
+- windows: skip backslash escape in `ProxyCommand` tokenizer on Windows (#342)
+
+### Added
+
+- add `SendEnv` SSH configuration support (#241)
+- verify SSH host keys against `known_hosts` (#334)
+- verify the installed server's commit so it matches the client (#356)
+- follow a `ProxyJump` declared by a jump host (#338)
+- resolve `Include` directives inside `Match` blocks (#340)
+- connect through the local SSH client for `GSSAPI` hosts (#346)
+- docs: explain how to set up jump hosts (#368)
+- test: add tests for windows (#353, #374)
+- test: add tests for `ProxyCommand` (#364)
+- ui: open in current window without context menu (#383, #384)
+
 [v0.4.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.4.0) | 2026-10-05
 --------------------------------------------------------------------------------------
 
@@ -21,7 +56,7 @@ All notable changes to this project will be documented in this file.
 [v0.3.1](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.3.1) | 2026-08-05
 --------------------------------------------------------------------------------------
 
-### Bug fixes
+### Fixed
 
 - windows: use improved command to test archive (#331)
 
