@@ -99,6 +99,7 @@
 		"onCommand:openremotessh.openEmptyWindowInCurrentWindow",
 		"onCommand:openremotessh.openConfigFile",
 		"onCommand:openremotessh.showLog",
+		"onCommand:openremotessh.forgetSavedPasswords",
 		"onResolveRemoteAuthority:ssh-remote",
 		"onView:sshHosts"
 	],
@@ -149,6 +150,22 @@
 					],
 					"description": "What to do when a host presents a different key than the one recorded in known_hosts. A changed host key can mean the server was reinstalled — or that the connection is being intercepted.",
 					"default": "reject",
+					"scope": "application"
+				},
+				"remote.SSH.rememberPasswords": {
+					"type": "string",
+					"enum": [
+						"ask",
+						"always",
+						"never"
+					],
+					"enumDescriptions": [
+						"Ask after each successful login with a typed password.",
+						"Save typed passwords without asking.",
+						"Never save passwords. Passwords saved earlier are still used; run \"Remote-SSH: Forget Saved Passwords\" to remove them."
+					],
+					"description": "Whether to offer saving SSH passwords in the system keychain after a successful password login.",
+					"default": "ask",
 					"scope": "application"
 				},
 				"remote.SSH.defaultExtensions": {
@@ -263,6 +280,11 @@
 			{
 				"command": "openremotessh.showLog",
 				"title": "Show Log",
+				"category": "Remote-SSH"
+			},
+			{
+				"command": "openremotessh.forgetSavedPasswords",
+				"title": "Forget Saved Passwords",
 				"category": "Remote-SSH"
 			},
 			{

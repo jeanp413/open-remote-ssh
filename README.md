@@ -56,6 +56,12 @@ sudo apk add bash libstdc++
 [OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections.
 To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
 
+## Saved passwords
+
+After you log in to a host with a typed password, you're offered to save it in the system keychain (macOS Keychain, Windows Credential Manager, or libsecret on Linux), so the next connection doesn't prompt. A saved password the server rejects is removed and you're prompted again. Passwords are saved per user, host and port, including for `ProxyJump` hops. One-time codes and other second factors are never saved.
+
+Set `remote.SSH.rememberPasswords` to `ask` (default), `always` or `never`, and run `Remote-SSH: Forget Saved Passwords` to remove them all. On Linux without a running keyring, the editor may fall back to weaker storage and warns when it does.
+
 ## SSH configuration guides
 
 - [GSSAPI / Kerberos authentication](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/gssapi-kerberos-authentication.md.md)

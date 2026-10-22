@@ -1,4 +1,4 @@
-import type { ParsedKey } from 'ssh2-streams';
+import type { ParsedKey, Prompt } from 'ssh2-streams';
 import type { ServerVersion } from './server-config/types';
 
 import * as cp from 'child_process';
@@ -16,6 +16,7 @@ import NativeSSHConnection, { isGssapiAuthenticationRequested } from './ssh/nati
 import type { SSHClient, SSHExecChannel } from './ssh/sshClient';
 import SSHConfiguration, { getSSHConfigPath, type HostConfiguration } from './ssh/sshConfig';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
+import { getPasswordSecretKey, getSavedPassword, savePassword, deleteSavedPassword, type RememberPasswordsPolicy } from './ssh/savedPasswords';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
@@ -162,6 +163,21 @@ export function getProxyJumpPort(dest: SSHDestination, config: Record<string, st
     return (config['Port'] && parseInt(config['Port'], 10)) || dest.port || 22;
 }
 
+/**
+ * Whether a keyboard-interactive round asks for nothing but the account
+ * password: a single hidden prompt that mentions a password. Only such a round
+ * is answered from, or saved to, the keychain. One-time passwords and other
+ * second factors must be typed every time, so anything that looks like one is
+ * excluded — a miss here only means an extra prompt.
+ */
+export function isPasswordPrompt(prompts: Prompt[]): boolean {
+    if (prompts.length !== 1 || prompts[0].echo) {
+        return false;
+    }
+    const text = prompts[0].prompt;
+    return /password/i.test(text) && !/one[- ]?time|otp|oath|token|code|verif|factor/i.test(text);
+}
+
 export const MAX_PROXY_JUMPS = 10;
 
 export type ProxyJumpHop = [SSHDestination, HostConfiguration];
@@ -305,6 +321,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const useNativeClient = isGssapiAuthenticationRequested(sshHostConfig);
 
                 let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
+                // Unset for the native client, which never prompts for a password
+                let onAuthenticated: (() => void) | undefined;
 
                 if (!useNativeClient) {
                     const preferredAuthentications = sshHostConfig['PreferredAuthentications'] ? sshHostConfig['PreferredAuthentications'].split(',').map(s => s.trim()) : ['publickey', 'password', 'keyboard-interactive'];
@@ -334,7 +352,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             const proxyIdentitiesOnly = (proxyHostConfig['IdentitiesOnly'] || 'no').toLowerCase() === 'yes';
                             const proxyIdentityKeys = await gatherIdentityFiles(proxyIdentityFiles, this.sshAgentSock, proxyIdentitiesOnly, this.logger);
 
-                            const proxyAuthHandler = this.getSSHAuthHandler(proxyUser, proxyHostName, proxyIdentityKeys, preferredAuthentications);
+                            const proxyAuth = this.getSSHAuthHandler(proxyUser, proxyHostName, proxyPort, proxyIdentityKeys, preferredAuthentications);
                             const proxyConnection = new SSHConnection({
                                 host: !proxyStream ? proxyHostName : undefined,
                                 port: !proxyStream ? proxyPort : undefined,
@@ -345,9 +363,13 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                                 agentForward: proxyAgentForward,
                                 agent: proxyAgent,
                                 hostVerifier: this.createHostVerifier(proxyHostName, proxyPort, proxyHostConfig, verifyUnknownHosts, verifyKnownHosts),
-                                authHandler: (arg0, arg1, arg2) => (proxyAuthHandler(arg0, arg1, arg2), undefined)
+                                authHandler: (arg0, arg1, arg2) => (proxyAuth.handler(arg0, arg1, arg2), undefined)
                             });
                             this.proxyConnections.push(proxyConnection);
+
+                            // The hop is authenticated even if forwarding to the next one fails
+                            await proxyConnection.connect();
+                            proxyAuth.onAuthenticated();
 
                             const nextProxyJump = i < proxyJumps.length - 1 ? proxyJumps[i + 1] : undefined;
                             const destIP = nextProxyJump ? (nextProxyJump[1]['HostName'] || nextProxyJump[0].hostname) : sshHostName;
@@ -395,7 +417,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     }
 
                     // Create final shh connection
-                    const sshAuthHandler = this.getSSHAuthHandler(sshUser, sshHostName, identityKeys, preferredAuthentications);
+                    const sshAuth = this.getSSHAuthHandler(sshUser, sshHostName, sshPort, identityKeys, preferredAuthentications);
+                    onAuthenticated = sshAuth.onAuthenticated;
 
                     this.sshConnection = new SSHConnection({
                         host: !proxyStream ? sshHostName : undefined,
@@ -407,7 +430,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         agentForward,
                         agent,
                         hostVerifier: this.createHostVerifier(sshHostName, sshPort, sshHostConfig, verifyUnknownHosts, verifyKnownHosts),
-                        authHandler: (arg0, arg1, arg2) => (sshAuthHandler(arg0, arg1, arg2), undefined),
+                        authHandler: (arg0, arg1, arg2) => (sshAuth.handler(arg0, arg1, arg2), undefined),
                     });
                 } else {
                     this.logger.info(`GSSAPI authentication requested for ${sshDest.hostname}; connecting via the local SSH client`);
@@ -422,6 +445,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
 
                 await this.sshConnection.connect();
+                onAuthenticated?.();
 
                 const envVariables: Record<string, string | null> = {};
                 if (agentForward) {
@@ -793,11 +817,53 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);
     }
 
-    private getSSHAuthHandler(sshUser: string, sshHostName: string, identityKeys: SSHKey[], preferredAuthentications: string[]) {
+    /**
+     * Builds the ssh2 `authHandler` for one host. Call `onAuthenticated` once
+     * the connection is up, so a password the user typed can be offered for
+     * saving.
+     */
+    private getSSHAuthHandler(sshUser: string, sshHostName: string, sshPort: number, identityKeys: SSHKey[], preferredAuthentications: string[]) {
         let passwordRetryCount = PASSWORD_RETRY_COUNT;
         let keyboardRetryCount = PASSWORD_RETRY_COUNT;
         identityKeys = identityKeys.slice();
-        return async (methodsLeft: string[] | null, _partialSuccess: boolean | null, callback: (nextAuth: ssh2.AuthHandlerResult) => void) => {
+
+        const secretKey = getPasswordSecretKey(sshUser, sshHostName, sshPort);
+        const destination = `${sshUser}@${sshHostName}` + (sshPort !== 22 ? `:${sshPort}` : '');
+
+        // The saved password is sent at most once per connection
+        let savedTried = false;
+        // What the attempt in flight sent. ssh2 only calls the handler again to
+        // report that attempt failed, or succeeded with more methods required.
+        let pending: { saved: boolean; typed?: string } = { saved: false };
+        // A typed password accepted with partial success, i.e. before a second factor
+        let acceptedPassword: string | undefined;
+
+        const takeSavedPassword = async (): Promise<string | undefined> => {
+            if (savedTried) {
+                return undefined;
+            }
+            savedTried = true;
+            try {
+                return await getSavedPassword(this.context, secretKey);
+            } catch (e) {
+                this.logger.error(`Couldn't read the saved password for ${destination}`, e);
+                return undefined;
+            }
+        };
+
+        const handler = async (methodsLeft: string[] | null, partialSuccess: boolean | null, callback: (nextAuth: ssh2.AuthHandlerResult) => void) => {
+            if (partialSuccess) {
+                acceptedPassword = pending.typed ?? acceptedPassword;
+            } else if (pending.saved) {
+                // The saved password was rejected, most likely because it changed
+                // on the server: drop it and prompt as usual. A wrong second factor
+                // in the same keyboard-interactive attempt also lands here; the
+                // password is then asked for and offered for saving again.
+                this.logger.info(`The saved password for ${destination} was rejected; removing it`);
+                deleteSavedPassword(this.context, secretKey).then(undefined, e => this.logger.error(`Couldn't remove the saved password for ${destination}`, e));
+            }
+            pending = { saved: false };
+
             if (methodsLeft === null) {
                 this.logger.info(`Trying no-auth authentication`);
 
@@ -872,6 +938,19 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 });
             }
             if (methodsLeft.includes('password') && passwordRetryCount > 0 && preferredAuthentications.includes('password')) {
+                // Doesn't count against passwordRetryCount: the user still gets all their typed tries
+                const saved = await takeSavedPassword();
+                if (saved) {
+                    this.logger.info(`Trying password authentication with the saved password`);
+                    pending.saved = true;
+
+                    return callback({
+                        type: 'password',
+                        username: sshUser,
+                        password: saved
+                    });
+                }
+
                 if (passwordRetryCount === PASSWORD_RETRY_COUNT) {
                     this.logger.info(`Trying password authentication`);
                 }
@@ -882,6 +961,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     ignoreFocusOut: true
                 });
                 passwordRetryCount--;
+                pending.typed = password || undefined;
 
                 return callback(password
                     ? {
@@ -900,6 +980,16 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     type: 'keyboard-interactive',
                     username: sshUser,
                     prompt: async (_name, _instructions, _instructionsLang, prompts, finish) => {
+                        const isPassword = isPasswordPrompt(prompts);
+                        if (isPassword) {
+                            const saved = await takeSavedPassword();
+                            if (saved) {
+                                this.logger.info(`Answering the password prompt with the saved password`);
+                                pending.saved = true;
+                                return finish([saved]);
+                            }
+                        }
+
                         const responses: string[] = [];
                         for (const prompt of prompts) {
                             const response = await vscode.window.showInputBox({
@@ -913,6 +1003,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                             }
                             responses.push(response);
                         }
+                        if (isPassword && responses[0]) {
+                            pending.typed = responses[0];
+                        }
                         keyboardRetryCount--;
                         finish(responses);
                     }
@@ -921,6 +1014,40 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
             callback(false);
         };
+
+        const onAuthenticated = () => {
+            // The attempt in flight is the one the server accepted
+            const password = pending.typed ?? acceptedPassword;
+            pending = { saved: false };
+            acceptedPassword = undefined;
+            if (password) {
+                this.offerToSavePassword(secretKey, destination, password);
+            }
+        };
+
+        return { handler, onAuthenticated };
+    }
+
+    private offerToSavePassword(secretKey: string, destination: string, password: string) {
+        const policy = vscode.workspace.getConfiguration('remote.SSH').get<RememberPasswordsPolicy>('rememberPasswords', 'ask');
+        if (policy === 'never') {
+            return;
+        }
+
+        const save = () => savePassword(this.context, secretKey, password).then(
+            () => this.logger.info(`Saved the password for ${destination}`),
+            e => this.logger.error(`Couldn't save the password for ${destination}`, e)
+        );
+
+        if (policy === 'always') {
+            void save();
+            return;
+        }
+
+        // Not awaited: resolve() must not wait on a notification
+        const saveItem = 'Save';
+        void vscode.window.showInformationMessage(`Save the password for ${destination} in your keychain?`, saveItem, 'Not now')
+            .then(answer => answer === saveItem ? save() : undefined);
     }
 
     dispose() {
