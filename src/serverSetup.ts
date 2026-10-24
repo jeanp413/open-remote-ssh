@@ -141,7 +141,7 @@ export function parseKernelName(stdout: string): Platform {
         case 'DragonFly':
             return 'dragonfly';
         default:
-            throw new ServerInstallError(`platform not supported: ${stdout}`);
+            throw new ServerInstallError(`Platform not supported: ${stdout}`);
     }
 }
 
@@ -165,7 +165,7 @@ export function parseMachineArch(stdout: string): Architecture {
         case 's390x':
             return 's390x';
         default:
-            throw new ServerInstallError(`architecture not supported: ${stdout}`);
+            throw new ServerInstallError(`Architecture not supported: ${stdout}`);
     }
 }
 
@@ -186,12 +186,14 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
             detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
         } else if (!platform) {
             const result = await conn.exec('echo "==$(uname -s)=="');
-            const uname = /==(.*?)==/.exec(result.stdout);
+            const uname = /==\s*(.+?)\s*==/.exec(result.stdout);
 
             if (uname) {
                 detectedPlatform = parseKernelName(uname[1].trim());
+            } else if (result.stderr) {
+                throw new ServerInstallError(`Cannot execute "uname -s", yields: ${result.stderr}`);
             } else {
-                throw new ServerInstallError(`platform not found: ${result.stdout}`);
+                throw new ServerInstallError(`Platform not found: ${result.stdout}`);
             }
         } else {
             detectedPlatform = 'windows';
@@ -209,16 +211,16 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
     if (detectedPlatform === 'windows') {
         detectedArch = 'x64';
     } else {
-        const result = await conn.exec('uname -m');
-        const stdout = result.stdout.trim();
+        const result = await conn.exec('echo "==$(uname -m)=="');
+        const uname = /==\s*(.+?)\s*==/.exec(result.stdout);
 
-        if (result.stderr) {
+        if (uname) {
+            detectedArch = parseMachineArch(uname[1].trim());
+        } else if (result.stderr) {
             throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
-        } else if (stdout.length === 0) {
-            throw new ServerInstallError(`"uname -m" yields empty result`);
+        } else {
+            throw new ServerInstallError(`Architecture not found: ${result.stdout}`);
         }
-
-        detectedArch = parseMachineArch(stdout);
     }
 
     logger.trace(`Detected architecture: ${detectedArch}`);
