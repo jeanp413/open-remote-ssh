@@ -260,29 +260,28 @@ else
   print_install_results_and_exit 1
 fi
 
-if [[ -f $SERVER_LOGFILE ]]; then
-  for i in {1..35}; do
+for i in {1..35}; do
+  if [[ -f $SERVER_LOGFILE ]]; then
     if [[ -n "$(cat $SERVER_LOGFILE | grep 'Error loading shared library libstdc++.so')" ]]; then
       echo "Error: missing libstdc++"
       break;
     fi
 
     LISTENING_ON="$(cat $SERVER_LOGFILE | grep -E 'Extension host agent listening on .+' | sed 's/Extension host agent listening on //')"
+
     if [[ -n $LISTENING_ON ]]; then
-      break
+      # Finish server setup
+      print_install_results_and_exit 0
     fi
-
-    sleep 0.5
-  done
-
-  if [[ -z $LISTENING_ON ]]; then
-    echo "Error: server did not start successfully"
-    print_install_results_and_exit 1
   fi
+
+  sleep 0.5
+done
+
+if [[ -f $SERVER_LOGFILE ]]; then
+  echo "Error: server did not start successfully"
 else
   echo "Error: server log file not found $SERVER_LOGFILE"
-  print_install_results_and_exit 1
 fi
 
-# Finish server setup
-print_install_results_and_exit 0
+print_install_results_and_exit 1
