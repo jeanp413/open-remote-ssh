@@ -485,6 +485,9 @@
 		"Other"
 	],
 	"overrides": {
+		"@azure/identity": {
+			"@azure/msal-node": "7.1.1"
+		},
 		"@octokit/request": {
 			"content-type": "2.1.0"
 		},
@@ -498,7 +501,7 @@
 			"source-map-js": "1.2.2"
 		},
 		"release-it": {
-			"undici": "7.30.0"
+			"undici": "7.30.1"
 		}
 	},
 	"allowScripts": {
