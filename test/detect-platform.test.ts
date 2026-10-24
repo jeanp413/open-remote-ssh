@@ -35,7 +35,7 @@ describe('parseKernelName', () => {
 
     it('rejects unsupported kernels', () => {
         expect(() => parseKernelName('SunOS')).toThrow(ServerInstallError);
-        expect(() => parseKernelName('SunOS')).toThrow('platform not supported: SunOS');
+        expect(() => parseKernelName('SunOS')).toThrow('Platform not supported: SunOS');
     });
 });
 
