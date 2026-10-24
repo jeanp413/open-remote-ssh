@@ -260,8 +260,9 @@ else
   print_install_results_and_exit 1
 fi
 
-if [[ -f $SERVER_LOGFILE ]]; then
-  for i in {1..35}; do
+for i in {1..35}; do
+  # The background launch may not have created its output file yet.
+  if [[ -f $SERVER_LOGFILE ]]; then
     if [[ -n "$(cat $SERVER_LOGFILE | grep 'Error loading shared library libstdc++.so')" ]]; then
       echo "Error: missing libstdc++"
       break;
@@ -271,10 +272,11 @@ if [[ -f $SERVER_LOGFILE ]]; then
     if [[ -n $LISTENING_ON ]]; then
       break
     fi
+  fi
+  sleep 0.5
+done
 
-    sleep 0.5
-  done
-
+if [[ -f $SERVER_LOGFILE ]]; then
   if [[ -z $LISTENING_ON ]]; then
     echo "Error: server did not start successfully"
     print_install_results_and_exit 1
