@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 import * as net from 'net';
 import type { Log } from '../common/logger';
 import { findRandomPort } from '../common/ports';
@@ -18,6 +19,7 @@ const KILL_GRACE_PERIOD = 2000;
 /** Cap on the stderr text kept around for error messages. */
 const MAX_STDERR_LENGTH = 8 * 1024;
 const SSH_CLIENT = 'ssh';
+const SFTP_CLIENT = 'sftp';
 
 /**
  * `GSSAPIAuthentication yes` values per ssh_config(5). When a host requests
@@ -110,6 +112,19 @@ function buildExecArgs(config: NativeSSHConnectConfig, controlPath: string | und
         '--', config.destination,
         cmd, ...params
     ];
+}
+
+/**
+ * Args for a batch-mode `sftp` process. `sftp` spells the port flag `-P`
+ * (unlike `ssh`'s `-p`) and reads its commands from stdin via `-b -`.
+ */
+function buildSftpArgs(config: NativeSSHConnectConfig, controlPath: string | undefined): string[] {
+    const args = [...buildSshOptions(config, controlPath)];
+    if (config.port !== undefined) {
+        args.push('-P', String(config.port));
+    }
+    args.push('-b', '-', '--', config.destination);
+    return args;
 }
 
 /** Args for a forwarding process (-L local forward or -D dynamic SOCKS). */
@@ -397,6 +412,55 @@ export default class NativeSSHConnection implements SSHClient {
             });
             child.on('error', reject);
             child.on('close', () => finish({ stdout, stderr }));
+        });
+    }
+
+    /**
+     * Upload a file through the local `sftp` client, reusing the ControlMaster
+     * connection so no extra authentication is needed. Batch mode prints no
+     * machine-readable progress, so `onProgress` is only called on completion.
+     */
+    async putFile(localPath: string, remotePath: string, onProgress?: (transferred: number, total: number) => void): Promise<void> {
+        const total = (await fs.promises.stat(localPath)).size;
+        const args = buildSftpArgs(this.config, this.controlPath);
+        this.logger.trace(`sftp put: ${SFTP_CLIENT} ${args.join(' ')}`);
+
+        return new Promise((resolve, reject) => {
+            const child = spawn(SFTP_CLIENT, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+            let stderr = '';
+            let settled = false;
+
+            const settle = (err?: Error) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (err) {
+                    return reject(err);
+                }
+                onProgress?.(total, total);
+                resolve();
+            };
+
+            child.stderr!.on('data', chunk => {
+                stderr = capStderr(stderr + chunk.toString());
+            });
+            child.on('error', reject);
+            child.on('close', code => {
+                if (code === 0) {
+                    return settle();
+                }
+                settle(new Error(`sftp upload to ${this.config.destination} failed: ${stderr.trim() || `exit code ${code}`}`));
+            });
+
+            // `sftp -b -` reads commands from stdin, so the transfer is driven
+            // by the command below rather than by piping the file itself.
+            child.stdin!.on('error', () => {
+                // The sftp process may exit before consuming all input; the
+                // exit code and stderr carry the real failure reason.
+            });
+            child.stdin!.write(`put "${localPath}" "${remotePath}"\n`);
+            child.stdin!.end();
         });
     }
 

@@ -26,6 +26,11 @@ export interface SSHClient {
     exec(cmd: string, params?: string[]): Promise<{ stdout: string; stderr: string }>;
     /** Run a command and resolve as soon as `tester` matches the streamed output. */
     execPartial(cmd: string, tester: (stdout: string, stderr: string) => boolean, params?: string[]): Promise<{ stdout: string; stderr: string }>;
+    /**
+     * Transfer a local file to the remote machine.
+     * `onProgress` receives the number of bytes transferred and the total size.
+     */
+    putFile(localPath: string, remotePath: string, onProgress?: (transferred: number, total: number) => void): Promise<void>;
     /** Start a long-lived command and expose its output stream as a channel. */
     execChannel(cmd: string): Promise<SSHExecChannel>;
     /** Open a forwarding tunnel, reusing an existing one when `name` matches. */

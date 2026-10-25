@@ -1,7 +1,8 @@
-import type { ServerValidation, ServerVersion } from './server-config/types';
+import type { IServerConfig, ServerValidation, ServerVersion } from './server-config/types';
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { Log } from './common/logger';
 import type { SSHClient } from './ssh/sshClient';
@@ -116,6 +117,8 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
+export type LocalServerDownload = 'auto' | 'always' | 'never';
+
 export type Platform = 'alpine' | 'darwin' | 'dragonfly' | 'freebsd' | 'linux' | 'windows';
 export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64';
 export type Shell = 'cmd' | 'powershell' | 'bash';
@@ -228,6 +231,71 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
     return { detectedPlatform, detectedArch, detectedShell };
 }
 
+function buildServerDownloadUrl(
+    template: string,
+    quality: string,
+    version: string,
+    commit: string,
+    platform: string,
+    arch: string,
+    release: string
+): string {
+    return template
+        .replace(/\$\{quality\}/g, quality)
+        .replace(/\$\{version\}/g, version)
+        .replace(/\$\{commit\}/g, commit)
+        .replace(/\$\{os\}/g, platform)
+        .replace(/\$\{arch\}/g, arch)
+        .replace(/\$\{release\}/g, release);
+}
+
+async function downloadServerLocally(
+    downloadUrl: string,
+    commit: string,
+    logger: Log
+): Promise<string> {
+    logger.info(`Downloading server binary locally from: ${downloadUrl}`);
+
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+        throw new Error(`Failed to download server binary: ${response.status} ${response.statusText}`);
+    }
+
+    const tmpPath = path.join(os.tmpdir(), `vscode-server-${commit}.tar.gz`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.promises.writeFile(tmpPath, buffer);
+
+    logger.info(`Server binary downloaded locally to: ${tmpPath}`);
+    return tmpPath;
+}
+
+async function uploadServerBinary(
+    conn: SSHClient,
+    localPath: string,
+    remotePath: string,
+    logger: Log
+): Promise<void> {
+    logger.info(`Uploading server binary via SFTP to: ${remotePath}`);
+    let lastLoggedPercent = -1;
+    await conn.putFile(localPath, remotePath, (transferred, total) => {
+        const percent = total > 0 ? Math.floor((transferred / total) * 100) : 100;
+        const bucket = Math.floor(percent / 10) * 10;
+        if (bucket > lastLoggedPercent) {
+            lastLoggedPercent = bucket;
+            logger.info(`Uploading server binary: ${bucket}%`);
+        }
+    });
+    logger.info(`Server binary uploaded successfully`);
+}
+
+function isRemoteDownloadFailure(stdout: string, stderr: string): boolean {
+    const combined = `${stdout}\n${stderr}`;
+    return combined.includes('Error downloading server from') ||
+        combined.includes('Error no tool to download server binary') ||
+        combined.includes('Error: no tool to download server binary') ||
+        combined.includes('Error while installing the server binary');
+}
+
 export async function installCodeServer(
     conn: SSHClient,
     serverDownloadUrlTemplate: string | undefined,
@@ -239,7 +307,8 @@ export async function installCodeServer(
     useSocketPath: boolean,
     customInstallPath: string | undefined,
     logger: Log,
-    extensionPath: string
+    extensionPath: string,
+    localServerDownload: LocalServerDownload = 'auto'
 ): Promise<ServerInstallResult> {
     const { detectedPlatform, detectedArch, detectedShell: shell } = await detectPlatform(conn, platform, logger);
 
@@ -270,7 +339,24 @@ export async function installCodeServer(
         serverArch: detectedArch,
     };
 
-    const commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+    let commandOutput: { stdout: string; stderr: string };
+
+    if (localServerDownload === 'always') {
+        logger.info('localServerDownload is always, downloading server binary locally and uploading via SFTP');
+        await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, detectedArch, customInstallPath, logger);
+        commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+    } else if (localServerDownload === 'never') {
+        commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+    } else {
+        // auto: try remote download first, fall back to local download + SFTP on failure
+        commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+
+        if (isRemoteDownloadFailure(commandOutput.stdout, commandOutput.stderr)) {
+            logger.info('Remote server download failed, falling back to local download and SFTP upload');
+            await downloadAndUploadServerBinary(conn, serverDownloadUrlTemplateFinal, vscodeServerConfig, bestRelease, detectedPlatform, detectedArch, customInstallPath, logger);
+            commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
+        }
+    }
 
     return parseInstallOutput(commandOutput, installOptions, scriptId, envVariables, logger);
 }
@@ -383,6 +469,66 @@ function parseInstallOutput(
         tmpDir: resultMap.tmpDir,
         ...remoteEnvVars
     };
+}
+
+async function getRemoteServerDir(
+    conn: SSHClient,
+    detectedPlatform: string,
+    customInstallPath: string | undefined,
+    vscodeServerConfig: IServerConfig
+): Promise<string> {
+    if (detectedPlatform === 'windows') {
+        const homeResult = await conn.exec('powershell -NoProfile -Command "Write-Output $env:USERPROFILE"');
+        const home = homeResult.stdout.trim();
+        const serverDataDir = customInstallPath
+            ? customInstallPath.replace(/^~(?=[\\/]|$)/, home)
+            : `${home}\\${vscodeServerConfig.serverDataFolderName}`;
+        return `${serverDataDir}\\bin\\${vscodeServerConfig.commit}\\vscode-server.tar.gz`;
+    } else {
+        const homeResult = await conn.exec('echo $HOME');
+        const home = homeResult.stdout.trim();
+        const serverDataDir = customInstallPath
+            ? customInstallPath.replace(/^~(?=\/|$)/, home)
+            : `${home}/${vscodeServerConfig.serverDataFolderName}`;
+        return `${serverDataDir}/bin/${vscodeServerConfig.commit}/vscode-server.tar.gz`;
+    }
+}
+
+async function downloadAndUploadServerBinary(
+    conn: SSHClient,
+    serverDownloadUrlTemplate: string,
+    vscodeServerConfig: IServerConfig,
+    bestRelease: IRelease,
+    detectedPlatform: string,
+    remoteArch: string,
+    customInstallPath: string | undefined,
+    logger: Log
+): Promise<void> {
+    const downloadUrl = buildServerDownloadUrl(
+        serverDownloadUrlTemplate,
+        vscodeServerConfig.quality,
+        bestRelease.version,
+        vscodeServerConfig.commit,
+        detectedPlatform,
+        remoteArch,
+        bestRelease.build
+    );
+
+    const localPath = await downloadServerLocally(downloadUrl, vscodeServerConfig.commit, logger);
+    try {
+        const remotePath = await getRemoteServerDir(conn, detectedPlatform, customInstallPath, vscodeServerConfig);
+        await conn.exec(detectedPlatform === 'windows'
+            ? `powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path (Split-Path -Parent '${remotePath}')"`
+            : `mkdir -p "$(dirname '${remotePath}')"`);
+        await uploadServerBinary(conn, localPath, remotePath, logger);
+    } finally {
+        try {
+            await fs.promises.unlink(localPath);
+            logger.trace(`Cleaned up local server binary: ${localPath}`);
+        } catch (err) {
+            logger.trace(`Failed to clean up local server binary: ${err}`);
+        }
+    }
 }
 
 function parseServerInstallOutput(str: string, scriptId: string): { [k: string]: string } | undefined {
