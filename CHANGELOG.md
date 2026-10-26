@@ -3,6 +3,19 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+[v0.5.1](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.5.1) | 2026-10-26
+--------------------------------------------------------------------------------------
+
+### Changed
+
+- guard all `uname` call (#393)
+- wait for server log creation during startup (#390)
+
+### Fixed
+
+- when gssapi is detected, try native client only if `ssh2` fails (#395)
+
+
 [v0.5.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.5.0) | 2026-10-21
 --------------------------------------------------------------------------------------
 
