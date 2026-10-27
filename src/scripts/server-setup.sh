@@ -43,7 +43,7 @@ get_installed_commit() {
 }
 
 # Mimic output from logs of remote-ssh extension
-print_install_results_and_exit() {
+print_install_results() {
   echo "%%SCRIPT_ID%%: start"
   echo "exitCode==$1=="
   echo "listeningOn==$LISTENING_ON=="
@@ -54,6 +54,10 @@ print_install_results_and_exit() {
   echo "tmpDir==$TMP_DIR=="
 %%ENV_VAR_LINES%%
   echo "%%SCRIPT_ID%%: end"
+}
+
+fail_and_exit() {
+  print_install_results "$1"
   exit 0
 }
 
@@ -90,7 +94,7 @@ if command -v flock >/dev/null 2>&1; then
 
   if flock --help 2>&1 | grep -q -- '-w'; then
     # wait 30s to acquire lock, otherwise fail
-    flock -x -w 30 $FD || print_install_results_and_exit 1
+    flock -x -w 30 $FD || print_install_results 1
   else
     ELAPSED=0
 
@@ -106,7 +110,7 @@ if command -v flock >/dev/null 2>&1; then
 
     if [[ $ELAPSED -ge 30 ]]; then
       echo "Warning: flock cannot acquire the install lock"
-      print_install_results_and_exit 1
+      print_install_results 1
     fi
   fi
 
@@ -118,7 +122,7 @@ fi
 # Check if platform is supported
 if ! command -v uname >/dev/null 2>&1; then
   echo "Error: 'uname' command not found, could not get platform/arch data."
-  print_install_results_and_exit 1
+  print_install_results 1
 fi
 
 # https://www.freedesktop.org/software/systemd/man/os-release.html
@@ -134,7 +138,7 @@ fi
 if [[ ! -d $SERVER_DIR ]]; then
   mkdir -p $SERVER_DIR || (
     echo "Error: creating server install directory"
-    print_install_results_and_exit 1
+    print_install_results 1
   )
 fi
 
@@ -158,7 +162,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
       ;;
     *)
       echo "Error: '$PLATFORM' needs manual installation of remote extension host"
-      print_install_results_and_exit 1
+      print_install_results 1
       ;;
   esac
 
@@ -172,25 +176,25 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   else
     echo "Error: no tool to download server binary"
-    print_install_results_and_exit 1
+    print_install_results 1
   fi
 
   if (( $? > 0 )); then
     echo "Error downloading server from $SERVER_DOWNLOAD_URL"
     rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    print_install_results 1
   fi
 
   tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (
     echo "Error downloaded tarball is corrupt or incomplete"
     rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    print_install_results 1
   )
 
   tar -xf vscode-server.tar.gz --strip-components 1 || (
     echo "Error while extracting server contents"
     rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    print_install_results 1
   )
 
   rm -f vscode-server.tar.gz
@@ -202,7 +206,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     rm -rf $SERVER_DIR/*
 
-    print_install_results_and_exit 1
+    print_install_results 1
   fi
 
   if ! validate_installed_commit; then
@@ -211,7 +215,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     rm -rf "$SERVER_DIR"/*
 
-    print_install_results_and_exit 1
+    print_install_results 1
   fi
 else
   echo "Server script already installed in $SERVER_SCRIPT"
@@ -258,7 +262,7 @@ if [[ -f $SERVER_TOKENFILE ]]; then
   SERVER_CONNECTION_TOKEN="$(cat $SERVER_TOKENFILE)"
 else
   echo "Error: server token file not found $SERVER_TOKENFILE"
-  print_install_results_and_exit 1
+  print_install_results 1
 fi
 
 waitUntil=$((SECONDS+20))
@@ -281,15 +285,15 @@ done
 
 if [[ ! -f $SERVER_LOGFILE ]]; then
   echo "Error: server log file not found $SERVER_LOGFILE"
-  print_install_results_and_exit 1
+  print_install_results 1
 fi
 if [[ -z $LISTENING_ON ]]; then
   echo "Error: server did not start successfully"
-  print_install_results_and_exit 1
+  print_install_results 1
 fi
 
 # Finish server setup
-print_install_results_and_exit 0
+print_install_results 0
 
 if (( SCRIPT_PREVENT_EXIT )); then
   while true;

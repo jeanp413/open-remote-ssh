@@ -123,7 +123,7 @@ it('connects to a target reachable only through a ProxyJump host', async () => {
       `  Password ${PASSWORD}`,
     ].join('\n'),
     '/bin/vscodium/app/product.json': PRODUCT_JSON,
-    '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP,
+    '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.sh': SERVER_SETUP,
   });
 
   vscode.window.setPassword(PASSWORD);
