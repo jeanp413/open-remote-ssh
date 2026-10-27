@@ -8,10 +8,20 @@ const webpack = require('webpack');
 /**@type {import('webpack').Configuration}*/
 const config = {
     target: 'node',
-    entry: './src/extension.ts',
+    entry: {
+        extension: './src/extension.ts',
+        'native/askpass-node': './src/native/askpass/askpass-node.ts',
+        'native/nativeSshServer': './src/native/nativeSshServer.ts',
+    },
     output: {
         path: path.resolve(__dirname, 'lib'),
-        filename: 'extension.js',
+        filename: '[name].js',
+        copy: [
+            { from: path.resolve(__dirname, 'src/scripts/server-setup.sh'), to: 'scripts', preservePermissions: true },
+            { from: path.resolve(__dirname, 'src/scripts/server-setup.ps1'), to: 'scripts', preservePermissions: true },
+            { from: path.resolve(__dirname, 'src/native/askpass/askpass.sh'), to: 'native', preservePermissions: true },
+            { from: path.resolve(__dirname, 'src/native/askpass/askpass.bat'), to: 'native', preservePermissions: true },
+        ],
         libraryTarget: "commonjs2",
         devtoolModuleFilenameTemplate: "../[resource-path]",
     },
@@ -39,7 +49,7 @@ const config = {
         }),
         new webpack.IgnorePlugin({
             resourceRegExp: /cpu-features/,
-        })
+        }),
     ]
 }
 

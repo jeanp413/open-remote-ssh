@@ -27,6 +27,7 @@ SERVER_ARCH="%%SERVER_ARCH%%"
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
 SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
+SCRIPT_PREVENT_EXIT=%%SCRIPT_PREVENT_EXIT%%
 
 LISTENING_ON=
 OS_RELEASE_ID=
@@ -260,7 +261,8 @@ else
   print_install_results_and_exit 1
 fi
 
-for i in {1..35}; do
+waitUntil=$((SECONDS+20))
+while (( SECONDS < waitUntil )) do
   if [[ -f $SERVER_LOGFILE ]]; then
     if [[ -n "$(cat $SERVER_LOGFILE | grep 'Error loading shared library libstdc++.so')" ]]; then
       echo "Error: missing libstdc++"
@@ -268,20 +270,30 @@ for i in {1..35}; do
     fi
 
     LISTENING_ON="$(cat $SERVER_LOGFILE | grep -E 'Extension host agent listening on .+' | sed 's/Extension host agent listening on //')"
-
     if [[ -n $LISTENING_ON ]]; then
-      # Finish server setup
-      print_install_results_and_exit 0
+      break
     fi
   fi
 
-  sleep 0.5
+  # Some systems may not support fractional time
+  sleep 0.5 || sleep 1
 done
 
-if [[ -f $SERVER_LOGFILE ]]; then
-  echo "Error: server did not start successfully"
-else
+if [[ ! -f $SERVER_LOGFILE ]]; then
   echo "Error: server log file not found $SERVER_LOGFILE"
+  print_install_results_and_exit 1
+fi
+if [[ -z $LISTENING_ON ]]; then
+  echo "Error: server did not start successfully"
+  print_install_results_and_exit 1
 fi
 
-print_install_results_and_exit 1
+# Finish server setup
+print_install_results_and_exit 0
+
+if (( SCRIPT_PREVENT_EXIT )); then
+  while true;
+    do sleep 150;
+    printf ' ';
+  done
+fi

@@ -1,6 +1,19 @@
-import * as vscode from 'vscode';
+import { createSingleCallFunction } from './functional';
 
-export function disposeAll(disposables: vscode.Disposable[]): void {
+export interface IDisposable {
+    dispose(): void;
+}
+
+export function toDisposable(fn: () => void): IDisposable {
+    const self = {
+        dispose: createSingleCallFunction(() => {
+            fn();
+        }),
+    };
+    return self;
+}
+
+export function disposeAll(disposables: IDisposable[]): void {
     while (disposables.length) {
         const item = disposables.pop();
         if (item) {
@@ -12,7 +25,7 @@ export function disposeAll(disposables: vscode.Disposable[]): void {
 export abstract class Disposable {
     private _isDisposed = false;
 
-    protected _disposables: vscode.Disposable[] = [];
+    protected _disposables: IDisposable[] = [];
 
     public dispose(): void {
         if (this._isDisposed) {
@@ -22,7 +35,7 @@ export abstract class Disposable {
         disposeAll(this._disposables);
     }
 
-    protected _register<T extends vscode.Disposable>(value: T): T {
+    protected _register<T extends IDisposable>(value: T): T {
         if (this._isDisposed) {
             value.dispose();
         } else {

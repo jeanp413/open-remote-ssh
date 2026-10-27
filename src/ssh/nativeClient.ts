@@ -4,7 +4,7 @@ import type { ChildProcess } from 'child_process';
 import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 import * as net from 'net';
-import type { Log } from '../common/logger';
+import type { ILogger } from '../common/logger';
 import { findRandomPort } from '../common/ports';
 import { isWindows } from '../common/platform';
 import type { HostConfiguration } from './sshConfig';
@@ -63,7 +63,7 @@ export interface NativeSSHConnectConfig {
     dynamicForwarding: boolean;
     /** Timeout for establishing the connection, in milliseconds. */
     readyTimeout: number;
-    logger: Log;
+    logger: ILogger;
 }
 
 /**
@@ -216,7 +216,7 @@ export default class NativeSSHConnection implements SSHClient {
         this.config = config;
     }
 
-    private get logger(): Log {
+    private get logger(): ILogger {
         return this.config.logger;
     }
 

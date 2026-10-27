@@ -3,19 +3,19 @@ import type { ServerValidation, ServerVersion } from './server-config/types';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Log } from './common/logger';
+import { ILogger } from './common/logger';
 import type { SSHClient } from './ssh/sshClient';
 import { getServerConfig } from './server-config/get-server-config';
-import { fetchRelease, IRelease } from './fetchRelease';
+import { fetchRelease } from './fetchRelease';
 import { sanitizeExtensionIds } from './utils/sanitize-extension-ids';
-import { RemotePlatform } from './types';
+import { RemotePlatform } from './common/platform';
 
 /**
  * Reads a script template from <extensionPath>/scripts/<templateName> and
  * replaces every %%KEY%% occurrence with the matching value from `variables`.
  */
 function compileTemplate(templateName: string, variables: Record<string, string>, extensionPath: string): string {
-    const templatePath = path.join(extensionPath, 'src', 'scripts', templateName);
+    const templatePath = path.join(extensionPath, 'lib', 'scripts', templateName);
     let content = fs.readFileSync(templatePath, 'utf8');
     for (const [key, value] of Object.entries(variables)) {
         content = content.replace(new RegExp(`%%${key}%%`, 'g'), value);
@@ -94,6 +94,7 @@ export type ServerInstallOptions = {
     serverValidation: ServerValidation;
     serverPlatform: Platform;
     serverArch: Architecture;
+    scriptPreventExit: boolean;
 };
 
 export type ServerInstallResult = {
@@ -169,7 +170,7 @@ export function parseMachineArch(stdout: string): Architecture {
     }
 }
 
-export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: Pick<Log, 'trace'>): Promise<DetectedPlatform> {
+export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: ILogger): Promise<DetectedPlatform> {
     let detectedPlatform: Platform;
     let detectedShell: Shell = 'bash';
 
@@ -238,41 +239,36 @@ export async function installCodeServer(
     platform: RemotePlatform | undefined,
     useSocketPath: boolean,
     customInstallPath: string | undefined,
-    logger: Log,
+    logger: ILogger,
     extensionPath: string
 ): Promise<ServerInstallResult> {
     const { detectedPlatform, detectedArch, detectedShell: shell } = await detectPlatform(conn, platform, logger);
 
     const scriptId = crypto.randomBytes(12).toString('hex');
+    const { options: installOptions, vscodeServerConfig } =
+        await buildServerInstallOptions(
+            scriptId,
+            serverDownloadUrlTemplate,
+            serverVersion,
+            extensionIds,
+            envVariables,
+            sendEnvVars,
+            useSocketPath,
+            customInstallPath,
+            detectedPlatform,
+            detectedArch,
+            false,
+            logger,
+        );
 
-    const vscodeServerConfig = await getServerConfig();
+    const commandOutput = await runInstallScript(
+        conn, detectedPlatform, shell, installOptions, vscodeServerConfig,
+        installOptions.id, logger, extensionPath,
+    );
 
-    // Get the version and release
-    const serverDownloadUrlTemplateFinal = serverDownloadUrlTemplate || vscodeServerConfig.serverDownloadUrlTemplate || DEFAULT_DOWNLOAD_URL_TEMPLATE;
-    const bestRelease: IRelease = await fetchRelease(serverDownloadUrlTemplateFinal, vscodeServerConfig.version, vscodeServerConfig.release, serverVersion, logger);
-
-    const installOptions: ServerInstallOptions = {
-        id: scriptId,
-        version: bestRelease.version,
-        commit: vscodeServerConfig.commit,
-        quality: vscodeServerConfig.quality,
-        release: bestRelease.build,
-        extensionIds: sanitizeExtensionIds(extensionIds),
-        envVariables,
-        sendEnvVars,
-        useSocketPath,
-        serverApplicationName: vscodeServerConfig.serverApplicationName,
-        serverDataFolderName: vscodeServerConfig.serverDataFolderName,
-        serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
-        customInstallPath,
-        serverValidation: vscodeServerConfig.serverValidation,
-        serverPlatform: detectedPlatform,
-        serverArch: detectedArch,
-    };
-
-    const commandOutput = await runInstallScript(conn, detectedPlatform, shell, installOptions, vscodeServerConfig, scriptId, logger, extensionPath);
-
-    return parseInstallOutput(commandOutput, installOptions, scriptId, envVariables, logger);
+    return parseInstallOutput(
+        commandOutput, installOptions, installOptions.id, envVariables, logger,
+    );
 }
 
 async function runInstallScript(
@@ -282,7 +278,7 @@ async function runInstallScript(
     installOptions: ServerInstallOptions,
     vscodeServerConfig: { serverDataFolderName: string; commit: string },
     scriptId: string,
-    logger: Log,
+    logger: ILogger,
     extensionPath: string
 ): Promise<{ stdout: string; stderr: string }> {
     if (platform === 'windows') {
@@ -348,7 +344,7 @@ function parseInstallOutput(
     installOptions: ServerInstallOptions,
     scriptId: string,
     envVariables: string[],
-    logger: Log
+    logger: ILogger
 ): ServerInstallResult {
     if (commandOutput.stderr) {
         logger.trace('Server install command stderr:', commandOutput.stderr);
@@ -385,7 +381,7 @@ function parseInstallOutput(
     };
 }
 
-function parseServerInstallOutput(str: string, scriptId: string): { [k: string]: string } | undefined {
+export function parseServerInstallOutput(str: string, scriptId: string): { [k: string]: string } | undefined {
     const startResultStr = `${scriptId}: start`;
     const endResultStr = `${scriptId}: end`;
 
@@ -411,7 +407,7 @@ function parseServerInstallOutput(str: string, scriptId: string): { [k: string]:
     return resultMap;
 }
 
-function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch }: ServerInstallOptions, extensionPath: string): string {
+export function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch, scriptPreventExit }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -441,10 +437,11 @@ function generateBashInstallScript({ id, quality, version, commit, release, exte
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
         SERVER_PLATFORM: serverPlatform,
         SERVER_ARCH: serverArch,
+        SCRIPT_PREVENT_EXIT: String(scriptPreventExit)
     }, extensionPath);
 }
 
-function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+export function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -480,4 +477,60 @@ function generatePowerShellInstallScript({ id, quality, version, commit, release
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
     }, extensionPath);
+}
+
+export async function buildServerInstallOptions(
+    scriptId: string,
+    serverDownloadUrlTemplate: string | undefined,
+    serverVersion: ServerVersion,
+    extensionIds: string[],
+    envVariables: string[],
+    sendEnvVars: Record<string, string>,
+    useSocketPath: boolean,
+    customInstallPath: string | undefined,
+    detectedPlatform: Platform,
+    detectedArch: Architecture,
+    scriptPreventExit: boolean,
+    logger: ILogger,
+): Promise<{
+    options: ServerInstallOptions;
+    vscodeServerConfig: Awaited<ReturnType<typeof getServerConfig>>;
+}> {
+    const vscodeServerConfig = await getServerConfig();
+
+    const serverDownloadUrlTemplateFinal =
+        serverDownloadUrlTemplate
+        || vscodeServerConfig.serverDownloadUrlTemplate
+        || DEFAULT_DOWNLOAD_URL_TEMPLATE;
+
+    const bestRelease = await fetchRelease(
+        serverDownloadUrlTemplateFinal,
+        vscodeServerConfig.version,
+        vscodeServerConfig.release,
+        serverVersion,
+        logger,
+    );
+
+    return {
+        options: {
+            id: scriptId,
+            version: bestRelease.version,
+            commit: vscodeServerConfig.commit,
+            quality: vscodeServerConfig.quality,
+            release: bestRelease.build,
+            extensionIds: sanitizeExtensionIds(extensionIds),
+            envVariables,
+            sendEnvVars,
+            useSocketPath,
+            serverApplicationName: vscodeServerConfig.serverApplicationName,
+            serverDataFolderName: vscodeServerConfig.serverDataFolderName,
+            serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
+            customInstallPath,
+            serverValidation: vscodeServerConfig.serverValidation,
+            serverPlatform: detectedPlatform,
+            serverArch: detectedArch,
+            scriptPreventExit
+        },
+        vscodeServerConfig,
+    };
 }

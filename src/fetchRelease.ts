@@ -1,6 +1,6 @@
 import type { ServerVersion } from './server-config/types';
 
-import { Log } from './common/logger';
+import { ILogger } from './common/logger';
 import * as semver from 'semver';
 
 type githubReleasesData = {
@@ -34,7 +34,7 @@ export function splitRelease(release: string): IRelease {
     return {version: `${major}.${minor}.${patchFused}`, build: buildFused ?? ''};
 }
 
-export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, build: string, objective: ServerVersion, logger: Log): Promise<IRelease> {
+export async function fetchRelease(serverDownloadUrlTemplate: string, version: string, build: string, objective: ServerVersion, logger: ILogger): Promise<IRelease> {
     // Just match the given version/build
     if (objective === 'match') {
         return {version, build};

@@ -5,6 +5,5 @@
 !CHANGELOG.md
 !LICENSE.txt
 !README.md
-!lib/extension.js
+!lib/**
 !resources/icon.png
-!src/scripts/**

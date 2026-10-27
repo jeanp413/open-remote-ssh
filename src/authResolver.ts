@@ -5,24 +5,28 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as stream from 'stream';
-import { SocksClient, SocksClientOptions } from 'socks';
 import * as vscode from 'vscode';
+import * as path from 'path';
 import * as ssh2 from 'ssh2';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import { Log } from './common/logger';
+import { SocksClient, SocksClientOptions } from 'socks';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, removeHostFromEntry, findConflictingEntries, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
 import NativeSSHConnection, { isGssapiAuthenticationRequested } from './ssh/nativeClient';
 import type { SSHClient, SSHExecChannel } from './ssh/sshClient';
-import SSHConfiguration, { getSSHConfigPath, type HostConfiguration } from './ssh/sshConfig';
+import SSHConfiguration, { defaultSSHConfigPath, getSSHConfigPath, type HostConfiguration } from './ssh/sshConfig';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
-import type { RemotePlatform } from './types';
-import { isWindows } from './common/platform';
-import * as os from 'os';
+import { isWindows, RemotePlatform } from './common/platform';
+import { resolveNativeSshExecutable } from './native/nativeSshConnection';
+import { NativeSshConnectionOptions, NativeSshManager, NativeSshRegistry } from './native/nativeSshManager';
+import { AskPassServer } from './native/nativeSshAskpass';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -103,7 +107,7 @@ class TunnelInfo implements vscode.Disposable {
  * ssh-config versions.
  */
 function splitProxyCommand(value: string | string[]): string[] {
-    if (Array.isArray(value)) {return value.slice();}
+    if (Array.isArray(value)) { return value.slice(); }
     const out: string[] = [];
     let cur = '';
     let i = 0;
@@ -132,7 +136,7 @@ function splitProxyCommand(value: string | string[]): string[] {
         hasToken = true;
         i += 1;
     }
-    if (hasToken) {out.push(cur);}
+    if (hasToken) { out.push(cur); }
     return out;
 }
 
@@ -216,6 +220,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     private tunnels: TunnelInfo[] = [];
 
     private labelFormatterDisposable: vscode.Disposable | undefined;
+    private nativeSshKeepalive: vscode.Disposable | undefined;
+
+    private nativeManager: NativeSshManager | undefined;
+    private nativeAskpassServer: AskPassServer | undefined;
 
     constructor(
         readonly context: vscode.ExtensionContext,
@@ -233,6 +241,9 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
         const destination = SSHDestination.parseEncoded(dest);
 
+        const remoteSSHconfig = vscode.workspace.getConfiguration('remote.SSH');
+        const connectionBackend = remoteSSHconfig.get<string>('connectionBackend', 'ssh2');
+
         return vscode.window.withProgress({
             title: `Setting up SSH Host ${destination.hostname}`,
             location: vscode.ProgressLocation.Notification,
@@ -241,12 +252,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             const sshconfig = await SSHConfiguration.loadFromFS();
             const sshHostConfig = sshconfig.getHostConfiguration(destination.hostname);
 
-            // The bundled ssh2 library cannot perform the SSH
-            // gssapi-with-mic method, which needs access to the platform's
-            // Kerberos credentials. When the host config asks for GSSAPI,
-            // delegate the connection to the local ssh client: it supports
-            // GSSAPI natively and applies the user's own ssh_config for
-            // everything else (ProxyJump, ProxyCommand, ForwardAgent, ...).
+            // Deprecated
             const useNativeClient = isGssapiAuthenticationRequested(sshHostConfig);
 
             try {
@@ -254,11 +260,12 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             } catch (e: unknown) {
                 this.logger.error(`Error resolving authority`, e);
 
-                if(!useNativeClient) {
+                if(!useNativeClient || connectionBackend === 'native') {
                     return await this.throwOrCommand(context, destination, e);
                 }
             }
 
+            // Deprecated
             try {
                 return await this.connect(destination, sshconfig, true);
             } catch (e: unknown) {
@@ -303,11 +310,135 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const serverInstallPathMap = remoteSSHconfig.get<Record<string, string>>('serverInstallPath', {});
         const verifyUnknownHosts = remoteSSHconfig.get<HostVerificationPolicy>('verifyUnknownHosts', 'ask')!;
         const verifyKnownHosts = remoteSSHconfig.get<HostVerificationPolicy>('verifyKnownHosts', 'reject')!;
+        const connectionBackend = remoteSSHconfig.get<string>('connectionBackend', 'ssh2');
+        const configuredSshPath = remoteSSHconfig.get<string>('path', '');
         const sshHostConfig = sshconfig.getHostConfiguration(destination.hostname);
         const sshHostName = sshHostConfig['HostName'] ? SSHConfiguration.interpolate(sshHostConfig['HostName'], { '%': '%', 'h': destination.hostname }) : destination.hostname;
         const sshUser = sshHostConfig['User'] || destination.user || os.userInfo().username || ''; // https://github.com/openssh/openssh-portable/blob/5ec5504f1d328d5bfa64280cd617c3efec4f78f3/sshconnect.c#L1561-L1562
         const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : (destination.port || 22);
 
+        if (connectionBackend === 'native') {
+            try {
+                const sshExecutable = await resolveNativeSshExecutable(configuredSshPath);
+
+                const socksPort = await findRandomPort();
+                const sshArgs: string[] = ['-v', '-T', '-D', String(socksPort),'-o', `ConnectTimeout=${connectTimeout}`];
+                const configFile = getSSHConfigPath();
+                if (configFile !== defaultSSHConfigPath) {
+                    sshArgs.push('-F', configFile);
+                }
+                if (destination.port) {
+                    sshArgs.push('-p', String(destination.port));
+                }
+                if (destination.user) {
+                    sshArgs.push('-l', destination.user);
+                }
+                sshArgs.push(destination.hostname);
+
+                const marker = crypto.randomBytes(12).toString('hex');
+                const connection: NativeSshConnectionOptions = {
+                    authorityKey: destination.toString(),
+                    sshExecutable,
+                    sshArgs,
+                    label: marker,
+                    remotePlatform: remotePlatformMap[destination.hostname],
+                    socksPort
+                };
+
+                const registry = await NativeSshRegistry.forAuthority(this.context.globalStorageUri.fsPath, connection.authorityKey);
+                const askpassServer = await AskPassServer.create();
+                this.nativeAskpassServer = askpassServer;
+
+                const manager = new NativeSshManager({
+                    connection,
+                    registry,
+                    serverScriptPath: path.join(
+                        this.context.extensionPath,
+                        'lib',
+                        'native',
+                        'nativeSshServer.js'
+                    ),
+                    askpassPath: path.join(
+                        this.context.extensionPath,
+                        'lib',
+                        'native',
+                        'askpass' + (isWindows ? '.bat' : '.sh'),
+                    ),
+                    askpassNodeScriptPath: path.join(
+                        this.context.extensionPath,
+                        'lib',
+                        'native',
+                        'askpass-node.js',
+                    ),
+                    askpassSocketPath: askpassServer.socketPath,
+                    logger: this.logger,
+                });
+                this.nativeManager = manager;
+
+                const envVariables: Record<string, string | null> = {};
+                if (enableAgentForwarding) {
+                    envVariables['SSH_AUTH_SOCK'] = null;
+                }
+
+                const registryEntry = await manager.initialize({
+                    serverDownloadUrlTemplate,
+                    serverVersion,
+                    extensionIds: defaultExtensions,
+                    envVariables: Object.keys(envVariables),
+                    remotePlatform: remotePlatformMap[destination.hostname],
+                    useSocketPath: remoteServerListenOnSocket,
+                    customInstallPath: findServerInstallPath(destination.hostname, serverInstallPathMap),
+                    extensionPath: this.context.extensionPath,
+                });
+
+                const tunnel = await this.openNativeTunnel(0, registryEntry.listeningOn, registryEntry.socksPort);
+                this.tunnels.push(tunnel);
+
+                for (const key of Object.keys(envVariables)) {
+                    const value = registryEntry[key];
+                    if (value !== undefined && typeof value === 'string') {
+                        envVariables[key] = value;
+                    }
+                }
+
+                this.context.environmentVariableCollection.persistent = false;
+                for (const [key, value] of Object.entries(envVariables)) {
+                    if (value) {
+                        this.context.environmentVariableCollection.replace(key, value);
+                    }
+                }
+
+                vscode.commands.executeCommand('setContext', 'forwardedPortsViewEnabled', true);
+
+                this.labelFormatterDisposable?.dispose();
+                this.labelFormatterDisposable = vscode.workspace.registerResourceLabelFormatter({
+                    scheme: 'vscode-remote',
+                    authority: `${REMOTE_SSH_AUTHORITY}+*`,
+                    formatting: {
+                        label: '${path}',
+                        separator: '/',
+                        tildify: true,
+                        workspaceSuffix: `SSH: ${destination.hostname}` +
+                            (destination.port && destination.port !== 22 ? `:${destination.port}` : ''),
+                    },
+                });
+
+                const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority(
+                    '127.0.0.1',
+                    tunnel.localPort,
+                    registryEntry.connectionToken,
+                );
+                resolvedResult.extensionHostEnv = envVariables;
+                return resolvedResult;
+
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.logger.error('Native SSH bootstrap failed', message);
+                throw vscode.RemoteAuthorityResolverError.NotAvailable(`Native OpenSSH backend failed to initialize: ${message}`);
+            }
+        }
+
+        // This connection mode will be depreacted in the future
         const valuesToInterpolate = {
             '%': '%',
             'd': os.homedir(),
@@ -537,6 +668,57 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
         resolvedResult.extensionHostEnv = envVariables;
         return resolvedResult;
+    }
+
+    private async openNativeTunnel(
+       localPort: number,
+       remotePortOrSocketPath: number | string,
+       socksPort: number | undefined
+    ): Promise<TunnelInfo> {
+        localPort = localPort > 0 ? localPort : await findRandomPort();
+
+        const disposables: vscode.Disposable[] = [];
+        const remotePort = typeof remotePortOrSocketPath === 'number' ? remotePortOrSocketPath : undefined;
+        // const remoteSocketPath = typeof remotePortOrSocketPath === 'string' ? remotePortOrSocketPath : undefined;
+        if (socksPort&& remotePort) {
+            const forwardingServer = await new Promise<net.Server>((resolve, reject) => {
+                this.logger.trace(`Creating forwarding server ${localPort}(local) => ${socksPort}(socks) => ${remotePort}(remote)`);
+                const socksOptions: SocksClientOptions = {
+                    proxy: {
+                        host: '127.0.0.1',
+                        port: socksPort,
+                        type: 5
+                    },
+                    command: 'connect',
+                    destination: {
+                        host: '127.0.0.1',
+                        port: remotePort
+                    }
+                };
+                const server: net.Server = net.createServer()
+                    .on('error', reject)
+                    .on('connection', async (socket: net.Socket) => {
+                        try {
+                            const socksConn = await SocksClient.createConnection(socksOptions);
+                            socket.pipe(socksConn.socket);
+                            socksConn.socket.pipe(socket);
+                        } catch (error) {
+                            this.logger.error(`Error while creating SOCKS connection`, error);
+                        }
+                    })
+                    .on('listening', () => resolve(server))
+                    .listen(localPort, '127.0.0.1');
+            });
+            disposables.push({
+                dispose: () => forwardingServer.close(() => {
+                    this.logger.trace(`SOCKS forwading server closed`);
+                }),
+            });
+        } else {
+           throw new Error('Tunnel without socks port not supported yet');
+        }
+
+        return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);
     }
 
     // @types/ssh2 predates the current runtime and types the key as a string;
@@ -940,6 +1122,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     }
 
     dispose() {
+        this.nativeSshKeepalive?.dispose();
         disposeAll(this.tunnels);
         this.agentForwardSession?.close();
         this.agentForwardSession = undefined;
@@ -951,5 +1134,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         }
         this.proxyCommandProcess?.kill();
         this.labelFormatterDisposable?.dispose();
+
+        this.nativeManager?.dispose();
+        this.nativeManager = undefined;
+        this.nativeAskpassServer?.dispose();
+        this.nativeAskpassServer = undefined;
     }
 }
