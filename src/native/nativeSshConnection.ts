@@ -32,7 +32,7 @@ export async function resolveNativeSshExecutable(explicitPath?: string): Promise
 export function getNativeSshSocketPath(label: string): string {
     const randomStr = crypto.randomBytes(15).toString('hex');
     if (process.platform === 'win32') {
-        return `\\\\.\\pipe\\open-remote-ssh-${label}}-${randomStr}`;
+        return `\\\\.\\pipe\\open-remote-ssh-${label}-${randomStr}`;
     }
     return process.env.XDG_RUNTIME_DIR
            ? path.join(process.env.XDG_RUNTIME_DIR, `open-remote-ssh-${label}-${randomStr}.sock`)
