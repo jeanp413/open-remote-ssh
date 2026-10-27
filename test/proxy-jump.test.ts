@@ -8,7 +8,7 @@ import * as vscode from './mocks/vscode';
 import { runDocker } from './utils/run-docker';
 import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
-import { sleep } from './utils/sleep';
+import { sleep } from '../src/common/sleep';
 
 const SERVER_SETUP = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
 
