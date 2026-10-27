@@ -534,7 +534,7 @@ export class NativeSshManager {
             throw new Error(`Native SSH local server entrypoint was not found: ${serverScriptPath}`);
         }
 
-        await this.unlinkStaleSocket();
+        await this.unlinkStaleSocket(serverScriptPath);
 
         const serverConfig: NativeSshServerConfig = {
             sshExecutable: this.connection.sshExecutable,
@@ -680,14 +680,12 @@ export class NativeSshManager {
         );
     }
 
-    private async unlinkStaleSocket(): Promise<void> {
+    private async unlinkStaleSocket(socketPath: string): Promise<void> {
         if (process.platform === 'win32') {
             return;
         }
         try {
-            if (this.serverInfo) {
-                await fs.unlink(this.serverInfo.socketPath);
-            }
+            await fs.unlink(socketPath);
         } catch (err: unknown) {
             if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
                 throw err;

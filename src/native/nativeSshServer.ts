@@ -27,10 +27,14 @@ function removeNativeSshHelperRegistry(registryFilePath: string, pid: number) {
     if (!entry || entry.pid !== pid) {
         return;
     }
-    fs.unlinkSync(registryFilePath);
+    try {
+        fs.unlinkSync(registryFilePath);
+    } catch {
+        // noop
+    }
 }
 
-class NativeSshHelperServer {
+export class NativeSshHelperServer {
     private readonly config: NativeSshServerConfig;
     private readonly server: http.Server;
     private sshProcess: NativeSshProcess | undefined;

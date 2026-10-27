@@ -54,7 +54,7 @@ export class AskPassServer {
         socketPath: string
     ): Promise<void> {
         this._socketPath = socketPath;
-        const server = http.createServer((req, res) => {
+        this.server = http.createServer((req, res) => {
             req.setEncoding('utf8');
             if (req.method === 'POST' && req.url === '/prompt') {
                 this.handleNativeSshPromptRequest(req, res);
@@ -64,6 +64,8 @@ export class AskPassServer {
             res.statusCode = 404;
             res.end();
         });
+
+        const server = this.server;
         server.setTimeout(300_000);
 
         return new Promise((resolve, reject) => {

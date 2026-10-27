@@ -34,7 +34,7 @@ export class NativeSshServerClient {
             );
 
             request.setTimeout(REQUEST_TIMEOUT_MS, () => {
-                request.destroy(new Error('Native SSH helper request timed out.'));
+                request.destroy(new Error('SSH server request timed out.'));
             });
             request.on('error', reject);
             request.end();
@@ -51,13 +51,9 @@ export class NativeSshServerClient {
     }
 
     async keepalive(): Promise<void> {
-        try {
-            const res = await this.request('POST', '/keepalive');
-            if (res.statusCode !== 200) {
-                throw new Error(`${res.statusCode} ${res.body}`);
-            }
-        } catch {
-            // Helper is gone; the caller's next spawn() will notice.
+        const res = await this.request('POST', '/keepalive');
+        if (res.statusCode !== 200) {
+            throw new Error(`${res.statusCode} ${res.body}`);
         }
     }
 }
