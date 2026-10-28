@@ -322,7 +322,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const sshExecutable = await resolveNativeSshExecutable(configuredSshPath);
 
                 const socksPort = await findRandomPort();
-                const sshArgs: string[] = ['-v', '-T', '-D', String(socksPort),'-o', `ConnectTimeout=${connectTimeout}`];
+                const sshArgs: string[] = ['-v', '-T', '-D', `127.0.0.1:${socksPort}`,'-o', `ConnectTimeout=${connectTimeout}`];
                 const configFile = getSSHConfigPath();
                 if (configFile !== defaultSSHConfigPath) {
                     sshArgs.push('-F', configFile);
