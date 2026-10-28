@@ -7,7 +7,7 @@ import { exists } from '../common/files';
 import { getProductJson } from '../server-config/get-product-json';
 import { sleep } from '../common/sleep';
 import { ILogger } from '../common/logger';
-import { AUTH_CONFIRMED_RE, CommandRunner, LineParser } from './nativeSshParser';
+import { CommandRunner, LineParser } from './nativeSshParser';
 import { RemotePlatform } from '../common/platform';
 import { NativeSshServerClient, NativeSshKeepalive } from './nativeSshServerClient';
 import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, parseKernelName, parseMachineArch, parseServerInstallOutput, Platform, ServerInstallError, ServerInstallResult, Shell } from '../serverSetup';
@@ -168,7 +168,6 @@ export class NativeSshManager {
     async initialize(installScriptInputs: NativeInstallInputs): Promise<NativeSshRegistryEntry> {
         let registryEntry = await this.acquire();
         if (!registryEntry) {
-            await this.waitAuthSucceeded();
             await this.waitRemoteShellReady();
 
             const platform = await this.probeRemotePlatform();
@@ -217,66 +216,15 @@ export class NativeSshManager {
         this.keepalive.start();
     }
 
-    private waitAuthSucceeded() {
-        if (!this.stdoutParser || !this.stderrParser) {
-            throw new Error('No local server output parser attached');
-        }
-
-        return new Promise<void>((resolve, reject) => {
-            let settled = false;
-            const finish = (err: Error | undefined): void => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                stdoutSubscription.dispose();
-                stderrSubscription.dispose();
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve();
-                }
-            };
-
-            const predicate = (line: string) => {
-                return AUTH_CONFIRMED_RE.test(line);
-            };
-
-            const stdoutSubscription = this.stdoutParser!.subscribe({
-                onLine: (line) => {
-                    try {
-                        if (predicate(line)) {
-                            finish(undefined);
-                        }
-                    } catch (e) {
-                        finish(e);
-                    }
-                },
-                onError: (reason) => finish(new Error(reason)),
-            });
-            const stderrSubscription = this.stderrParser!.subscribe({
-                onLine: (line) => {
-                    try {
-                        if (predicate(line)) {
-                            finish(undefined);
-                        }
-                    } catch (e) {
-                        finish(e);
-                    }
-                },
-                onError: (reason) => finish(new Error(reason)),
-            });
-        });
-    }
-
     async runCommand<T>(
         command: string,
         predicate: (stdout: string | undefined, stderr: string | undefined) => T | undefined,
+        timeout?: number,
     ): Promise<T> {
         if (!this.cmdRunner) {
             throw new Error('No helper process owned by this window.');
         }
-        return this.cmdRunner.run(command, predicate);
+        return this.cmdRunner.run(command, predicate, timeout);
     }
 
     private async nativeDetectPlatform(
@@ -356,12 +304,13 @@ export class NativeSshManager {
 
     private async waitRemoteShellReady() {
         const readyMarker = `==${this.connection.label}==`;
+        // Allow time for interactive authentication before the remote shell is ready.
         await this.runCommand(`echo '${readyMarker}'`, (stdout: string | undefined) =>{
             if (stdout?.includes(readyMarker)) {
                 return true;
             }
             return undefined;
-        });
+        }, 120_000);
     }
 
     private async probeRemotePlatform(): Promise<RemotePlatform> {

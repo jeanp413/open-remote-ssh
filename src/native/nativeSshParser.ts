@@ -33,8 +33,6 @@ function parseHostKeyPrompt(prompt: string): PromptKind | null {
     return null;
 }
 
-export const AUTH_CONFIRMED_RE = /(?:debug\d+:\s*)?(?:Authentication succeeded|Authenticated to .* using ")/i;
-
 export function parsePrompt(prompt: string): ParsedPrompt {
     const kind = parseHostKeyPrompt(prompt);
     if (kind) {
