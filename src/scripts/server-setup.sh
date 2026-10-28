@@ -295,6 +295,13 @@ fi
 # Finish server setup
 print_install_results 0
 
+# Release lock
+if [[ -n "$FD" ]]; then
+  flock -u "$FD" 2>/dev/null || true
+  exec 9>&-
+  trap - EXIT INT HUP
+fi
+
 if (( SCRIPT_PREVENT_EXIT )); then
   while true;
     do sleep 150;
