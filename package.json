@@ -129,7 +129,7 @@
 					],
 					"enumDescriptions": [
 						"Use the existing ssh2 js library backend.",
-						"Use the native OpenSSH binary."
+						"Use the native OpenSSH binary. Windows remotes are not yet supported."
 					]
 				},
 				"remote.SSH.connectTimeout": {

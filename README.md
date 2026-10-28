@@ -16,6 +16,8 @@ You can connect to a running SSH server on the following platforms.
 - FreeBSD 13+ (Requires custom serverDownloadUrlTemplate setting)
 - DragonFlyBSD (Requires manual remote-extension-host installation)
 
+The experimental `remote.SSH.connectionBackend: "native"` backend does not yet support Windows remotes. Use the default `"ssh2"` backend for those hosts. This limitation does not prevent Windows clients from connecting to Unix hosts with the native backend.
+
 ## Requirements
 
 **Configuration**

@@ -126,3 +126,33 @@ it('allows server installation to finish after the ordinary command deadline', a
         await rm(dir, { recursive: true, force: true });
     }
 });
+
+it.each([
+    ['configured', undefined],
+    ['cmd', 'C:\\Windows\\System32\\cmd.exe~$PSHOME'],
+    ['powershell', '%COMSPEC%~C:\\Windows\\System32\\WindowsPowerShell\\v1.0'],
+])('rejects %s Windows remotes before installation', async (_, response) => {
+    const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-windows-'));
+    const manager = await fixture(dir);
+    // An unavailable helper must not obscure the configured-platform error.
+    await rm(join(dir, 'nativeSshServer.js'));
+    const stdout = new LineParser();
+    const commands: string[] = [];
+    manager['cmdRunner'] = new CommandRunner(stdout, new LineParser(), async command => {
+        commands.push(command);
+        stdout.push(response + '\n');
+    });
+    const inputs = {
+        serverDownloadUrlTemplate: undefined, serverVersion: 'match', extensionIds: [],
+        envVariables: [], useSocketPath: false, customInstallPath: undefined,
+        extensionPath: dir, remotePlatform: response ? undefined : 'windows' as const,
+    };
+    try {
+        await expect(response ? manager['nativeInstallCodeServer'](inputs) : manager.initialize(inputs))
+            .rejects.toThrow('Set remote.SSH.connectionBackend to "ssh2"');
+        expect(commands).toEqual(response ? ['echo %COMSPEC%~$PSHOME'] : []);
+    } finally {
+        await manager.dispose();
+        await rm(dir, { recursive: true, force: true });
+    }
+});

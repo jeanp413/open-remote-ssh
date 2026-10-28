@@ -10,7 +10,7 @@ import { ILogger } from '../common/logger';
 import { CommandRunner, LineParser } from './nativeSshParser';
 import { RemotePlatform } from '../common/platform';
 import { NativeSshServerClient, NativeSshKeepalive } from './nativeSshServerClient';
-import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, parseKernelName, parseMachineArch, parseServerInstallOutput, Platform, ServerInstallError, ServerInstallResult, Shell } from '../serverSetup';
+import { Architecture, buildServerInstallOptions, generateBashInstallScript, parseKernelName, parseMachineArch, parseServerInstallOutput, Platform, ServerInstallError, ServerInstallResult, Shell } from '../serverSetup';
 import { ServerVersion } from '../server-config/types';
 import { getNativeSshSocketPath } from './nativeSshConnection';
 
@@ -81,6 +81,7 @@ const SCHEMA_VERSION = 1;
 const SERVER_READY_TIMEOUT_MS = 10_000;
 const SERVER_READY_POLL_MS = 100;
 const SERVER_INSTALL_TIMEOUT_MS = 300_000;
+const WINDOWS_REMOTE_ERROR = 'The native SSH backend does not yet support Windows remotes. Set remote.SSH.connectionBackend to "ssh2" to connect.';
 
 export class NativeSshRegistry {
     private constructor(private readonly registryFilePath: string) { }
@@ -167,11 +168,11 @@ export class NativeSshManager {
     private get registry(): NativeSshRegistry { return this.options.registry; }
 
     async initialize(installScriptInputs: NativeInstallInputs): Promise<NativeSshRegistryEntry> {
+        if (installScriptInputs.remotePlatform === 'windows') {
+            throw new ServerInstallError(WINDOWS_REMOTE_ERROR);
+        }
         await this.acquire();
         await this.waitRemoteShellReady();
-
-        const platform = await this.probeRemotePlatform();
-        this.options.logger.info(`Detected remote platform: ${platform}`);
 
         const result = await this.nativeInstallCodeServer(installScriptInputs);
         const registryEntry = {
@@ -258,29 +259,27 @@ export class NativeSshManager {
 
         this.options.logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
 
-        let detectedArch: Architecture;
         if (detectedPlatform === 'windows') {
-            detectedArch = 'x64';
-        } else {
-            const result = await this.runCommand('echo "==$(uname -m)=="', (stdout, stderr) => {
-                    if (stderr) {
-                        return { stderr };
-                    }
-                    if (stdout) {
-                        return { stdout };
-                    }
-                    return undefined;
-            });
-            if (result.stderr) {
-                throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
-            }
-
-            const uname = /==\s*(.+?)\s*==/.exec(result.stdout!);
-            if (!uname) {
-                throw new ServerInstallError(`Architecture not found: ${result.stdout}`);
-            }
-            detectedArch = parseMachineArch(uname[1].trim());
+            throw new ServerInstallError(WINDOWS_REMOTE_ERROR);
         }
+        const result = await this.runCommand('echo "==$(uname -m)=="', (stdout, stderr) => {
+                if (stderr) {
+                    return { stderr };
+                }
+                if (stdout) {
+                    return { stdout };
+                }
+                return undefined;
+        });
+        if (result.stderr) {
+            throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
+        }
+
+        const uname = /==\s*(.+?)\s*==/.exec(result.stdout!);
+        if (!uname) {
+            throw new ServerInstallError(`Architecture not found: ${result.stdout}`);
+        }
+        const detectedArch = parseMachineArch(uname[1].trim());
 
         this.options.logger.trace(`Detected architecture: ${detectedArch}`);
         return { detectedPlatform, detectedArch, detectedShell };
@@ -295,30 +294,6 @@ export class NativeSshManager {
             }
             return undefined;
         }, 120_000);
-    }
-
-    private async probeRemotePlatform(): Promise<RemotePlatform> {
-        return this.runCommand('uname -rsv', (stdout: string | undefined, stderr: string | undefined) =>{
-            if (stdout) {
-                const lower = stdout.toLowerCase();
-                if (lower.includes('darwin') || lower.includes('macos') || lower.includes('mac os x')) {
-                    return 'macos';
-                }
-                if (lower.includes('linux')) {
-                    return 'linux';
-                }
-                if (lower.includes('cygwin') || lower.includes('mingw') || lower.includes('windows')) {
-                    return 'windows';
-                }
-            } else if (stderr) {
-                const lower = stderr.toLowerCase();
-                if (lower.includes(`'uname'`)) {
-                    // No 'uname' command found
-                    return 'windows';
-                }
-            }
-            return undefined;
-        });
     }
 
     private async nativeInstallCodeServer(
@@ -351,33 +326,26 @@ export class NativeSshManager {
             this.options.logger,
         );
 
-        let commandOutput: { stdout: string; stderr: string };
-        if (detectedPlatform === 'windows') {
-            commandOutput = await this.runNativeWindowsInstall(
-                generatePowerShellInstallScript(installOptions, extensionPath),
-            );
-        } else {
-            await this.waitBashReady();
+        await this.waitBashReady();
 
-            let stdoutBuffer = '';
-            let stderrBuffer = '';
-            commandOutput = await this.runCommand(
-                `scriptWrapper() {\n ${generateBashInstallScript(installOptions, extensionPath)}\n }\n scriptWrapper`,
-                (stdout, stderr) => {
-                    if (stdout !== undefined) {
-                        stdoutBuffer += stdout + '\n';
-                    }
-                    if (stderr !== undefined) {
-                        stderrBuffer += stderr + '\n';
-                    }
-                    if (stdout?.includes(`${this.options.connection.label}: end`)) {
-                        return { stdout: stdoutBuffer, stderr: stderrBuffer };
-                    }
-                    return undefined;
-                },
-                SERVER_INSTALL_TIMEOUT_MS,
-            );
-        }
+        let stdoutBuffer = '';
+        let stderrBuffer = '';
+        const commandOutput = await this.runCommand(
+            `scriptWrapper() {\n ${generateBashInstallScript(installOptions, extensionPath)}\n }\n scriptWrapper`,
+            (stdout, stderr) => {
+                if (stdout !== undefined) {
+                    stdoutBuffer += stdout + '\n';
+                }
+                if (stderr !== undefined) {
+                    stderrBuffer += stderr + '\n';
+                }
+                if (stdout?.includes(`${this.options.connection.label}: end`)) {
+                    return { stdout: stdoutBuffer, stderr: stderrBuffer };
+                }
+                return undefined;
+            },
+            SERVER_INSTALL_TIMEOUT_MS,
+        );
 
         this.options.logger.trace('Server install stdout:', commandOutput.stdout);
         if (commandOutput.stderr) {
@@ -417,50 +385,6 @@ export class NativeSshManager {
             }
             return undefined;
         });
-    }
-
-    private async runNativeWindowsInstall(
-        script: string,
-    ): Promise<{ stdout: string; stderr: string }> {
-        const remoteTemp = `$env:TEMP\\native-ssh-install-${this.options.connection.label}.ps1`;
-        const encoded = Buffer.from(script, 'utf16le').toString('base64');
-
-        const writeResult = await this.runCommand(
-            `[IO.File]::WriteAllBytes(${remoteTemp}, [Convert]::FromBase64String('${encoded}'))`,
-            (stdout, stderr) => {
-                if (stderr !== undefined) {
-                    return { stderr };
-                }
-                if (stdout !== undefined) {
-                     return { stdout };
-                }
-                return undefined;
-            }
-        );
-        if (writeResult.stderr && writeResult.stderr.length > 0) {
-            this.options.logger.error('Failed writing remote install script:', writeResult.stderr);
-            throw new ServerInstallError('Failed writing remote install script');
-        }
-
-        let stdoutBuffer = '';
-        let stderrBuffer = '';
-        const runResult = await this.runCommand(
-            `powershell -ExecutionPolicy Bypass -File "${remoteTemp}"; Remove-Item -Force "${remoteTemp}"`,
-            (stdout, stderr) => {
-                if (stdout !== undefined) {
-                    stdoutBuffer += stdout + '\n';
-                }
-                if (stderr !== undefined) {
-                    stderrBuffer += stderr + '\n';
-                }
-                if (stdout?.includes(`${this.options.connection.label}: end`)) {
-                    return { stdout: stdoutBuffer, stderr: stderrBuffer };
-                }
-                return undefined;
-            },
-            SERVER_INSTALL_TIMEOUT_MS,
-        );
-        return runResult;
     }
 
     private async spawnFresh(): Promise<NativeSshServerInfo> {
