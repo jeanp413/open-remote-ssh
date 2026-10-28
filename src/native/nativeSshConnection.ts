@@ -34,7 +34,8 @@ export function getNativeSshSocketPath(label: string): string {
     if (process.platform === 'win32') {
         return `\\\\.\\pipe\\open-remote-ssh-${label}-${randomStr}`;
     }
-    return process.env.XDG_RUNTIME_DIR
-           ? path.join(process.env.XDG_RUNTIME_DIR, `open-remote-ssh-${label}-${randomStr}.sock`)
-           : path.join(os.tmpdir(), `open-remote-ssh-${label}-${randomStr}.sock`);
+    const name = `ors-${randomStr}.sock`;
+    const socket = path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), name);
+    // macOS limits Unix socket paths to 103 bytes, including the temporary directory.
+    return Buffer.byteLength(socket) <= 103 ? socket : path.join('/tmp', name);
 }
