@@ -91,7 +91,7 @@ it.skipIf(process.platform === 'win32')('keeps same-authority helpers independen
     }
 });
 
-it('allows server installation to finish after the ordinary command deadline', async () => {
+it('preserves requested environment values after a slow server installation', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-install-'));
     const manager = await fixture(dir);
     await mkdir(join(dir, 'lib', 'scripts'), { recursive: true });
@@ -113,13 +113,15 @@ it('allows server installation to finish after the ordinary command deadline', a
     try {
         const result = manager['nativeInstallCodeServer']({
             serverDownloadUrlTemplate: undefined, serverVersion: 'match', extensionIds: [],
-            envVariables: [], useSocketPath: false, customInstallPath: undefined,
+            envVariables: ['SSH_AUTH_SOCK'], useSocketPath: false, customInstallPath: undefined,
             extensionPath: dir, remotePlatform: 'linux',
         }).then(value => ({ value }), error => ({ error }));
         await vi.waitFor(() => expect(sent).toBe(true));
         await vi.advanceTimersByTimeAsync(11_000);
-        stdout.push('test: start\nexitCode==0==\nlisteningOn==12345==\nconnectionToken==token==\ntest: end\n');
-        expect(await result).toMatchObject({ value: { exitCode: 0, listeningOn: 12345 } });
+        stdout.push('test: start\nexitCode==0==\nlisteningOn==12345==\nconnectionToken==token==\nSSH_AUTH_SOCK==/tmp/ssh-agent/socket==\nUNREQUESTED==ignored==\ntest: end\n');
+        const installed = await result;
+        expect(installed).toMatchObject({ value: { exitCode: 0, listeningOn: 12345, SSH_AUTH_SOCK: '/tmp/ssh-agent/socket' } });
+        expect(installed).not.toHaveProperty('value.UNREQUESTED');
     } finally {
         vi.useRealTimers();
         await manager.dispose();

@@ -365,6 +365,7 @@ export class NativeSshManager {
             ? parseInt(resultMap.listeningOn, 10)
             : resultMap.listeningOn;
 
+        const env = Object.fromEntries(Object.entries(resultMap).filter(([key]) => envVariables.includes(key)));
         return {
             exitCode,
             listeningOn,
@@ -374,6 +375,7 @@ export class NativeSshManager {
             arch: resultMap.arch || installOptions.serverArch,
             platform: resultMap.platform,
             tmpDir: resultMap.tmpDir,
+            ...env,
         };
     }
 
