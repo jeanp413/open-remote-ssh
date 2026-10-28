@@ -1,14 +1,17 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as ts from 'typescript';
 import { expect, it, vi } from 'vitest';
 import { NativeSshManager, NativeSshRegistry } from '../src/native/nativeSshManager';
 import { NativeSshServerClient } from '../src/native/nativeSshServerClient';
+import { CommandRunner, LineParser } from '../src/native/nativeSshParser';
 import { Log } from './mocks/logger';
 
 vi.mock('../src/server-config/get-product-json', () => ({
-    getProductJson: async () => ({ commit: 'test' }),
+    getProductJson: async () => ({
+        commit: 'test', quality: 'stable', serverApplicationName: 'test', serverDataFolderName: '.test',
+    }),
 }));
 
 async function fixture(dir: string, command = process.execPath, args = ['-e', 'process.stdin.resume()']) {
@@ -73,6 +76,42 @@ it.skipIf(process.platform === 'win32')('initializes from shell readiness withou
         expect(await new NativeSshServerClient(result.socketPath).isHealthy()).toBe(true);
     } finally {
         clearTimeout(watchdog);
+        await manager.dispose();
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
+it('allows server installation to finish after the ordinary command deadline', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-install-'));
+    const manager = await fixture(dir);
+    await mkdir(join(dir, 'lib', 'scripts'), { recursive: true });
+    await copyFile('src/scripts/server-setup.sh', join(dir, 'lib', 'scripts', 'server-setup.sh'));
+    manager['nativeDetectPlatform'] = async () => ({
+        detectedPlatform: 'linux', detectedArch: 'x64', detectedShell: 'bash',
+    });
+    const stdout = new LineParser();
+    let sent = false;
+    manager['cmdRunner'] = new CommandRunner(stdout, new LineParser(), async (command) => {
+        if (command.startsWith('bash -c ')) {
+            stdout.push('==test==\n');
+            return;
+        }
+        sent = true;
+    });
+    vi.useFakeTimers();
+
+    try {
+        const result = manager['nativeInstallCodeServer']({
+            serverDownloadUrlTemplate: undefined, serverVersion: 'match', extensionIds: [],
+            envVariables: [], useSocketPath: false, customInstallPath: undefined,
+            extensionPath: dir, remotePlatform: 'linux',
+        }).then(value => ({ value }), error => ({ error }));
+        await vi.waitFor(() => expect(sent).toBe(true));
+        await vi.advanceTimersByTimeAsync(11_000);
+        stdout.push('test: start\nexitCode==0==\nlisteningOn==12345==\nconnectionToken==token==\ntest: end\n');
+        expect(await result).toMatchObject({ value: { exitCode: 0, listeningOn: 12345 } });
+    } finally {
+        vi.useRealTimers();
         await manager.dispose();
         await rm(dir, { recursive: true, force: true });
     }

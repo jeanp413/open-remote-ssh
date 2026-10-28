@@ -80,6 +80,7 @@ export interface NativeInstallInputs {
 const SCHEMA_VERSION = 1;
 const SERVER_READY_TIMEOUT_MS = 10_000;
 const SERVER_READY_POLL_MS = 100;
+const SERVER_INSTALL_TIMEOUT_MS = 300_000;
 
 export class NativeSshRegistry {
     private constructor(private readonly registryFilePath: string) { }
@@ -390,7 +391,8 @@ export class NativeSshManager {
                         return { stdout: stdoutBuffer, stderr: stderrBuffer };
                     }
                     return undefined;
-                }
+                },
+                SERVER_INSTALL_TIMEOUT_MS,
             );
         }
 
@@ -472,7 +474,8 @@ export class NativeSshManager {
                     return { stdout: stdoutBuffer, stderr: stderrBuffer };
                 }
                 return undefined;
-            }
+            },
+            SERVER_INSTALL_TIMEOUT_MS,
         );
         return runResult;
     }
