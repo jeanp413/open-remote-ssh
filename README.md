@@ -20,6 +20,8 @@ The experimental `remote.SSH.connectionBackend: "native"` backend does not yet s
 
 Native mode also requires `remote.SSH.remoteServerListenOnSocket` to be disabled. Use the `"ssh2"` backend if the remote server must listen on a Unix socket.
 
+Native connections disable OpenSSH connection sharing (`ControlPath=none`) so each window can close its SSH connection and SOCKS listener without affecting other sessions.
+
 ## Requirements
 
 **Configuration**
