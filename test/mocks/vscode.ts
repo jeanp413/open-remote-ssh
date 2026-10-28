@@ -76,6 +76,7 @@ const window = {
         return $warningAnswer !== undefined && items.includes($warningAnswer) ? $warningAnswer : undefined;
     }),
     showErrorMessage: vi.fn(async () => undefined),
+    showInformationMessage: vi.fn(async () => undefined),
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showInputBox: async (options?: vscode.InputBoxOptions, _token?: vscode.CancellationToken) => {
         if(options?.title?.startsWith('Enter password for')) {

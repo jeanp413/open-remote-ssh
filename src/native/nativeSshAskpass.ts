@@ -100,9 +100,18 @@ export class AskPassServer {
             });
             req.on('end', async () => {
                 try {
-                    const parsed = JSON.parse(body) as { prompt: string };
+                    const parsed = JSON.parse(body) as { prompt: string; hint?: string };
                     if (typeof parsed.prompt !== 'string') {
                         throw new Error('Malformed askpass request');
+                    }
+
+                    if (parsed.hint === 'none') {
+                        // OpenSSH must be able to finish a touch notification without user input.
+                        void vscode.window.showInformationMessage(parsed.prompt);
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify({ response: '', cancelled: false }));
+                        resolve();
+                        return;
                     }
 
                     const parsedPrompt = parsePrompt(parsed.prompt);
