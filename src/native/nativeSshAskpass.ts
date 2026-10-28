@@ -1,6 +1,5 @@
 import * as fs from 'fs/promises';
 import * as http from 'http';
-import { exists } from '../common/files';
 import { parsePrompt, PromptKind } from './nativeSshParser';
 import { getNativeSshSocketPath } from './nativeSshConnection';
 import * as vscode from 'vscode';
@@ -77,7 +76,7 @@ export class AskPassServer {
                 server.removeListener('error', handleError);
                 try {
                     if (process.platform !== 'win32') {
-                        fs.chmod(socketPath, 0o600);
+                        await fs.chmod(socketPath, 0o600);
                     }
                 } catch (error: unknown) {
                     server.close();
@@ -142,9 +141,8 @@ export class AskPassServer {
             return;
         }
         this.closed = true;
+        // Node removes the Unix socket when closing the listener.
         this.server.close();
-        if (process.platform !== 'win32' && await exists(this.socketPath)) {
-            await fs.unlink(this.socketPath);
-        }
+        this.server.closeAllConnections?.();
     }
 }

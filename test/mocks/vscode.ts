@@ -91,7 +91,7 @@ const window = {
             then: vi.fn(),
         };
 
-        return task(mockProgressReporter, {} as unknown) as Promise<unknown>;
+        return task(mockProgressReporter, {} as vscode.CancellationToken) as Promise<unknown>;
     },
 };
 

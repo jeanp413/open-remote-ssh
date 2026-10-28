@@ -437,8 +437,6 @@ export class NativeSshManager {
         }
         this.options.logger.info(`Spawned ssh server pid=${pid} socket=${serverConfig.socketPath}`);
 
-        await this.waitUntilSshServerReady(serverConfig.socketPath, () => spawnError);
-
         const proc: NativeSshServerProcess = {
             child,
             stdin: child.stdin!,
@@ -472,6 +470,7 @@ export class NativeSshManager {
 
         this.serverProcess = proc;
         this.attachParsers(proc, pid);
+        await this.waitUntilSshServerReady(serverConfig.socketPath, () => spawnError);
 
         return {
             pid,
@@ -502,6 +501,8 @@ export class NativeSshManager {
         stderr.on('data', (chunk: string) => this.stderrParser!.push(chunk));
 
         proc.child.once('close',  (code, signal) => {
+            this.keepalive?.dispose();
+            this.keepalive = undefined;
             const reason = code !== null
                 ? `ssh server closed (code=${code})`
                 : `ssh server killed (signal=${signal ?? 'unknown'})`;

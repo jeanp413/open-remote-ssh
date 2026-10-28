@@ -318,7 +318,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const sshPort = sshHostConfig['Port'] ? parseInt(sshHostConfig['Port'], 10) : (destination.port || 22);
 
         if (connectionBackend === 'native') {
+            let manager: NativeSshManager | undefined;
+            let askpassServer: AskPassServer | undefined;
             try {
+                await this.disposeNative(this.nativeManager, this.nativeAskpassServer);
                 const sshExecutable = await resolveNativeSshExecutable(configuredSshPath);
 
                 const socksPort = await findRandomPort();
@@ -346,10 +349,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 };
 
                 const registry = await NativeSshRegistry.forAuthority(this.context.globalStorageUri.fsPath, connection.authorityKey);
-                const askpassServer = await AskPassServer.create();
+                askpassServer = await AskPassServer.create();
                 this.nativeAskpassServer = askpassServer;
 
-                const manager = new NativeSshManager({
+                manager = new NativeSshManager({
                     connection,
                     registry,
                     serverScriptPath: path.join(
@@ -432,6 +435,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 return resolvedResult;
 
             } catch (error: unknown) {
+                await this.disposeNative(manager, askpassServer);
                 const message = error instanceof Error ? error.message : String(error);
                 this.logger.error('Native SSH bootstrap failed', message);
                 throw vscode.RemoteAuthorityResolverError.NotAvailable(`Native OpenSSH backend failed to initialize: ${message}`);
@@ -1121,6 +1125,19 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         };
     }
 
+    private async disposeNative(manager: NativeSshManager | undefined, askpass: AskPassServer | undefined): Promise<void> {
+        if (this.nativeManager === manager) {
+            this.nativeManager = undefined;
+        }
+        if (this.nativeAskpassServer === askpass) {
+            this.nativeAskpassServer = undefined;
+        }
+        await Promise.all([
+            manager?.dispose().catch(error => this.logger.error('Failed to stop native SSH helper', error)),
+            askpass?.dispose().catch(error => this.logger.error('Failed to close native SSH askpass', error)),
+        ]);
+    }
+
     dispose() {
         this.nativeSshKeepalive?.dispose();
         disposeAll(this.tunnels);
@@ -1135,9 +1152,6 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         this.proxyCommandProcess?.kill();
         this.labelFormatterDisposable?.dispose();
 
-        this.nativeManager?.dispose();
-        this.nativeManager = undefined;
-        this.nativeAskpassServer?.dispose();
-        this.nativeAskpassServer = undefined;
+        void this.disposeNative(this.nativeManager, this.nativeAskpassServer);
     }
 }

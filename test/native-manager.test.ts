@@ -74,6 +74,21 @@ it('starts the native helper without deleting its entrypoint', async () => {
     }
 });
 
+it('owns the helper early enough to dispose it after readiness fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-startup-'));
+    const manager = await fixture(dir);
+    manager['waitUntilSshServerReady'] = async () => { throw new Error('not ready'); };
+    try {
+        await expect(manager['spawnFresh']()).rejects.toThrow('not ready');
+        const child = manager['serverProcess']!.child;
+        await manager.dispose();
+        expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+    } finally {
+        await manager.dispose();
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
 it.skipIf(process.platform === 'win32')('keeps same-authority helpers independent without authentication diagnostics', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-ready-'));
     const manager = await fixture(dir, 'bash', ['--noprofile', '--norc']);
