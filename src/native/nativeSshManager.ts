@@ -272,11 +272,12 @@ export class NativeSshManager {
     async runCommand<T>(
         command: string,
         predicate: (stdout: string | undefined, stderr: string | undefined) => T | undefined,
+        timeout?: number
     ): Promise<T> {
         if (!this.cmdRunner) {
             throw new Error('No helper process owned by this window.');
         }
-        return this.cmdRunner.run(command, predicate);
+        return this.cmdRunner.run(command, predicate, timeout);
     }
 
     private async nativeDetectPlatform(
@@ -441,7 +442,8 @@ export class NativeSshManager {
                         return { stdout: stdoutBuffer, stderr: stderrBuffer };
                     }
                     return undefined;
-                }
+                },
+                90_000
             );
         }
 
@@ -463,6 +465,8 @@ export class NativeSshManager {
             ? parseInt(resultMap.listeningOn, 10)
             : resultMap.listeningOn;
 
+        const remoteEnvVars = Object.fromEntries(Object.entries(resultMap).filter(([key,]) => envVariables.includes(key)));
+
         return {
             exitCode,
             listeningOn,
@@ -472,6 +476,7 @@ export class NativeSshManager {
             arch: resultMap.arch || installOptions.serverArch,
             platform: resultMap.platform,
             tmpDir: resultMap.tmpDir,
+            ...remoteEnvVars
         };
     }
 
@@ -523,7 +528,8 @@ export class NativeSshManager {
                     return { stdout: stdoutBuffer, stderr: stderrBuffer };
                 }
                 return undefined;
-            }
+            },
+            90_000
         );
         return runResult;
     }

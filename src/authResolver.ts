@@ -319,6 +319,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
         if (connectionBackend === 'native') {
             try {
+                if (remoteServerListenOnSocket) {
+                    throw new Error('remoteServerListenOnSocket not supported in native connection mode yet');
+                }
+
                 const sshExecutable = await resolveNativeSshExecutable(configuredSshPath);
 
                 const socksPort = await findRandomPort();
@@ -337,7 +341,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 const marker = crypto.randomBytes(12).toString('hex');
                 const connection: NativeSshConnectionOptions = {
-                    authorityKey: destination.toString(),
+                    authorityKey: destination.hostname,
                     sshExecutable,
                     sshArgs,
                     label: marker,

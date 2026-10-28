@@ -4,6 +4,7 @@ import { exists } from '../common/files';
 import { parsePrompt, PromptKind } from './nativeSshParser';
 import { getNativeSshSocketPath } from './nativeSshConnection';
 import * as vscode from 'vscode';
+import { ILogger } from '../common/logger';
 
 async function askEntry(prompt: string): Promise<string | undefined> {
     return vscode.window.showInputBox({
@@ -44,7 +45,9 @@ export class AskPassServer {
     private _socketPath!: string;
     private closed = false;
 
-    private constructor() { }
+    private constructor(
+        private logger: ILogger
+    ) { }
 
     public get socketPath() : string {
         return this._socketPath;
@@ -57,7 +60,11 @@ export class AskPassServer {
         this.server = http.createServer((req, res) => {
             req.setEncoding('utf8');
             if (req.method === 'POST' && req.url === '/prompt') {
-                this.handleNativeSshPromptRequest(req, res);
+                this.handleNativeSshPromptRequest(req, res)
+                    .catch(err => {
+                        const message = err instanceof Error ? err.message : String(err);
+                        this.logger.error(`Askpass server error: ${message}`);
+                    }) ;
                 return;
             }
 
@@ -130,9 +137,9 @@ export class AskPassServer {
         });
     }
 
-    static async create(): Promise<AskPassServer> {
+    static async create(logger:ILogger): Promise<AskPassServer> {
         const socketPath = getNativeSshSocketPath('askpass');
-        const askpassServer = new AskPassServer();
+        const askpassServer = new AskPassServer(logger);
         await askpassServer.initialize(socketPath);
         return askpassServer;
     }
