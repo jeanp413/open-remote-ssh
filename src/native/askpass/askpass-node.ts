@@ -14,7 +14,7 @@ function fail(reason: string): never {
 if (!askpassSocketPath) { fail('NATIVE_SSH_ASKPASS_SOCKET is not set'); }
 if (!askpassOutputPath) { fail('NATIVE_SSH_ASKPASS_FILE is not set'); }
 
-const payload = JSON.stringify({ prompt });
+const payload = JSON.stringify({ prompt, hint: process.env.SSH_ASKPASS_PROMPT });
 const request = http.request({
     socketPath: askpassSocketPath,
     path: '/prompt',

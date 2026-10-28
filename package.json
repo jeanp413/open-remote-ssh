@@ -129,7 +129,7 @@
 					],
 					"enumDescriptions": [
 						"Use the existing ssh2 js library backend.",
-						"Use the native OpenSSH binary."
+						"Use the native OpenSSH binary. Windows remotes are not yet supported."
 					]
 				},
 				"remote.SSH.connectTimeout": {
@@ -212,7 +212,7 @@
 				},
 				"remote.SSH.remoteServerListenOnSocket": {
 					"type": "boolean",
-					"description": "When true, the remote vscode server will listen on a socket path instead of opening a port. Only valid for Linux and macOS remotes. Requires `AllowStreamLocalForwarding` to be enabled for the SSH server.",
+					"description": "When true, the remote vscode server will listen on a socket path instead of opening a port. Only valid for Linux and macOS remotes. Requires `AllowStreamLocalForwarding` to be enabled for the SSH server. Not supported by the native backend.",
 					"default": false
 				},
 				"remote.SSH.serverInstallPath": {
