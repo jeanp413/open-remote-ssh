@@ -1,6 +1,6 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import * as ts from 'typescript';
 import { expect, it, vi } from 'vitest';
 import { NativeSshManager, NativeSshRegistry } from '../src/native/nativeSshManager';
@@ -38,6 +38,25 @@ async function fixture(dir: string, command = process.execPath, args = ['-e', 'p
         logger: new Log('test'),
     });
 }
+
+it('stores port-qualified authorities in Windows-safe registry directories', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-registry-'));
+    try {
+        const registry = await NativeSshRegistry.forAuthority(dir, 'user@[::1]:2222');
+        const other = await NativeSshRegistry.forAuthority(dir, 'user@[::1]:2223');
+        expect(basename(dirname(registry.filePath))).not.toMatch(/[<>:"/\\|?*]/);
+        expect(other.filePath).not.toBe(registry.filePath);
+        const entry = {
+            schemaVersion: 1, socketPath: 'socket', socksPort: 12345, pid: process.pid,
+            exitCode: 0, listeningOn: 12345, connectionToken: 'token', logFile: '',
+            osReleaseId: '', arch: 'x64', platform: 'linux', tmpDir: dir,
+        };
+        await registry.write(entry);
+        expect(await (await NativeSshRegistry.forAuthority(dir, 'user@[::1]:2222')).read()).toEqual(entry);
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
 
 it('starts the native helper without deleting its entrypoint', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-helper-'));

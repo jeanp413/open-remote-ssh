@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as cp from 'child_process';
 import * as stream from 'stream';
+import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { exists } from '../common/files';
 import { getProductJson } from '../server-config/get-product-json';
@@ -91,11 +92,12 @@ export class NativeSshRegistry {
         authorityKey: string,
     ): Promise<NativeSshRegistry> {
         const productJson = await getProductJson();
+        const authority = crypto.createHash('sha256').update(authorityKey).digest('hex');
         return new NativeSshRegistry(
             path.join(
                 globalStorageDir,
                 'native-ssh',
-                `ssh-host-${authorityKey}-${productJson.commit as string}-${vscode.version.replace('-insider','')}`,
+                `ssh-host-${authority}-${productJson.commit as string}-${vscode.version.replace('-insider','')}`,
                 'data.json'
             )
         );
