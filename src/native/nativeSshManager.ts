@@ -540,8 +540,6 @@ export class NativeSshManager {
             throw new Error(`Native SSH local server entrypoint was not found: ${serverScriptPath}`);
         }
 
-        await this.unlinkStaleSocket(serverScriptPath);
-
         const serverConfig: NativeSshServerConfig = {
             sshExecutable: this.connection.sshExecutable,
             sshArgs: this.connection.sshArgs,
@@ -579,7 +577,8 @@ export class NativeSshManager {
         }
         this.options.logger.info(`Spawned ssh server pid=${pid} socket=${serverConfig.socketPath}`);
 
-        await this.waitUntilSshServerReady(serverConfig.socketPath, () => spawnError);
+        this.attachParsers(child);
+        await this.waitUntilSshServerReady(serverConfig.socketPath, () => spawnError, SERVER_READY_TIMEOUT_MS);
 
         const proc: NativeSshServerProcess = {
             child,
@@ -613,7 +612,6 @@ export class NativeSshManager {
         };
 
         this.serverProcess = proc;
-        this.attachParsers(proc, pid);
 
         return {
             pid,
@@ -622,9 +620,9 @@ export class NativeSshManager {
         };
     }
 
-    private attachParsers(proc: NativeSshServerProcess, pid: number): void {
-        const stdout = proc.child.stdout!;
-        const stderr = proc.child.stderr!;
+    private attachParsers(child: cp.ChildProcess): void {
+        const stdout = child.stdout!;
+        const stderr = child.stderr!;
 
         stdout.setEncoding('utf8');
         stderr.setEncoding('utf8');
@@ -643,7 +641,7 @@ export class NativeSshManager {
         stdout.on('data', (chunk: string) => this.stdoutParser!.push(chunk));
         stderr.on('data', (chunk: string) => this.stderrParser!.push(chunk));
 
-        proc.child.once('close',  (code, signal) => {
+        child.once('close',  (code, signal) => {
             const reason = code !== null
                 ? `ssh server closed (code=${code})`
                 : `ssh server killed (signal=${signal ?? 'unknown'})`;
@@ -654,9 +652,9 @@ export class NativeSshManager {
             this.cmdRunner = undefined;
 
             if (code !== null) {
-                this.options.logger.info(`ssh server pid=${pid} exited code=${code}`);
+                this.options.logger.info(`ssh server pid=${child.pid} exited code=${code}`);
             } else {
-                this.options.logger.info(`ssh server pid=${pid} killed by signal=${signal ?? 'unknown'}`);
+                this.options.logger.info(`ssh server pid=${child.pid} killed by signal=${signal ?? 'unknown'}`);
             }
         });
     }
@@ -664,9 +662,10 @@ export class NativeSshManager {
     private async waitUntilSshServerReady(
         socketPath: string,
         checkSpawnError: () => Error | undefined,
+        timeout: number
     ): Promise<void> {
         const client = new NativeSshServerClient(socketPath);
-        const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
+        const deadline = Date.now() + timeout;
 
         while (Date.now() < deadline) {
             const err = checkSpawnError();
@@ -682,21 +681,8 @@ export class NativeSshManager {
         }
 
         throw new Error(
-            `Native SSH local server did not become ready within ${SERVER_READY_TIMEOUT_MS}ms`
+            `Native SSH local server did not become ready within ${Math.floor(timeout / 1000)}s`
         );
-    }
-
-    private async unlinkStaleSocket(socketPath: string): Promise<void> {
-        if (process.platform === 'win32') {
-            return;
-        }
-        try {
-            await fs.unlink(socketPath);
-        } catch (err: unknown) {
-            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-                throw err;
-            }
-        }
     }
 
     async dispose(): Promise<void> {

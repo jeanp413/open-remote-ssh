@@ -97,19 +97,17 @@ export class NativeSshHelperServer {
                 this.server.removeListener('listening', handleListening);
                 reject(error);
             };
-            const handleListening = () => {
-                (async () => {
-                    try {
-                        if (this.config.sshExecutable) {
-                            await this.launchSshProcess();
-                        }
-                        this.resetIdleTimer();
-                        resolve();
-                    } catch (error: unknown) {
-                        this.close();
-                        reject(error instanceof Error ? error : new Error(String(error)));
+            const handleListening = async () => {
+                try {
+                    if (this.config.sshExecutable) {
+                        await this.launchSshProcess();
                     }
-                })();
+                    this.resetIdleTimer();
+                    resolve();
+                } catch (error: unknown) {
+                    this.close();
+                    reject(error instanceof Error ? error : new Error(String(error)));
+                }
             };
 
             this.server.once('error', handleError);
