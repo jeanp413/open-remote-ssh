@@ -350,7 +350,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 };
 
                 const registry = await NativeSshRegistry.forAuthority(this.context.globalStorageUri.fsPath, connection.authorityKey);
-                const askpassServer = await AskPassServer.create();
+                const askpassServer = await AskPassServer.create(this.logger);
                 this.nativeAskpassServer = askpassServer;
 
                 const manager = new NativeSshManager({
