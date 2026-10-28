@@ -85,6 +85,7 @@ validate_installed_commit() {
 }
 
 LOCKFILE="$TMP_DIR/server_install.lock"
+FD=
 
 if command -v flock >/dev/null 2>&1; then
   # Automatic file descriptor allocation ({FD}) requires bash >= 4.1,
@@ -293,6 +294,11 @@ if [[ -z $LISTENING_ON ]]; then
 fi
 
 # Finish server setup
+if [[ -n $FD ]]; then
+  flock -u "$FD"
+  exec 9>&-
+  trap - EXIT INT HUP
+fi
 print_install_results 0
 
 if (( SCRIPT_PREVENT_EXIT )); then

@@ -28,6 +28,7 @@ function checkStartup(scenario: 'delayed' | 'missing' | 'empty' | 'library') {
         // Simulate the log appearing while the readiness loop waits.
         const stub = `
 SCRIPT_PREVENT_EXIT=0
+FD=
 LISTENING_ON=
 ticks=0
 sleep() {
@@ -89,5 +90,33 @@ describe.skipIf(process.platform === 'win32')('server startup readiness', () => 
         expect(result.status).toBe(0);
         expect(result.output).toContain('Error: missing libstdc++');
         expect(result.output).not.toContain('ticks=');
+    });
+
+    it.skipIf(Boolean(spawnSync('flock', ['--help']).error))('releases the install lock while the shell stays open', () => {
+        const source = readFileSync('src/scripts/server-setup.sh', 'utf8');
+        const callbacks = source.slice(source.indexOf('print_install_results() {'), source.indexOf('# Validate the commit'))
+            .replace('%%ENV_VAR_LINES%%', '');
+        const locking = source.slice(source.indexOf('LOCKFILE='), source.indexOf('# Check if platform is supported'));
+        const finish = source.slice(source.indexOf('# Finish server setup'), source.indexOf('if (( SCRIPT_PREVENT_EXIT ))'));
+        const dir = mkdtempSync(join(tmpdir(), 'open-remote-ssh-lock-'));
+
+        try {
+            const result = spawnSync('bash', ['-c', `${callbacks}
+scriptWrapper() {
+${locking}
+${finish}
+}
+scriptWrapper
+flock -n "$TMP_DIR/server_install.lock" true && echo lock-reacquired
+`], {
+                encoding: 'utf8', timeout: 10000,
+                env: { ...process.env, TMP_DIR: dir },
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status).toBe(0);
+            expect(result.stdout).toContain('lock-reacquired');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
