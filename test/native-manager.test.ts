@@ -55,28 +55,38 @@ it('starts the native helper without deleting its entrypoint', async () => {
     }
 });
 
-it.skipIf(process.platform === 'win32')('initializes from shell readiness without authentication diagnostics', async () => {
+it.skipIf(process.platform === 'win32')('keeps same-authority helpers independent without authentication diagnostics', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-ready-'));
     const manager = await fixture(dir, 'bash', ['--noprofile', '--norc']);
+    const other = await fixture(dir, 'bash', ['--noprofile', '--norc']);
     const installed = {
         exitCode: 0, listeningOn: 12345, connectionToken: 'token', logFile: '',
         osReleaseId: '', arch: 'x64', platform: 'linux', tmpDir: dir,
     };
     manager['nativeInstallCodeServer'] = async () => installed;
+    other['nativeInstallCodeServer'] = async () => installed;
     // Stop the real helper if a regression leaves initialization waiting forever.
-    const watchdog = setTimeout(() => { void manager.dispose(); }, 4000);
+    const watchdog = setTimeout(() => { void manager.dispose(); void other.dispose(); }, 4000);
 
     try {
-        const result = await manager.initialize({
+        const inputs = {
             serverDownloadUrlTemplate: undefined, serverVersion: 'match', extensionIds: [],
             envVariables: [], useSocketPath: false, customInstallPath: undefined,
-            extensionPath: dir, remotePlatform: 'linux',
-        });
+            extensionPath: dir, remotePlatform: 'linux' as const,
+        };
+        const result = await manager.initialize(inputs);
         expect(result).toMatchObject(installed);
         expect(await new NativeSshServerClient(result.socketPath).isHealthy()).toBe(true);
+        const second = await other.initialize(inputs);
+        expect(second.pid).not.toBe(result.pid);
+        expect(second.socketPath).not.toBe(result.socketPath);
+        await manager.dispose();
+        expect(await new NativeSshServerClient(second.socketPath).isHealthy()).toBe(true);
+        expect(await other.runCommand('echo independent', stdout => stdout)).toBe('independent');
     } finally {
         clearTimeout(watchdog);
         await manager.dispose();
+        await other.dispose();
         await rm(dir, { recursive: true, force: true });
     }
 });

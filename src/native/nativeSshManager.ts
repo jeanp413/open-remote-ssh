@@ -167,46 +167,29 @@ export class NativeSshManager {
     private get registry(): NativeSshRegistry { return this.options.registry; }
 
     async initialize(installScriptInputs: NativeInstallInputs): Promise<NativeSshRegistryEntry> {
-        let registryEntry = await this.acquire();
-        if (!registryEntry) {
-            await this.waitRemoteShellReady();
+        await this.acquire();
+        await this.waitRemoteShellReady();
 
-            const platform = await this.probeRemotePlatform();
-            this.options.logger.info(`Detected remote platform: ${platform}`);
+        const platform = await this.probeRemotePlatform();
+        this.options.logger.info(`Detected remote platform: ${platform}`);
 
-            const result = await this.nativeInstallCodeServer(installScriptInputs);
-
-            registryEntry = {
-                schemaVersion: SCHEMA_VERSION,
-                socketPath: this.serverInfo!.socketPath,
-                pid: this.serverInfo!.pid,
-                socksPort: this.connection.socksPort,
-                ...result
-            };
-            await this.registry.write(registryEntry);
-        }
+        const result = await this.nativeInstallCodeServer(installScriptInputs);
+        const registryEntry = {
+            schemaVersion: SCHEMA_VERSION,
+            socketPath: this.serverInfo!.socketPath,
+            pid: this.serverInfo!.pid,
+            socksPort: this.connection.socksPort,
+            ...result
+        };
+        await this.registry.write(registryEntry);
         return registryEntry;
     }
 
-    private async acquire(): Promise<NativeSshRegistryEntry | undefined> {
-        const existing = await this.registry.read();
-        if (existing) {
-            const client = new NativeSshServerClient(existing.socketPath);
-            if (await client.isHealthy()) {
-                this.startKeepalive(client);
-                this.options.logger.info(`Adopting local server pid=${existing.pid} socket=${existing.socketPath}`);
-                this.serverInfo = { socketPath: existing.socketPath, pid: existing.pid, reused: true };
-                return existing;
-            }
-            this.options.logger.info(`Registry entry for pid=${existing.pid} is stale; removing`);
-            await this.registry.removeIfOwnedBy(existing.pid);
-        }
-
+    private async acquire(): Promise<void> {
+        // The helper's streams and askpass belong to this window, so it cannot be shared.
         const info = await this.spawnFresh();
         this.startKeepalive(new NativeSshServerClient(info.socketPath));
         this.serverInfo = info;
-
-        return undefined;
     }
 
     private startKeepalive(client: NativeSshServerClient): void {
