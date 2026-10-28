@@ -173,6 +173,9 @@ export class NativeSshManager {
         if (installScriptInputs.remotePlatform === 'windows') {
             throw new ServerInstallError(WINDOWS_REMOTE_ERROR);
         }
+        if (installScriptInputs.useSocketPath) {
+            throw new ServerInstallError('The native SSH backend does not yet support remote Unix-socket servers. Disable remote.SSH.remoteServerListenOnSocket or set remote.SSH.connectionBackend to "ssh2".');
+        }
         await this.acquire();
         await this.waitRemoteShellReady();
 

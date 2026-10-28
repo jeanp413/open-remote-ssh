@@ -18,6 +18,8 @@ You can connect to a running SSH server on the following platforms.
 
 The experimental `remote.SSH.connectionBackend: "native"` backend does not yet support Windows remotes. Use the default `"ssh2"` backend for those hosts. This limitation does not prevent Windows clients from connecting to Unix hosts with the native backend.
 
+Native mode also requires `remote.SSH.remoteServerListenOnSocket` to be disabled. Use the `"ssh2"` backend if the remote server must listen on a Unix socket.
+
 ## Requirements
 
 **Configuration**

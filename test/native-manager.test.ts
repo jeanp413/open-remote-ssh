@@ -177,3 +177,20 @@ it.each([
         await rm(dir, { recursive: true, force: true });
     }
 });
+
+it('rejects Unix-socket server mode before starting the native helper', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'open-remote-ssh-socket-'));
+    const manager = await fixture(dir);
+    // Fail with configuration guidance even when the local helper is unavailable.
+    await rm(join(dir, 'nativeSshServer.js'));
+    try {
+        await expect(manager.initialize({
+            serverDownloadUrlTemplate: undefined, serverVersion: 'match', extensionIds: [],
+            envVariables: [], useSocketPath: true, customInstallPath: undefined,
+            extensionPath: dir, remotePlatform: 'linux',
+        })).rejects.toThrow('Disable remote.SSH.remoteServerListenOnSocket');
+    } finally {
+        await manager.dispose();
+        await rm(dir, { recursive: true, force: true });
+    }
+});
