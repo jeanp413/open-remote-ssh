@@ -7,12 +7,6 @@ vi.mock('vscode', () => ({
     },
 }));
 
-vi.mock('../src/native/nativeSshConnection', () => ({
-    getNativeSshSocketPath: vi.fn((label: string) =>
-        `${process.env.TMPDIR ?? '/tmp'}/open-remote-ssh-${label}-${Math.random().toString(16).slice(2)}.sock`,
-    ),
-}));
-
 import * as vscode from 'vscode';
 import * as http from 'http';
 import { AskPassServer } from '../src/native/nativeSshAskpass';

@@ -35,6 +35,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { NativeSshServer } from '../src/native/nativeSshServer';
 import { NativeSshServerConfig } from '../src/native/nativeSshManager';
+import { getNativeSshSocketPath } from '../src/native/nativeSshConnection';
 
 async function makeServer(overrides: Partial<NativeSshServerConfig> = {}): Promise<{
     server: NativeSshServer;
@@ -45,7 +46,7 @@ async function makeServer(overrides: Partial<NativeSshServerConfig> = {}): Promi
     const config: NativeSshServerConfig = {
         sshExecutable: '/usr/bin/ssh',
         sshArgs: ['-T', 'user@host'],
-        socketPath: path.join(dir, 'helper.sock'),
+        socketPath: getNativeSshSocketPath('sshServer'),
         registryFilePath: path.join(dir, 'registry.json'),
         ...overrides,
     };
@@ -121,7 +122,7 @@ describe('NativeSshServer', () => {
         server = ctx.server;
         dir = ctx.dir;
 
-        await vi.advanceTimersByTimeAsync(60_000 + 100);
+        await vi.advanceTimersByTimeAsync(10_000 + 100);
         await Promise.resolve();
 
         await expect(
@@ -138,16 +139,16 @@ describe('NativeSshServer', () => {
         server = ctx.server;
         dir = ctx.dir;
 
-        await vi.advanceTimersByTimeAsync(50_000);
+        await vi.advanceTimersByTimeAsync(8_000);
         await request(ctx.config.socketPath, 'POST', '/keepalive');
 
-        // Past the original 60s deadline — the keepalive should have
+        // Past the original 10s deadline — the keepalive should have
         // pushed it out, so the server is still up.
-        await vi.advanceTimersByTimeAsync(30_000);
+        await vi.advanceTimersByTimeAsync(5_000);
         const res = await request(ctx.config.socketPath, 'GET', '/health');
         expect(res.statusCode).toBe(200);
 
         // Drain the remaining timer so afterEach's close() isn't racing it.
-        await vi.advanceTimersByTimeAsync(60_000);
+        await vi.advanceTimersByTimeAsync(10_000);
     });
 });
