@@ -2,7 +2,7 @@ import * as http from 'http';
 import { ILogger } from '../common/logger';
 
 const REQUEST_TIMEOUT_MS = 5_000;
-const KEEPALIVE_INTERVAL_MS = 15_000;
+const KEEPALIVE_INTERVAL_MS = 3_000;
 
 interface SshClientResponse {
     statusCode: number | undefined;

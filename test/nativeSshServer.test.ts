@@ -33,11 +33,11 @@ vi.mock('child_process', async (importOriginal) => {
     };
 });
 
-import { NativeSshHelperServer } from '../src/native/nativeSshServer';
+import { NativeSshServer } from '../src/native/nativeSshServer';
 import { NativeSshServerConfig } from '../src/native/nativeSshManager';
 
 async function makeServer(overrides: Partial<NativeSshServerConfig> = {}): Promise<{
-    server: NativeSshHelperServer;
+    server: NativeSshServer;
     config: NativeSshServerConfig;
     dir: string;
 }> {
@@ -53,7 +53,7 @@ async function makeServer(overrides: Partial<NativeSshServerConfig> = {}): Promi
         config.registryFilePath,
         JSON.stringify({ schemaVersion: 1, socketPath: config.socketPath, pid: process.pid }),
     );
-    const server = new NativeSshHelperServer(config);
+    const server = new NativeSshServer(config);
     await server.start();
     return { server, config, dir };
 }
@@ -75,8 +75,8 @@ function request(
     });
 }
 
-describe('NativeSshHelperServer', () => {
-    let server: NativeSshHelperServer | undefined;
+describe('NativeSshServer', () => {
+    let server: NativeSshServer | undefined;
     let dir: string | undefined;
 
     afterEach(async () => {

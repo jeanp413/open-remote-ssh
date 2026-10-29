@@ -188,8 +188,10 @@ export class NativeSshManager {
                 this.startKeepalive(client);
                 this.options.logger.info(`Adopting local server pid=${existing.pid} socket=${existing.socketPath}`);
                 this.serverInfo = { socketPath: existing.socketPath, pid: existing.pid, reused: true };
+
                 return existing;
             }
+
             this.options.logger.info(`Registry entry for pid=${existing.pid} is stale; removing`);
             await this.registry.removeIfOwnedBy(existing.pid);
         }
@@ -541,7 +543,7 @@ export class NativeSshManager {
 
         const child = cp.spawn(process.execPath, [serverScriptPath, JSON.stringify(serverConfig)], {
             detached: true,
-            stdio: ['pipe', 'pipe', 'pipe'],
+            stdio: 'pipe',
             env: {
                 ...process.env,
                 DISPLAY: process.env.DISPLAY || '1',
@@ -552,6 +554,7 @@ export class NativeSshManager {
                 NATIVE_SSH_ASKPASS_SOCKET: this.options.askpassSocketPath,
             },
         });
+        child.unref();
 
         child.stdout?.on('error', (err) => this.options.logger.error(`ssh server stdout error: ${err.message}`));
         child.stderr?.on('error', (err) => this.options.logger.error(`ssh server stderr error: ${err.message}`));

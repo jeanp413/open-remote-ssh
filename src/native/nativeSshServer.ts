@@ -34,7 +34,7 @@ function removeNativeSshHelperRegistry(registryFilePath: string, pid: number) {
     }
 }
 
-export class NativeSshHelperServer {
+export class NativeSshServer {
     private readonly config: NativeSshServerConfig;
     private readonly server: http.Server;
     private sshProcess: NativeSshProcess | undefined;
@@ -160,7 +160,18 @@ function startHelperFromArguments(): void {
             throw new Error('Native SSH helper configuration must include a command, string argument array, and registry file path.');
         }
 
-        const server = new NativeSshHelperServer(config);
+        function ignoreEpipeOnly(err: NodeJS.ErrnoException) {
+            if (err.code === 'EPIPE') {
+                // Ignore so the process does not die when trying to write to
+                // stdout/stderr when the parent process has died
+                return;
+            }
+            throw err;
+        }
+        process.stdout.on('error', ignoreEpipeOnly);
+        process.stderr.on('error', ignoreEpipeOnly);
+
+        const server = new NativeSshServer(config);
         process.once('exit', () => removeNativeSshHelperRegistry(config.registryFilePath, process.pid));
         server.start().catch((error: unknown) => {
             const message = error instanceof Error ? error.message : String(error);
@@ -168,7 +179,6 @@ function startHelperFromArguments(): void {
             process.exitCode = 1;
             server.close();
         });
-        process.once('SIGINT', () => server.close());
         process.once('SIGTERM', () => server.close());
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
