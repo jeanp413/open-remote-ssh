@@ -1,7 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as cp from 'child_process';
-import * as stream from 'stream';
 import * as vscode from 'vscode';
 import { exists } from '../common/files';
 import { getProductJson } from '../server-config/get-product-json';
@@ -42,13 +41,6 @@ export type NativeSshServerInfo = {
     pid: number;
     reused: boolean;
 };
-
-export interface NativeSshServerProcess {
-    child: cp.ChildProcess;
-    stdin: stream.Writable;
-    wait(): Promise<number | null>;
-    terminate(): Promise<void>;
-}
 
 export interface NativeSshManagerOptions {
     connection: NativeSshConnectionOptions;
@@ -152,7 +144,7 @@ function isValidRegistryEntry(value: unknown): value is NativeSshRegistryEntry {
 }
 
 export class NativeSshManager {
-    private serverProcess: NativeSshServerProcess | undefined;
+    private serverProcess: cp.ChildProcess | undefined;
     private serverInfo: NativeSshServerInfo | undefined;
     private stdoutParser: LineParser | undefined;
     private stderrParser: LineParser | undefined;
@@ -571,47 +563,34 @@ export class NativeSshManager {
             this.options.logger.error(`ssh server spawn failed: ${error.message}`);
         });
 
+        child.once('close',  (code, signal) => {
+            const reason = code !== null
+                ? `ssh server closed (code=${code})`
+                : `ssh server killed (signal=${signal ?? 'unknown'})`;
+            this.stdoutParser?.end(reason);
+            this.stderrParser?.end(reason);
+            this.stdoutParser = undefined;
+            this.stderrParser = undefined;
+            this.cmdRunner = undefined;
+            this.keepalive?.dispose();
+
+            if (code !== null) {
+                this.options.logger.info(`ssh server pid=${child.pid} exited code=${code}`);
+            } else {
+                this.options.logger.info(`ssh server pid=${child.pid} killed by signal=${signal ?? 'unknown'}`);
+            }
+        });
+
         const pid = child.pid;
         if (!pid) {
             throw new Error('Native SSH local server failed to spawn: no pid assigned.');
         }
         this.options.logger.info(`Spawned ssh server pid=${pid} socket=${serverConfig.socketPath}`);
 
-        this.attachParsers(child);
+        this.serverProcess = child;
+        this.attachParsers();
+
         await this.waitUntilSshServerReady(serverConfig.socketPath, () => spawnError, SERVER_READY_TIMEOUT_MS);
-
-        const proc: NativeSshServerProcess = {
-            child,
-            stdin: child.stdin!,
-            wait: () => new Promise<number | null>((resolve) => {
-                if (child.exitCode !== null) {
-                    return resolve(child.exitCode);
-                }
-                child.once('close', (code) => resolve(code));
-            }),
-            terminate: async () => {
-                if (child.exitCode !== null || child.signalCode !== null) {
-                    return;
-                }
-                child.stdin?.end();
-                child.kill('SIGTERM');
-                const timer = setTimeout(() => {
-                    if (child.exitCode === null && child.signalCode === null) {
-                        child.kill('SIGKILL');
-                    }
-                }, 2_000);
-                timer.unref();
-                await new Promise<void>((resolve) => {
-                    if (child.exitCode !== null || child.signalCode !== null) {
-                        return resolve();
-                    }
-                    child.once('close', () => resolve());
-                });
-                clearTimeout(timer);
-            },
-        };
-
-        this.serverProcess = proc;
 
         return {
             pid,
@@ -620,9 +599,11 @@ export class NativeSshManager {
         };
     }
 
-    private attachParsers(child: cp.ChildProcess): void {
+    private attachParsers(): void {
+        const child = this.serverProcess!;
         const stdout = child.stdout!;
         const stderr = child.stderr!;
+        const stdin = child.stdin!;
 
         stdout.setEncoding('utf8');
         stderr.setEncoding('utf8');
@@ -634,29 +615,12 @@ export class NativeSshManager {
             this.stdoutParser,
             this.stderrParser,
             (data) => new Promise<void>((resolve, reject) => {
-                this.serverProcess!.stdin.write(data + '\n', (err) => err ? reject(err) : resolve());
+                stdin.write(data + '\n', (err) => err ? reject(err) : resolve());
             }),
         );
 
         stdout.on('data', (chunk: string) => this.stdoutParser!.push(chunk));
         stderr.on('data', (chunk: string) => this.stderrParser!.push(chunk));
-
-        child.once('close',  (code, signal) => {
-            const reason = code !== null
-                ? `ssh server closed (code=${code})`
-                : `ssh server killed (signal=${signal ?? 'unknown'})`;
-            this.stdoutParser?.end(reason);
-            this.stderrParser?.end(reason);
-            this.stdoutParser = undefined;
-            this.stderrParser = undefined;
-            this.cmdRunner = undefined;
-
-            if (code !== null) {
-                this.options.logger.info(`ssh server pid=${child.pid} exited code=${code}`);
-            } else {
-                this.options.logger.info(`ssh server pid=${child.pid} killed by signal=${signal ?? 'unknown'}`);
-            }
-        });
     }
 
     private async waitUntilSshServerReady(
@@ -692,9 +656,7 @@ export class NativeSshManager {
         this.closed = true;
         this.keepalive?.dispose();
         this.keepalive = undefined;
-        if (this.serverProcess) {
-            await this.serverProcess.terminate();
-            this.serverProcess = undefined;
-        }
+        // The server is detached and self-terminates when keepalives stop.
+        this.serverProcess = undefined;
     }
 }

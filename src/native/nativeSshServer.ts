@@ -6,7 +6,7 @@ import * as stream from 'stream';
 
 import { type NativeSshServerConfig, NativeSshRegistryEntry } from './nativeSshManager';
 
-const HELPER_IDLE_TIMEOUT_MS = 60_000;
+const HELPER_IDLE_TIMEOUT_MS = 10_000;
 
 function readNativeSshRegistry(registryFilePath: string) {
     const registryPath = registryFilePath;
