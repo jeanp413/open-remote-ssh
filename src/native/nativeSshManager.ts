@@ -537,7 +537,7 @@ export class NativeSshManager {
         const serverConfig: NativeSshServerConfig = {
             sshExecutable: this.connection.sshExecutable,
             sshArgs: this.connection.sshArgs,
-            socketPath: getNativeSshSocketPath('localSshServer'),
+            socketPath: getNativeSshSocketPath('sshServer'),
             registryFilePath: this.registry.filePath
         };
 
