@@ -45,7 +45,7 @@
 		"update:deps": "taze --all",
 		"update:dts": "npx vscode-dts dev && npx vscode-dts main",
 		"vscode:prepublish": "npm run build",
-		"watch:src": "tsc-watch -p . --onSuccess 'npm run bundle:dev'",
+		"watch:src": "tsc-watch -p . --onSuccess \"npm run bundle:dev\"",
 		"watch:test": "tsc-watch -p test"
 	},
 	"dependencies": {
