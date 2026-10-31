@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { untildify, exists as fileExists } from '../common/files';
 import { isWindows } from '../common/platform';
-import type { Log } from '../common/logger';
+import type { ILogger } from '../common/logger';
 
 const HASH_MAGIC = '|1|';
 const HASH_DELIM = '|';
@@ -71,7 +71,7 @@ function configuredFiles(value: string | string[] | undefined, defaults: string[
         .map(v => untildify(v));
 }
 
-export async function loadKnownHosts(hostConfig: KnownHostsFilesConfig, logger: Log): Promise<KnownHosts> {
+export async function loadKnownHosts(hostConfig: KnownHostsFilesConfig, logger: ILogger): Promise<KnownHosts> {
     const userFiles = configuredFiles(hostConfig['UserKnownHostsFile'], defaultUserFiles());
     const globalFiles = configuredFiles(hostConfig['GlobalKnownHostsFile'], defaultGlobalFiles());
 

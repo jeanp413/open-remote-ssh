@@ -8,6 +8,8 @@ export interface ILogger {
     trace(message: string, data?: unknown): void;
     info(message: string, data?: unknown): void;
     error(message: string, data?: unknown): void;
+
+    show(): void;
 }
 
 export class Log {

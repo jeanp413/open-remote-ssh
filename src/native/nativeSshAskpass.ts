@@ -82,16 +82,29 @@ export class AskPassServer {
             };
             const handleListening = async () => {
                 server.removeListener('error', handleError);
-                try {
-                    if (process.platform !== 'win32') {
-                        fs.chmod(socketPath, 0o600);
-                    }
-                } catch (error: unknown) {
-                    server.close();
-                    reject(error instanceof Error ? error : new Error(String(error)));
+                if (process.platform === 'win32') {
+                    resolve();
                     return;
                 }
-                resolve();
+
+                let retries = 5;
+                const applyPermissions = async () => {
+                    try {
+                        await fs.chmod(socketPath, 0o600);
+                        resolve();
+                    } catch (error: unknown) {
+                        if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && retries > 0) {
+                            retries--;
+                            setTimeout(applyPermissions, 50);
+                            return;
+                        }
+
+                        server.close();
+                        reject(error instanceof Error ? error : new Error(String(error)));
+                    }
+                };
+
+                await applyPermissions();
             };
 
             server.once('error', handleError);

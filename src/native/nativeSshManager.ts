@@ -1,7 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as cp from 'child_process';
-import * as vscode from 'vscode';
 import { exists } from '../common/files';
 import { getProductJson } from '../server-config/get-product-json';
 import { sleep } from '../common/sleep';
@@ -78,13 +77,14 @@ export class NativeSshRegistry {
     static async forAuthority(
         globalStorageDir: string,
         authorityKey: string,
+        extensionVersion: string
     ): Promise<NativeSshRegistry> {
         const productJson = await getProductJson();
         return new NativeSshRegistry(
             path.join(
                 globalStorageDir,
                 'native-ssh',
-                `ssh-host-${authorityKey}-${productJson.commit as string}-${vscode.version.replace('-insider', '')}`,
+                `ssh-host-${authorityKey}-${productJson.commit as string}-${extensionVersion}`,
                 'data.json'
             )
         );
