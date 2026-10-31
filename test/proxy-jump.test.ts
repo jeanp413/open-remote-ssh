@@ -8,7 +8,7 @@ import * as vscode from './mocks/vscode';
 import { runDocker } from './utils/run-docker';
 import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
-import { sleep } from './utils/sleep';
+import { sleep } from '../src/common/sleep';
 
 const SERVER_SETUP = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
 
@@ -123,7 +123,7 @@ it('connects to a target reachable only through a ProxyJump host', async () => {
       `  Password ${PASSWORD}`,
     ].join('\n'),
     '/bin/vscodium/app/product.json': PRODUCT_JSON,
-    '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP,
+    '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.sh': SERVER_SETUP,
   });
 
   vscode.window.setPassword(PASSWORD);

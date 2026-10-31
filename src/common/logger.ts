@@ -4,6 +4,12 @@ import { toString } from '../utils/to-string';
 
 type LogLevel = 'Trace' | 'Info' | 'Error';
 
+export interface ILogger {
+    trace(message: string, data?: unknown): void;
+    info(message: string, data?: unknown): void;
+    error(message: string, data?: unknown): void;
+}
+
 export class Log {
     private output: vscode.OutputChannel;
 
@@ -24,7 +30,7 @@ export class Log {
     }
 
     public logLevel(level: LogLevel, message: string, data?: unknown): void {
-        this.output.appendLine(`[${level}  - ${this.now()}] ${message}`);
+        this.output.appendLine(`[${level} - ${this.now()}] ${message}`);
         if (data) {
             this.output.appendLine(toString(data));
         }

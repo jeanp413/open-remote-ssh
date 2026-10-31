@@ -2,7 +2,7 @@
 	"name": "open-remote-ssh",
 	"displayName": "Open Remote - SSH",
 	"description": "Use any remote machine with a SSH server as your development environment.",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"publisher": "jeanp413",
 	"repository": {
 		"type": "git",
@@ -45,7 +45,7 @@
 		"update:deps": "taze --all",
 		"update:dts": "npx vscode-dts dev && npx vscode-dts main",
 		"vscode:prepublish": "npm run build",
-		"watch:src": "tsc-watch -p . --onSuccess 'npm run bundle:dev'",
+		"watch:src": "tsc-watch -p . --onSuccess \"npm run bundle:dev\"",
 		"watch:test": "tsc-watch -p test"
 	},
 	"dependencies": {
@@ -106,11 +106,31 @@
 		"configuration": {
 			"title": "Remote - SSH",
 			"properties": {
+				"remote.SSH.path": {
+					"type": "string",
+					"description": "An absolute path to the SSH executable. When empty, it will use \"ssh\" on the path or in common install locations.",
+					"default": "",
+					"scope": "application"
+				},
 				"remote.SSH.configFile": {
 					"type": "string",
 					"description": "The absolute file path to a custom SSH config file.",
 					"default": "",
 					"scope": "application"
+				},
+				"remote.SSH.connectionBackend": {
+					"type": "string",
+					"description": "Select the backend used for SSH connections. The native backend is additive and intentionally left opt-in.",
+					"default": "ssh2",
+					"scope": "application",
+					"enum": [
+						"ssh2",
+						"native"
+					],
+					"enumDescriptions": [
+						"Use the existing ssh2 js library backend.",
+						"Use the native OpenSSH binary."
+					]
 				},
 				"remote.SSH.connectTimeout": {
 					"type": "number",

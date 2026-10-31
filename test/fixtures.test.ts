@@ -114,8 +114,8 @@ for (const file of files.value) {
     it(`test-${name}`, async () => {
       vol.fromJSON({
         ...client.files,
-        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP_BASH,
-        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.ps1': SERVER_SETUP_POWERSHELL,
+        '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.sh': SERVER_SETUP_BASH,
+        '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.ps1': SERVER_SETUP_POWERSHELL,
       });
 
       vscode.window.setPassword(server.password);

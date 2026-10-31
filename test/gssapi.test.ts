@@ -116,7 +116,7 @@ it('connects through the local ssh client when GSSAPI is requested', async () =>
   vol.fromJSON({
     [configPath]: config,
     '/bin/vscodium/app/product.json': PRODUCT_JSON,
-    '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP,
+    '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.sh': SERVER_SETUP,
   });
   vscode.workspace.setConfiguration('configFile', configPath);
 
