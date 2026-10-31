@@ -9,7 +9,7 @@ import { ILogger } from '../common/logger';
 import { AUTH_CONFIRMED_RE, CommandRunner, LineParser } from './nativeSshParser';
 import { RemotePlatform } from '../common/platform';
 import { NativeSshServerClient, NativeSshKeepalive } from './nativeSshServerClient';
-import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, parseKernelName, parseMachineArch, parseServerInstallOutput, Platform, ServerInstallError, ServerInstallResult, Shell } from '../serverSetup';
+import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, parseKernelName, parseMachineArch, parseServerInstallOutput, Platform, ServerInstallError, ServerInstallResult } from '../serverSetup';
 import { ServerVersion } from '../server-config/types';
 import { getNativeSshSocketPath } from './nativeSshConnection';
 
@@ -55,7 +55,6 @@ export interface NativeSshManagerOptions {
 interface NativeDetectedPlatform {
     detectedPlatform: Platform;
     detectedArch: Architecture;
-    detectedShell: Shell;
 }
 
 export interface NativeInstallInputs {
@@ -85,7 +84,7 @@ export class NativeSshRegistry {
             path.join(
                 globalStorageDir,
                 'native-ssh',
-                `ssh-host-${authorityKey}-${productJson.commit as string}-${vscode.version.replace('-insider','')}`,
+                `ssh-host-${authorityKey}-${productJson.commit as string}-${vscode.version.replace('-insider', '')}`,
                 'data.json'
             )
         );
@@ -278,19 +277,16 @@ export class NativeSshManager {
         platform: RemotePlatform | undefined,
     ): Promise<NativeDetectedPlatform> {
         let detectedPlatform: Platform;
-        let detectedShell: Shell = 'bash';
 
         if (!platform || platform === 'windows') {
-            const stdout = await this.runCommand('echo %COMSPEC%~$PSHOME', (stdout) =>{
+            const stdout = await this.runCommand('echo %COMSPEC%~$PSHOME', (stdout) => {
                 return stdout;
             });
             const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
 
             if (comspec && comspec !== '%COMSPEC%') {
                 detectedPlatform = 'windows';
-                detectedShell = 'cmd';
             } else if (pshome) {
-                detectedShell = 'powershell';
                 detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
             } else if (!platform) {
                 const result = await this.runCommand('echo "==$(uname -s)=="', (stdout, stderr) => {
@@ -319,20 +315,20 @@ export class NativeSshManager {
             detectedPlatform = 'linux';
         }
 
-        this.options.logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
+        this.options.logger.trace(`Detected platform: ${detectedPlatform}`);
 
         let detectedArch: Architecture;
         if (detectedPlatform === 'windows') {
             detectedArch = 'x64';
         } else {
             const result = await this.runCommand('echo "==$(uname -m)=="', (stdout, stderr) => {
-                    if (stderr) {
-                        return { stderr };
-                    }
-                    if (stdout) {
-                        return { stdout };
-                    }
-                    return undefined;
+                if (stderr) {
+                    return { stderr };
+                }
+                if (stdout) {
+                    return { stdout };
+                }
+                return undefined;
             });
             if (result.stderr) {
                 throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
@@ -346,12 +342,12 @@ export class NativeSshManager {
         }
 
         this.options.logger.trace(`Detected architecture: ${detectedArch}`);
-        return { detectedPlatform, detectedArch, detectedShell };
+        return { detectedPlatform, detectedArch };
     }
 
     private async waitRemoteShellReady() {
         const readyMarker = `==${this.connection.label}==`;
-        await this.runCommand(`echo '${readyMarker}'`, (stdout: string | undefined) =>{
+        await this.runCommand(`echo '${readyMarker}'`, (stdout: string | undefined) => {
             if (stdout?.includes(readyMarker)) {
                 return true;
             }
@@ -360,7 +356,7 @@ export class NativeSshManager {
     }
 
     private async probeRemotePlatform(): Promise<RemotePlatform> {
-        return this.runCommand('uname -rsv', (stdout: string | undefined, stderr: string | undefined) =>{
+        return this.runCommand('uname -rsv', (stdout: string | undefined, stderr: string | undefined) => {
             if (stdout) {
                 const lower = stdout.toLowerCase();
                 if (lower.includes('darwin') || lower.includes('macos') || lower.includes('mac os x')) {
@@ -413,33 +409,40 @@ export class NativeSshManager {
             this.options.logger,
         );
 
-        let commandOutput: { stdout: string; stderr: string };
+        let remoteCmd: string;
         if (detectedPlatform === 'windows') {
-            commandOutput = await this.runNativeWindowsInstall(
-                generatePowerShellInstallScript(installOptions, extensionPath),
-            );
+            await this.waitPowershellReady();
+
+            const encoded = Buffer.from(generatePowerShellInstallScript(installOptions, extensionPath), 'utf8').toString('base64');
+
+            remoteCmd = `powershell -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -Command "iex ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')))"`;
+            if (remoteCmd.length > 8191) {
+                throw new Error(`Script length ${remoteCmd.length} exceeds the maximun limit of 8191`);
+            }
         } else {
             await this.waitBashReady();
 
-            let stdoutBuffer = '';
-            let stderrBuffer = '';
-            commandOutput = await this.runCommand(
-                `scriptWrapper() {\n ${generateBashInstallScript(installOptions, extensionPath)}\n }\n scriptWrapper`,
-                (stdout, stderr) => {
-                    if (stdout !== undefined) {
-                        stdoutBuffer += stdout + '\n';
-                    }
-                    if (stderr !== undefined) {
-                        stderrBuffer += stderr + '\n';
-                    }
-                    if (stdout?.includes(`${this.options.connection.label}: end`)) {
-                        return { stdout: stdoutBuffer, stderr: stderrBuffer };
-                    }
-                    return undefined;
-                },
-                90_000
-            );
+            remoteCmd = `scriptWrapper() {\n ${generateBashInstallScript(installOptions, extensionPath)}\n }\n scriptWrapper`;
         }
+
+        let stdoutBuffer = '';
+        let stderrBuffer = '';
+        const commandOutput = await this.runCommand(
+            remoteCmd,
+            (stdout: string | undefined, stderr: string | undefined) => {
+                if (stdout !== undefined) {
+                    stdoutBuffer += stdout + '\n';
+                }
+                if (stderr !== undefined) {
+                    stderrBuffer += stderr + '\n';
+                }
+                if (stdout?.includes(`${this.options.connection.label}: end`)) {
+                    return { stdout: stdoutBuffer, stderr: stderrBuffer };
+                }
+                return undefined;
+            },
+            90_000
+        );
 
         this.options.logger.trace('Server install stdout:', commandOutput.stdout);
         if (commandOutput.stderr) {
@@ -476,7 +479,7 @@ export class NativeSshManager {
 
     private async waitBashReady(): Promise<void> {
         const readyMarker = `==${this.connection.label}==`;
-        await this.runCommand(`bash -c 'echo ${readyMarker}; exec bash'`, (stdout: string | undefined) =>{
+        await this.runCommand(`bash -c 'echo ${readyMarker}; exec bash'`, (stdout: string | undefined) => {
             if (stdout?.includes(readyMarker)) {
                 return true;
             }
@@ -484,48 +487,13 @@ export class NativeSshManager {
         });
     }
 
-    private async runNativeWindowsInstall(
-        script: string,
-    ): Promise<{ stdout: string; stderr: string }> {
-        const remoteTemp = `$env:TEMP\\native-ssh-install-${this.options.connection.label}.ps1`;
-        const encoded = Buffer.from(script, 'utf16le').toString('base64');
-
-        const writeResult = await this.runCommand(
-            `[IO.File]::WriteAllBytes(${remoteTemp}, [Convert]::FromBase64String('${encoded}'))`,
-            (stdout, stderr) => {
-                if (stderr !== undefined) {
-                    return { stderr };
-                }
-                if (stdout !== undefined) {
-                     return { stdout };
-                }
-                return undefined;
+    private async waitPowershellReady(): Promise<void> {
+        await this.runCommand('powershell -NoProfile', (stdout: string | undefined) => {
+            if (stdout?.includes('Windows PowerShell')) {
+                return true;
             }
-        );
-        if (writeResult.stderr && writeResult.stderr.length > 0) {
-            this.options.logger.error('Failed writing remote install script:', writeResult.stderr);
-            throw new ServerInstallError('Failed writing remote install script');
-        }
-
-        let stdoutBuffer = '';
-        let stderrBuffer = '';
-        const runResult = await this.runCommand(
-            `powershell -ExecutionPolicy Bypass -File "${remoteTemp}"; Remove-Item -Force "${remoteTemp}"`,
-            (stdout, stderr) => {
-                if (stdout !== undefined) {
-                    stdoutBuffer += stdout + '\n';
-                }
-                if (stderr !== undefined) {
-                    stderrBuffer += stderr + '\n';
-                }
-                if (stdout?.includes(`${this.options.connection.label}: end`)) {
-                    return { stdout: stdoutBuffer, stderr: stderrBuffer };
-                }
-                return undefined;
-            },
-            90_000
-        );
-        return runResult;
+            return undefined;
+        });
     }
 
     private async spawnFresh(): Promise<NativeSshServerInfo> {
@@ -541,17 +509,21 @@ export class NativeSshManager {
             registryFilePath: this.registry.filePath
         };
 
+        const envVars = {
+            DISPLAY: process.env.DISPLAY || '1',
+            ELECTRON_RUN_AS_NODE: '1',
+            SSH_ASKPASS: this.options.askpassPath,
+            SSH_ASKPASS_REQUIRE: 'force',
+            NATIVE_SSH_NODE_BIN: process.execPath,
+            NATIVE_SSH_ASKPASS_NODE_SCRIPT: this.options.askpassNodeScriptPath,
+            NATIVE_SSH_ASKPASS_SOCKET: this.options.askpassSocketPath,
+        };
         const child = cp.spawn(process.execPath, [serverScriptPath, JSON.stringify(serverConfig)], {
             detached: true,
             stdio: 'pipe',
             env: {
                 ...process.env,
-                DISPLAY: process.env.DISPLAY || '1',
-                ELECTRON_RUN_AS_NODE: '1',
-                SSH_ASKPASS: this.options.askpassPath,
-                NATIVE_SSH_NODE_BIN: process.execPath,
-                NATIVE_SSH_ASKPASS_NODE_SCRIPT: this.options.askpassNodeScriptPath,
-                NATIVE_SSH_ASKPASS_SOCKET: this.options.askpassSocketPath,
+                ...envVars
             },
         });
         child.unref();
@@ -566,7 +538,7 @@ export class NativeSshManager {
             this.options.logger.error(`ssh server spawn failed: ${error.message}`);
         });
 
-        child.once('close',  (code, signal) => {
+        child.once('close', (code, signal) => {
             const reason = code !== null
                 ? `ssh server closed (code=${code})`
                 : `ssh server killed (signal=${signal ?? 'unknown'})`;
@@ -588,7 +560,7 @@ export class NativeSshManager {
         if (!pid) {
             throw new Error('Native SSH local server failed to spawn: no pid assigned.');
         }
-        this.options.logger.info(`Spawned ssh server pid=${pid} socket=${serverConfig.socketPath}`);
+        this.options.logger.info(`Spawned ssh server pid=${pid} socket=${serverConfig.socketPath} env=${JSON.stringify(envVars)}`);
 
         this.serverProcess = child;
         this.attachParsers();

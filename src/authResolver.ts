@@ -260,7 +260,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             } catch (e: unknown) {
                 this.logger.error(`Error resolving authority`, e);
 
-                if(!useNativeClient || connectionBackend === 'native') {
+                if (!useNativeClient || connectionBackend === 'native') {
                     return await this.throwOrCommand(context, destination, e);
                 }
             }
@@ -326,7 +326,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 const sshExecutable = await resolveNativeSshExecutable(configuredSshPath);
 
                 const socksPort = await findRandomPort();
-                const sshArgs: string[] = ['-v', '-T', '-D', String(socksPort),'-o', `ConnectTimeout=${connectTimeout}`];
+                const sshArgs: string[] = ['-v', '-T', '-D', String(socksPort), '-o', `ConnectTimeout=${connectTimeout}`];
                 const configFile = getSSHConfigPath();
                 if (configFile !== defaultSSHConfigPath) {
                     sshArgs.push('-F', configFile);
@@ -362,12 +362,17 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                         'native',
                         'nativeSshServer.js'
                     ),
-                    askpassPath: path.join(
-                        this.context.extensionPath,
-                        'lib',
-                        'native',
-                        'askpass' + (isWindows ? '.bat' : '.sh'),
-                    ),
+                    askpassPath: isWindows
+                        ? `powershell.exe -NoProfile -NoLogo -ExecutionPolicy Bypass -File "${path.join(
+                            this.context.extensionPath,
+                            'lib',
+                            'native',
+                            'askpass.ps1')}"`
+                        : path.join(
+                            this.context.extensionPath,
+                            'lib',
+                            'native',
+                            'askpass.sh'),
                     askpassNodeScriptPath: path.join(
                         this.context.extensionPath,
                         'lib',
@@ -675,16 +680,16 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
     }
 
     private async openNativeTunnel(
-       localPort: number,
-       remotePortOrSocketPath: number | string,
-       socksPort: number | undefined
+        localPort: number,
+        remotePortOrSocketPath: number | string,
+        socksPort: number | undefined
     ): Promise<TunnelInfo> {
         localPort = localPort > 0 ? localPort : await findRandomPort();
 
         const disposables: vscode.Disposable[] = [];
         const remotePort = typeof remotePortOrSocketPath === 'number' ? remotePortOrSocketPath : undefined;
         // const remoteSocketPath = typeof remotePortOrSocketPath === 'string' ? remotePortOrSocketPath : undefined;
-        if (socksPort&& remotePort) {
+        if (socksPort && remotePort) {
             const forwardingServer = await new Promise<net.Server>((resolve, reject) => {
                 this.logger.trace(`Creating forwarding server ${localPort}(local) => ${socksPort}(socks) => ${remotePort}(remote)`);
                 const socksOptions: SocksClientOptions = {
@@ -719,7 +724,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }),
             });
         } else {
-           throw new Error('Tunnel without socks port not supported yet');
+            throw new Error('Tunnel without socks port not supported yet');
         }
 
         return new TunnelInfo(localPort, remotePortOrSocketPath, disposables);

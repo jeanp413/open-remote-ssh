@@ -20,7 +20,7 @@ const config = {
             { from: path.resolve(__dirname, 'src/scripts/server-setup.sh'), to: 'scripts', preservePermissions: true },
             { from: path.resolve(__dirname, 'src/scripts/server-setup.ps1'), to: 'scripts', preservePermissions: true },
             { from: path.resolve(__dirname, 'src/native/askpass/askpass.sh'), to: 'native', preservePermissions: true },
-            { from: path.resolve(__dirname, 'src/native/askpass/askpass.bat'), to: 'native', preservePermissions: true },
+            { from: path.resolve(__dirname, 'src/native/askpass/askpass.ps1'), to: 'native', preservePermissions: true },
         ],
         libraryTarget: "commonjs2",
         devtoolModuleFilenameTemplate: "../[resource-path]",

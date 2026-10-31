@@ -301,12 +301,6 @@ async function runInstallScript(
             command = `mkdir -p ${installDir.replace(/\\/g, '/')} && echo '\n${installServerScript.replace(/'/g, '\'"\'"\'')}\n' > ${installScript.replace(/\\/g, '/')} && powershell -ExecutionPolicy ByPass -File "${installScript}"`;
         } else if (shell === 'cmd') {
             const script = installServerScript.trim()
-                // remove comments
-                .replace(/^#.*$/gm, '')
-                // remove empty lines
-                .replace(/\n{2,}/gm, '\n')
-                // remove leading spaces
-                .replace(/^\s*/gm, '')
                 // escape double quotes (from powershell/cmd)
                 .replace(/"/g, '"""')
                 // escape single quotes (from cmd)
@@ -456,10 +450,10 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
     const listenFlag = useSocketPath
         ? `--socket-path="$TMP_DIR/vscode-server-sock-${crypto.randomUUID()}"`
         : '--port=0';
-    const envVarLines = envVariables.map(envVar => `    "$${envVar}==$${envVar}=="`).join('\n');
+    const envVarLines = envVariables.map(envVar => `    "${envVar}==$${envVar}=="`).join('\n');
     const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `$env:${key}="${value.replace(/"/g, '`"')}"`).join('\n');
 
-    return compileTemplate('server-setup.ps1', {
+    const compiledScript = compileTemplate('server-setup.ps1', {
         DISTRO_VERSION: version,
         DISTRO_COMMIT: commit,
         DISTRO_QUALITY: quality,
@@ -477,6 +471,14 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
     }, extensionPath);
+
+    return compiledScript
+            // remove comments
+            .replace(/^\s*#.*$/gm, '')
+            // remove empty lines
+            .replace(/(\r?\n\s*){2,}/g, '\n')
+            // remove leading spaces
+            .replace(/^\s*/gm, '');
 }
 
 export async function buildServerInstallOptions(
