@@ -3,7 +3,6 @@ client:
     'C:\ProgramData\ssh\ssh_config': >
       Host test
         HostName 127.0.0.1&whoami
-        Port 2222
         User openremotessh
         Password Open-Remote-SSH-1
         ProxyCommand "C:\Program Files\Git\mingw64\bin\connect.exe" %h %p

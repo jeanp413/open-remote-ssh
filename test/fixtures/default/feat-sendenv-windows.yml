@@ -6,7 +6,6 @@ client:
     'C:\ProgramData\ssh\ssh_config': >
       Host test
         HostName 127.0.0.1
-        Port 2222
         User openremotessh
         Password Open-Remote-SSH-1
         SendEnv COMPUTERNAME USERNAME

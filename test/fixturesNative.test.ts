@@ -12,6 +12,7 @@ import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
 import { getRemoteAuthority, RemoteSSHResolver } from '../src/authResolver';
 import { fileURLToPath } from 'node:url';
+import SSHConfig from 'ssh-config';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -90,6 +91,8 @@ for (const file of files.value) {
 
   const rootDir = path.join(os.tmpdir(), `test-${name}`);
   describe(name, async () => {
+    let hostPort: number | undefined;
+
     beforeAll(async () => {
       vscode.workspace.resetConfiguration();
 
@@ -106,7 +109,7 @@ for (const file of files.value) {
         '--name',
         containerName,
         '--publish',
-        '2222:2222',
+        '2222',
         '--env',
         `USER_NAME=${server.username}`,
         '--env',
@@ -120,7 +123,7 @@ for (const file of files.value) {
         server.image,
       ]);
 
-      const hostPort = getMappedPort(containerName);
+      hostPort = getMappedPort(containerName);
 
       await waitForSSHReady(server.username, server.password, hostPort, 60_000, containerName);
     }, 120_000);
@@ -131,13 +134,25 @@ for (const file of files.value) {
     }, 120_000);
 
     it(`test-${name}`, async () => {
+      const sshConfig = SSHConfig.parse(`
+Host *
+  HostName 127.0.0.1
+  Port ${hostPort}
+  User ${server.username}
+  Password ${server.password}
+`);
+
       vscode.setRootDir(rootDir);
       fse.mkdir(vscode.env.appRoot, { recursive: true});
 
       for (const [k,v] of Object.entries(client.files)) {
           if (k === 'product.json') {
             fse.writeFile(path.join(vscode.env.appRoot, k), v);
-          } else {
+          } else if (k === 'ssh_config') {
+            const testSshConfig = SSHConfig.parse(v);
+            testSshConfig.push(...sshConfig);
+            fse.writeFile(path.join(rootDir, k), testSshConfig.toString());
+          }else {
             fse.writeFile(path.join(rootDir, k), v);
           }
       }

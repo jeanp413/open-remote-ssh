@@ -8,7 +8,6 @@ client:
     /etc/ssh/config.d/hosts: |
       Host test alias
         HostName 127.0.0.1
-        Port 2222
         User openremotessh
         Password openremotessh
     /etc/ssh/config.d/systemd-ssh-proxy: |
