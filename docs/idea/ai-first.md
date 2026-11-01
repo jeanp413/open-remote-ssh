@@ -49,7 +49,7 @@ If any step needs tribal knowledge, that's a DX bug — fix it in the repo.
 | `/feature`, `/planx` commands | ✅ (`.claude/commands/`) | + `/verify` skill |
 | **Test suite** | ✅ vitest, `npm test` — 140+ tests over the pure modules | keep pace with new pure logic; add integration coverage once the session-manager tree view (see [`roadmap.md`](roadmap.md)) lands |
 | **tmux integration, test-first** | ✅ session naming, attach-or-create, reap decisions, bootstrap probe, multi-client provider — all unit-tested before/alongside implementation (`test/tmux/*`) | — |
-| **`bin/` DX scripts** | ❌ (npm scripts only) | `bin/setup`, `bin/dev`, `bin/check` one-liners |
+| **`bin/` DX scripts** | ✅ `bin/setup` = `npm install`, `bin/dev` = `npm run watch:src`, `bin/check` = `npm run compile:src && npm run lint && npm test` | — |
 | **Hooks + permissions** | ❌ | broad allow + pre-commit lint/typecheck hook, so unlinted code physically can't land |
 | **CodeGraph index** | ❌ no `.codegraph/` | index `src/` for structural lookups |
 | **CI green gate** | partial | typecheck + lint + bundle + tests < 5 min |
@@ -110,8 +110,8 @@ for the full per-row breakdown.
 
 In rough priority (each a `/planx` candidate):
 
-1. **DX scripts + hooks + permissions** — `.claude/settings.json` with a
-   pre-commit gate; `bin/setup|dev|check`.
+1. **Hooks + permissions** — `.claude/settings.json` with a
+   pre-commit gate.
 2. **CodeGraph index** — `codegraph init` so agents do structural lookups.
 3. **The empirical verification gate (still open)** — run
    [`09-verify.md`](../plans/2026/07/24/101-v1-tmux-release/09-verify.md) /
