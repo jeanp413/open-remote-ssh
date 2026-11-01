@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
+import { satisfies } from 'semver';
 import { KILL_WORKSPACE_SESSIONS_COMMAND_ID } from '../src/commands';
 import { TMUX_PROFILE_ID, TMUX_PROFILE_TITLE } from '../src/extension';
 
@@ -20,6 +21,14 @@ interface JsonObject {
 
 function readPackageJson(): JsonObject {
     const raw = fs.readFileSync(packageJsonPath, 'utf8');
+    return JSON.parse(raw) as JsonObject;
+}
+
+const packageLockJsonPath = path.resolve(repoRoot, 'package-lock.json');
+
+/** The repo's package-lock.json, read live so a pin that drifted from the lockfile fails here instead of at `npm ci`. */
+function readPackageLockJson(): JsonObject {
+    const raw = fs.readFileSync(packageLockJsonPath, 'utf8');
     return JSON.parse(raw) as JsonObject;
 }
 
@@ -310,6 +319,92 @@ describe('package.json manifest drift guard', () => {
             const tmuxProfile = profiles.find(p => p.id === 'tmux');
             expect(tmuxProfile, 'no contributed profile with id "tmux"').toBeDefined();
             expect(tmuxProfile!.title).toBe(TMUX_PROFILE_TITLE);
+        });
+    });
+
+    // The typings acquisition (`update:dts`) used to run `npx vscode-dts dev && npx
+    // vscode-dts main`: an undeclared tool fetched from the registry at install time,
+    // pulling typings from upstream's *moving* `main` branch — every reinstall silently
+    // re-based the extension against whatever the vscode repo had shipped that day, so
+    // builds were unreproducible and could break under our feet with no change of our
+    // own. It now runs the declared, exactly-pinned `@vscode/dts` CLI (bin `dts`) — the
+    // old `vscode-dts` name is deprecated upstream and drags an unpatchable glob@7 tree
+    // the npm-audit commit gate rejects. These guards pin the three things that keep it
+    // that way: the tool is an exactly-pinned devDependency the lockfile agrees on; the
+    // install chain routes through the script (so `npm ci` acquires nothing undeclared);
+    // and every invocation fetches from a *literal* VS Code release that satisfies
+    // engines.vscode. Deliberately shape-based: the exact tool version and the exact
+    // release are free to move, as long as they stay exact-pinned and engines-compatible.
+    describe('dts acquisition', () => {
+        const scripts = pkg.scripts as Record<string, string>;
+        const devDependencies = pkg.devDependencies as Record<string, string>;
+        const engines = pkg.engines as Record<string, string>;
+
+        it('pins @vscode/dts as an exact devDependency', () => {
+            const pin = devDependencies['@vscode/dts'];
+            expect(pin, '@vscode/dts must be declared as a devDependency (build-time tool, not a runtime dep)').toBeDefined();
+            expect(pin).toMatch(/^\d+\.\d+\.\d+$/);
+        });
+
+        it('the lockfile mirrors the exact pin (root devDependencies and the installed package agree)', () => {
+            const pin = devDependencies['@vscode/dts'];
+            const lockPackages = readPackageLockJson().packages as Record<string, JsonObject>;
+            const root = lockPackages[''];
+            const installed = lockPackages['node_modules/@vscode/dts'];
+
+            expect(root, 'package-lock.json is missing its packages[""] root entry').toBeDefined();
+            const rootDev = (root!.devDependencies as Record<string, string> | undefined) ?? {};
+            expect(rootDev['@vscode/dts'], 'lockfile root devDependencies does not mirror the @vscode/dts pin').toBe(pin);
+            expect(
+                (root!.dependencies as Record<string, string> | undefined)?.['@vscode/dts'],
+                '@vscode/dts is mirrored under lockfile dependencies — it must stay a devDependency'
+            ).toBeUndefined();
+            expect(installed, 'package-lock.json has no node_modules/@vscode/dts entry').toBeDefined();
+            expect(installed!.version, 'installed @vscode/dts version differs from the manifest pin').toBe(pin);
+        });
+
+        // The pre-rename `vscode-dts` package is deprecated upstream and its tree carries
+        // glob@7/minimatch findings with no in-range fix — `npm audit` (which gates every
+        // commit via lint-staged) fails the moment it is reintroduced. Keep it out for good.
+        it('the deprecated vscode-dts package stays removed from both manifest and lockfile', () => {
+            expect(devDependencies['vscode-dts'], 'vscode-dts is deprecated for @vscode/dts — do not reintroduce it').toBeUndefined();
+            expect((pkg.dependencies as Record<string, string> | undefined)?.['vscode-dts']).toBeUndefined();
+            const lockPackages = readPackageLockJson().packages as Record<string, JsonObject>;
+            expect(lockPackages['node_modules/vscode-dts'], 'stale node_modules/vscode-dts entry in the lockfile').toBeUndefined();
+        });
+
+        it('routes postinstall through npm run update:dts and invokes the installed binary, never npx', () => {
+            expect(scripts['postinstall']).toBe('npm run update:dts');
+            // The installed binary's name is `dts` (@vscode/dts's bin); `vscode-dts` is the
+            // deprecated pre-rename package and must not come back in any form.
+            expect(scripts['update:dts']).toMatch(/\bdts\b/);
+            expect(scripts['update:dts']).not.toMatch(/\bnpx\b/);
+            expect(scripts['update:dts']).not.toMatch(/vscode-dts/);
+        });
+
+        it('fetches typings from a literal VS Code release at every invocation, engines-compatible', () => {
+            const updateDts = scripts['update:dts'];
+
+            // A bare `dts dev` / `main` (no version) is the moving upstream channel
+            // again — just through the installed binary instead of npx — so *each* `&&`
+            // segment must carry its own literal x.y.z release, not merely the script
+            // overall.
+            const segments = updateDts.split('&&');
+            const bareChannel = segments.filter(segment => !/\b\d+\.\d+\.\d+\b/.test(segment));
+            expect(
+                bareChannel,
+                `every update:dts invocation must name a literal x.y.z VS Code release; these are moving-channel fetches: ${bareChannel.map(s => s.trim()).join(' && ')}`
+            ).toEqual([]);
+
+            const releaseTokens = updateDts.match(/\b\d+\.\d+\.\d+\b/g) ?? [];
+            expect(releaseTokens.length, 'update:dts must name a literal x.y.z VS Code release').toBeGreaterThan(0);
+
+            const enginesVscode = engines.vscode;
+            const offRange = releaseTokens.filter(release => !satisfies(release, enginesVscode));
+            expect(
+                offRange,
+                `update:dts fetches from releases that engines.vscode (${enginesVscode}) does not allow: ${offRange.join(', ')}`
+            ).toEqual([]);
         });
     });
 

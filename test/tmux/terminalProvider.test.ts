@@ -510,11 +510,12 @@ describe('explicit close kills the session (no invisible leftovers)', () => {
         expect(state.get(SLOT_MAPPING_STATE_KEY)).toEqual({});
     });
 
-    // `onDidCloseTerminal` fires on *disposal*, for four distinct reasons (vscode.d.ts:12806
-    // TerminalExitReason): Unknown=0, Shutdown=1 "the window closed/reloaded", Process=2
-    // "the shell process exited", User=3. Only User is the user closing the terminal.
-    // Killing on Shutdown would destroy a running Claude Code task every time the window
-    // closes — the exact opposite of what this fork is for.
+    // `onDidCloseTerminal` fires on *disposal*, for four distinct reasons — the
+    // `TerminalExitReason` enum (upstream VS Code 1.71+): Unknown=0, Shutdown=1
+    // "the window closed/reloaded", Process=2 "the shell process exited", User=3.
+    // Only User is the user closing the terminal. Killing on Shutdown would destroy a
+    // running Claude Code task every time the window closes — the exact opposite of what
+    // this fork is for.
     it.each([
         [1, 'window shutdown/reload'],
         [2, 'shell process exit'],

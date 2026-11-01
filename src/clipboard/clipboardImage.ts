@@ -7,7 +7,7 @@
 // So: read the image locally, write it to the remote filesystem, and paste the path.
 //
 // Why this can't use the VS Code clipboard API: `vscode.env.clipboard` is text-only
-// (`readText`/`writeText`, vscode.d.ts:10669) — there is no image read. Binary clipboard
+// (`Clipboard.readText`/`writeText`) — there is no image read. Binary clipboard
 // data exists only via `DataTransfer` for *editor* drop/paste providers, not terminals.
 // The extension is `extensionKind: ["ui"]` though, so it runs as a Node process on the
 // user's machine and can shell out to the platform's native clipboard tool. That is the

@@ -37,13 +37,13 @@
 		"update:artifacts": "artifact update",
 		"update:ci": "PINACT_MIN_AGE=7 pinact run --update",
 		"update:deps": "taze --all",
-		"update:dts": "npx vscode-dts dev && npx vscode-dts main",
+		"update:dts": "dts dev 1.70.2 && dts 1.70.2",
 		"vscode:prepublish": "npm run build",
 		"watch:src": "tsc-watch -p . --onSuccess 'npm run bundle:dev'"
 	},
 	"dependencies": {
 		"@zokugun/is-it-type": "0.8.1",
-		"glob": "13.0.6",
+		"glob": "14.0.3",
 		"semver": "7.8.4",
 		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
 		"socks": "2.8.9",
@@ -62,6 +62,7 @@
 		"@types/webpack": "5.28.5",
 		"@typescript-eslint/eslint-plugin": "8.61.0",
 		"@typescript-eslint/parser": "8.61.0",
+		"@vscode/dts": "0.4.1",
 		"@vscode/vsce": "3.9.2",
 		"eslint": "10.5.0",
 		"eslint-plugin-jsdoc": "62.9.0",
@@ -75,7 +76,7 @@
 		"tsc-watch": "7.2.1",
 		"typescript": "6.0.3",
 		"typescript-eslint": "8.61.0",
-		"vitest": "4.1.10",
+		"vitest": "4.1.12",
 		"webpack": "5.107.2",
 		"webpack-cli": "7.0.3"
 	},
@@ -494,6 +495,12 @@
 	"categories": [
 		"Other"
 	],
+	"overrides": {
+		"basic-ftp": "6.2.1",
+		"glob": "14.0.3",
+		"minimatch": "11.0.3",
+		"undici": "7.30.1"
+	},
 	"keywords": [
 		"remote",
 		"remote development",
