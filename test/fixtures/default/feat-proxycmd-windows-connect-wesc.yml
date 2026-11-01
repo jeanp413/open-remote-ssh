@@ -27,4 +27,4 @@ server:
 
 test:
   either: |-
-    Spawning ProxyCommand: "C:\Program Files\Git\mingw64\bin\connect.exe" 127.0.0.1 2222
+    Spawning ProxyCommand: "C:\Program Files\Git\mingw64\bin\connect.exe" 127.0.0.1

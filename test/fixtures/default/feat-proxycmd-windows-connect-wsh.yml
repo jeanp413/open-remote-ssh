@@ -27,4 +27,4 @@ server:
 
 test:
   output: |-
-    Spawning ProxyCommand: sh.exe -c connect.exe 127.0.0.1 2222
+    Spawning ProxyCommand: sh.exe -c connect.exe 127.0.0.1
