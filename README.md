@@ -73,6 +73,123 @@ tmux terminals: 1 re-attached, 0 reclaimed, 0 adopted, 0 pruned
 If instead you see `Tmux wiring failed: …`, the layer is off and terminals fall
 back to plain shells — see [Troubleshooting](#troubleshooting).
 
+## Contributing: local checks
+
+On Linux or macOS, use Node **20.20.2** (`.nvmrc`) and npm, plus a
+supported Python 3 and **pipx** for workflow linting. These are local developer
+prerequisites, not requirements for using the extension. npm does **not**
+install Python or pipx. Install pipx with your OS package manager (for example,
+`brew install pipx` on macOS, or `sudo apt install pipx python3-venv` on
+Debian/Ubuntu), then:
+
+```sh
+pipx ensurepath
+# Open a new shell so the PATH update takes effect, then:
+python3 --version
+pipx --version
+npm install
+pipx run zizmor --version
+npm run ci:lint
+```
+
+See [pipx installation](https://pipx.pypa.io/stable/installation/) for other
+Unix distributions. Ensure `pipx` is on the PATH inherited by your editor's
+Git hooks, not just an interactive shell. `pipx run zizmor` acquires zizmor in
+an isolated cached environment; no global `zizmor` executable is needed.
+First use (and cache refresh) requires network access to the Python package
+index and writable pipx/cache directories. An offline empty cache cannot run
+this check; acquisition errors fail the hook rather than skipping it.
+
+### What the hook checks
+
+[`.lintstagedrc.yml`](.lintstagedrc.yml) runs fixpack on a staged `package.json`,
+ESLint on staged `*.ts`, and `pipx run zizmor` on staged workflow YAML, with
+lint-staged appending the matched paths. `npm run ci:lint` checks
+all workflows via `pipx run zizmor .`; `npm run ci:lint:fix` uses the same
+command with `--fix=all` (and can modify workflows).
+[The pre-commit hook](.husky/pre-commit) runs lint-staged, then compilation and
+tests. Husky invokes it with `sh -e`: a failed staged check stops the hook.
+
+**The TypeScript glob is not root-only.** Installed lint-staged **16.4.0**
+enables `matchBase: !pattern.includes('/')` in
+[`lib/matchFiles.js:10–21`](https://github.com/lint-staged/lint-staged/blob/v16.4.0/lib/matchFiles.js#L10-L21).
+[`lib/generateTasks.js:22–40`](https://github.com/lint-staged/lint-staged/blob/v16.4.0/lib/generateTasks.js#L22-L40)
+matches relative paths and returns absolute task paths by default. Keep
+`"*.ts": eslint`: it already includes nested TypeScript files.
+
+### Reproduce the evidence
+
+```sh
+npm test -- test/lint-staged.test.ts --maxWorkers=2
+```
+
+Observed by editor[bot] in the focused run (`npm test -- test/lint-staged.test.ts
+--maxWorkers=2`, Vitest **4.1.10**, Node **v24.21.0**): **8 passed, 1 skipped,
+0 failed (9 total)**, command exit **0** — on this box, which has no `pipx`.
+Real ESLint **10.5.0**, invoked through installed lint-staged's task runner on
+temporary nested TypeScript files, returned **0** for valid code and **1** for
+`@typescript-eslint/no-explicit-any`; the task runner propagated that failure.
+This is file-based execution, not stdin-only evidence. Matcher tests loaded the
+actual YAML and installed lint-staged internals through native ESM: root and
+nested TS reach ESLint, unrelated files do not, and workflow paths are retained.
+The matcher anchors above disprove the root-only premise; no glob correction was
+needed. On a box where `pipx` and `python3` are on PATH and PyPI is reachable,
+the same command runs all nine tests — the gated acquisition test executes for
+real instead of skipping.
+
+**Stub evidence, not real zizmor:** the regression test executes lint-staged's
+actual task runner with a temporary pipx stub, checks its exact appended
+arguments, and observes success/failure for stub exits **0/17**. Temporary
+npx/npm stubs run the real pre-commit script under `sh -e`: exits **0/23**
+propagate, and failure prevents compilation/tests from being invoked. No Git
+operations or real compilation are performed by these stub tests.
+
+**Real zizmor integration is gated, not blocked:** where `pipx` and `python3`
+are on the parent PATH and `https://pypi.org/simple/` answers within its short
+timeout, the integration test acquires real zizmor through `pipx run` with a
+cold cache and requires an actual `template-injection` finding naming the unsafe
+workflow plus a propagated nonzero exit — there, a failed acquisition fails the
+test. Where a prerequisite is missing, Vitest reports the test as **skipped**
+with the reason logged (this run: `Skipped real zizmor acquisition —
+environment lacks: pipx on PATH`), so it is visible in the summary and never
+counts as passed. The previous hard-fail-on-missing-prerequisite behaviour made
+`npm test` require pipx and PyPI network access everywhere, contradicting
+[the prerequisite list above](#contributing-local-checks) that positions pipx as
+optional.
+
+The real-acquisition path requires Unix, executable `pipx` and `python3` on the
+parent PATH, Python venv support, network access to the Python package index,
+and a writable temporary directory. It deliberately starts with fresh pipx home,
+application, man, XDG cache and pip cache directories on every run, so a warm
+user cache is insufficient for offline execution. Its child PATH exposes only
+the real pipx and Python prerequisites, not any global zizmor. The test logs
+Node/Python/pipx and acquired zizmor versions, checks real valid and unsafe
+workflow fixtures through lint-staged, and requires a `template-injection`
+finding naming the unsafe file plus a propagated nonzero exit. Acquisition and
+task subprocesses have bounded timeouts; temporary fixtures and caches are
+removed in `finally`. Missing pipx, python3, or PyPI reachability produce a
+logged skip, never a silent pass; where the prerequisites exist, a failed
+acquisition fails the test. The negative case that must never be skipped has
+its own unconditional test: it hands the staged workflow task a PATH containing
+only an empty `bin/` directory — no `pipx` anywhere — and requires the task to
+fail loudly (`Task failed to spawn`, nonzero exit; measured `exitCode=-2` in
+this run), so the hook can never silently pass the workflow check on a
+pipx-less box.
+
+**Harness-only evidence:** end-to-end staged Git/Husky execution on valid and
+invalid representative TS/workflows, standalone workflow lint, and the full
+repository gate were not run by the editor. Stub hook tests do not prove any
+of those checks. The harness must record their real statuses separately.
+Fixpack, ESLint and zizmor remain enabled and enforced in the hook. `npm audit
+audits the whole resolved dependency tree, not the staged `package.json`, so it
+deliberately does not gate per-file commits: previous runs measured it refusing
+every commit on 38 pre-existing dev-dependency advisories (release-it/undici,
+vite) that no staged change causes. It is not silenced — `npm run lint:all`
+still runs it, CI executes `lint:all` on pushes to `main` and on pull requests
+into it, skipped only when every changed file is markdown, and `npm run
+audit:fix` is the remediation path. No audit result was measured by this
+focused run.
+
 ## Requirements
 
 - **Remote host:** tmux **≥ 2.6** for tmux-backed persistent terminals on
