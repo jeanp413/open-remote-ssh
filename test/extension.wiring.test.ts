@@ -126,12 +126,12 @@ describe('onceOnly: connect-time housekeeping that must not repeat on reconnect'
     });
 });
 
-// The three settings (`historyLimit`, `reapOnConnect`, `enabled`) were declared in
-// package.json but never read — `wireTmuxTerminalLayer` hard-coded their effects.
+// The four settings (`historyLimit`, `reapOnConnect`, `enabled`, `setDefaultProfile`)
+// are read together so configuration controls wiring, cleanup, and default-profile writes.
 // `readTmuxSettings` is the single read seam (pins section, key names, and the
 // package.json defaults) and `decideTmuxWiring` is the pure enablement rule that
 // makes `enabled:'on'` ("require tmux") observably different from `'auto'`.
-describe('readTmuxSettings: the three remote.SSH.tmux.* settings are read', () => {
+describe('readTmuxSettings: the four remote.SSH.tmux.* settings are read', () => {
     beforeEach(() => configOverrides.clear());
 
     it('falls back to the package.json defaults when nothing is configured', () => {
@@ -139,17 +139,20 @@ describe('readTmuxSettings: the three remote.SSH.tmux.* settings are read', () =
         expect(settings.enabled).toBe('auto');
         expect(settings.historyLimit).toBe(50000);
         expect(settings.reapOnConnect).toBe(true);
+        expect(settings.setDefaultProfile).toBe(true);
     });
 
-    it('reads seeded values from the remote.SSH configuration section', () => {
+    it.each([false, true])('reads seeded values with setDefaultProfile=%s from the remote.SSH configuration section', (setDefaultProfile) => {
         configOverrides.set('remote.SSH.tmux.enabled', 'on');
         configOverrides.set('remote.SSH.tmux.historyLimit', 1000);
         configOverrides.set('remote.SSH.tmux.reapOnConnect', false);
+        configOverrides.set('remote.SSH.tmux.setDefaultProfile', setDefaultProfile);
 
         const settings = readTmuxSettings();
         expect(settings.enabled).toBe('on');
         expect(settings.historyLimit).toBe(1000);
         expect(settings.reapOnConnect).toBe(false);
+        expect(settings.setDefaultProfile).toBe(setDefaultProfile);
     });
 });
 
@@ -273,6 +276,7 @@ describe('deriveTmuxSessionContext: (host, workspace) parsed from the resolved a
 
 describe('reconcileDefaultTerminalProfile: applies the decision to Workspace scope only', () => {
     beforeEach(() => {
+        configOverrides.clear();
         inspectOverrides.clear();
         updateCalls.length = 0;
     });
@@ -282,6 +286,20 @@ describe('reconcileDefaultTerminalProfile: applies the decision to Workspace sco
         expect(updateCalls).toEqual([
             { id: DEFAULT_PROFILE_ID, value: TMUX_PROFILE_TITLE, target: ConfigurationTarget.Workspace },
         ]);
+    });
+
+    it('wiring + explicit setDefaultProfile=true + nothing set → one Workspace-scope write', () => {
+        configOverrides.set('remote.SSH.tmux.setDefaultProfile', true);
+        reconcileDefaultTerminalProfile(noopLog, true);
+        expect(updateCalls).toEqual([
+            { id: DEFAULT_PROFILE_ID, value: TMUX_PROFILE_TITLE, target: ConfigurationTarget.Workspace },
+        ]);
+    });
+
+    it('wiring + setDefaultProfile=false + nothing set → no write', () => {
+        configOverrides.set('remote.SSH.tmux.setDefaultProfile', false);
+        reconcileDefaultTerminalProfile(noopLog, true);
+        expect(updateCalls).toHaveLength(0);
     });
 
     it('wiring + a Workspace default already set → no write', () => {
@@ -302,6 +320,27 @@ describe('reconcileDefaultTerminalProfile: applies the decision to Workspace sco
         expect(updateCalls).toEqual([
             { id: DEFAULT_PROFILE_ID, value: undefined, target: ConfigurationTarget.Workspace },
         ]);
+    });
+
+    it('not wiring + setDefaultProfile=false + our stale Workspace default → still clear', () => {
+        configOverrides.set('remote.SSH.tmux.setDefaultProfile', false);
+        inspectOverrides.set(DEFAULT_PROFILE_ID, { workspaceValue: TMUX_PROFILE_TITLE });
+        reconcileDefaultTerminalProfile(noopLog, false);
+        expect(updateCalls).toEqual([
+            { id: DEFAULT_PROFILE_ID, value: undefined, target: ConfigurationTarget.Workspace },
+        ]);
+    });
+
+    it.each([
+        { workspaceValue: 'zsh' },
+        { globalValue: 'zsh' },
+        { workspaceFolderValue: 'zsh' },
+        { globalValue: TMUX_PROFILE_TITLE },
+    ])('not wiring + setDefaultProfile=false preserves user scopes %j', (scopes) => {
+        configOverrides.set('remote.SSH.tmux.setDefaultProfile', false);
+        inspectOverrides.set(DEFAULT_PROFILE_ID, scopes);
+        reconcileDefaultTerminalProfile(noopLog, false);
+        expect(updateCalls).toHaveLength(0);
     });
 
     it('not wiring + nothing of ours to clean → no write', () => {
