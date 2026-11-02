@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://developerz.ai/schemas/maintainer.v1.json
+# developerz.ai maintainer policy: developerz-ai/open-remote-ssh-tmux
+#
+# AI-maintained: the agent triages, answers, reviews and closes what has stalled, and merges on
+# green for its own and the dependency bots' pull requests. Releases stay with publish.yml: nothing here publishes.
+version: 1
+
+tone:
+  voice: friendly
+  language: en
+
+triage:
+  ask_for_repro: true
+  required_fields: [steps, expected, actual, version]
+  qualify_into: [bug, feature, dupe, question, docs]
+  close_unanswered_repro_after_days: 14
+  stale_after_days: 30
+  stale_action: comment_then_close
+  non_goals:
+    - "A rewrite of the SSH transport: it stays"
+    - "Tmux commands or anything tmux-shaped surfaced to the user: same UX as open-remote-ssh"
+    - "Persisting anything beyond terminals: reconnect of the rest already works and is left alone"
+    - "Tmux logic on the SSH classes"
+    - "Outside human contributors' changes to CI or publish automation (.github/): members maintain that pipeline"
+
+handoff:
+  mode: fleet
+  ask_reporter_first: false
+
+pr:
+  wait_for_other_bots: [coderabbit]
+  # Named so the agent knows which red check is the author's to fix. Re-check against the
+  # repo's protection and `.github/workflows/` when either changes; this list is not the ruleset.
+  required_checks:
+    - "check"
+  auto_merge: true
+  # An outside contributor's pull request and a member's wait for a member.
+  auto_merge_scope: own_and_dependency_bots
+  require_review: true
+  close_awaiting_author_after_days: 21
+
+review:
+  force: true # without this the native review defers to CodeRabbit where CodeRabbit is active
+
+release:
+  # `none`: there is no release manager. Empty channels: the agent publishes nothing itself.
+  manager: none
+  channels: []
+
+escalate:
+  # Empty: nothing beyond the platform's hardcoded asks (security, license, CLA).
+  ask_before_acting: []
+
+schedules:
+  - name: health
+    days: [mon, tue, wed, thu, fri, sat, sun]
+    hours_utc: [7]
+    brief_file: .dz/briefs/health.md
+  - name: improve
+    days: [mon]
+    hours_utc: [8]
+    brief_file: .dz/briefs/improve.md
