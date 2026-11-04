@@ -12,6 +12,7 @@ interface FakeClient extends EventEmitter {
 const ssh = {
     clients: [] as FakeClient[],
     forwardInError: undefined as Error | undefined,
+    forwardInErrorsByPort: new Map<number, Error>(),
     assignedPort: 49152,
 };
 
@@ -73,7 +74,7 @@ vi.doMock('ssh2', async () => {
 
     class Client extends EventEmitter {
         forwardIn = vi.fn((remoteAddr: string, remotePort: number, callback: (err: Error | undefined, bindPort: number) => void) => {
-            queueMicrotask(() => callback(ssh.forwardInError, remotePort === 0 ? ssh.assignedPort : remotePort));
+            queueMicrotask(() => callback(ssh.forwardInErrorsByPort.get(remotePort) || ssh.forwardInError, remotePort === 0 ? ssh.assignedPort : remotePort));
             return true;
         });
 
@@ -99,6 +100,7 @@ vi.doMock('ssh2', async () => {
 });
 
 const { default: SSHConnection } = await import('../src/ssh/sshConnection');
+const { applyRemoteForwardConfig } = await import('../src/authResolver');
 type SSHConnectionInstance = InstanceType<typeof SSHConnection>;
 
 class TestChannel extends Duplex {
@@ -142,6 +144,7 @@ function emitTCPConnection(
 beforeEach(() => {
     ssh.clients.length = 0;
     ssh.forwardInError = undefined;
+    ssh.forwardInErrorsByPort.clear();
     ssh.assignedPort = 49152;
     network.sockets.length = 0;
     network.failNextConnection = false;
@@ -283,6 +286,48 @@ describe('SSHConnection remote TCP forwarding', () => {
         expect(client.listenerCount('tcp connection')).toBe(0);
         await vi.waitFor(() => expect(channel.destroyed).toBe(true));
         expect(client.unforwardIn).not.toHaveBeenCalled();
+    });
+
+    it('reapplies configured tunnels on a replacement connection after disconnect', async () => {
+        const hostConfig = { RemoteForward: ['9000 localhost:3000'] };
+        const logger = { info: vi.fn(), error: vi.fn() };
+        const first = await createConnection();
+
+        await applyRemoteForwardConfig(first.connection, hostConfig, logger);
+        first.client.emit('close');
+        expect(first.connection.getRemoteTunnel('ssh_config_remote_forward_0')).toBeUndefined();
+
+        const replacement = await createConnection();
+        await applyRemoteForwardConfig(replacement.connection, hostConfig, logger);
+
+        expect(first.client.forwardIn).toHaveBeenCalledOnce();
+        expect(replacement.client.forwardIn).toHaveBeenCalledOnce();
+        expect(replacement.connection.getRemoteTunnel('ssh_config_remote_forward_0')).toMatchObject({
+            remotePort: 9000,
+            localHost: 'localhost',
+            localPort: 3000,
+        });
+        await replacement.connection.close();
+    });
+
+    it('cleans an earlier listener when a later forward fails with ExitOnForwardFailure=yes', async () => {
+        ssh.forwardInErrorsByPort.set(9001, new Error('address in use'));
+        const { connection, client } = await createConnection();
+
+        await expect(applyRemoteForwardConfig(connection, {
+            RemoteForward: [
+                '9000 localhost:3000',
+                '9001 localhost:3001',
+            ],
+            ExitOnForwardFailure: 'yes',
+        }, { info: vi.fn(), error: vi.fn() })).rejects.toThrow(
+            'Failed to establish RemoteForward \'9001 localhost:3001\': address in use',
+        );
+
+        expect(client.unforwardIn).toHaveBeenCalledOnce();
+        expect(client.unforwardIn).toHaveBeenCalledWith('localhost', 9000, expect.any(Function));
+        expect(connection.getRemoteTunnel('ssh_config_remote_forward_0')).toBeUndefined();
+        expect(client.end).toHaveBeenCalledOnce();
     });
 
     it('does not retain a tunnel when forwardIn fails', async () => {

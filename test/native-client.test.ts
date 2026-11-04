@@ -148,6 +148,17 @@ describe('NativeSSHConnection', () => {
         expect(children.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('leaves SSH config RemoteForward directives to native OpenSSH', async () => {
+        mockSpawn(healthyMasterFactory);
+
+        await new NativeSSHConnection(baseConfig).connect();
+
+        const masterArgs = spawnMock.mock.calls[0][1] as string[];
+        expect(masterArgs[masterArgs.indexOf('-F') + 1]).toBe('/tmp/test-ssh-config');
+        expect(masterArgs).not.toContain('-R');
+        expect(masterArgs).not.toContain('ClearAllForwardings=yes');
+    });
+
     it('rejects with the ssh stderr when the master dies before becoming ready', async () => {
         mockSpawn(args => {
             if (args.includes('check')) {

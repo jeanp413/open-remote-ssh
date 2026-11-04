@@ -56,6 +56,20 @@ sudo apk add bash libstdc++
 [OpenSSH](https://www.openssh.com/) supports using a [configuration file](https://linuxize.com/post/using-the-ssh-config-file/) to store all your different SSH connections.
 To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` command.
 
+### Remote forwarding
+
+Static TCP `RemoteForward` directives are supported by the SSH2 connection backend:
+
+```sshconfig
+Host example
+    RemoteForward 9000 127.0.0.1:3000
+    RemoteForward [::1]:9001 service.example:3001
+```
+
+The supported form is `RemoteForward [bind_address:]port host:hostport`. Multiple directives are applied in configuration order. IPv4, bracketed IPv6, wildcard or empty bind addresses, and remote port `0` are supported. The destination host is resolved from the local machine, as in OpenSSH. An omitted bind address uses loopback semantics; `*` or an empty address requests all interfaces and remains subject to the server's `GatewayPorts` policy.
+
+`ClearAllForwardings yes` suppresses configured remote forwards. Listener failures abort the connection only when `ExitOnForwardFailure yes` is set; malformed specifications are always fatal. Syntactically valid forms that are not yet implemented are skipped with a warning. Remote dynamic SOCKS forwarding, Unix-domain sockets, `%` expansion tokens, and slash-delimited forwarding syntax are not currently supported. For native GSSAPI connections, the system OpenSSH client applies the original SSH configuration directly.
+
 ## SSH configuration guides
 
 - [GSSAPI / Kerberos authentication](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/gssapi-kerberos-authentication.md.md)

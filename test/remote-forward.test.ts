@@ -39,6 +39,31 @@ describe('RemoteForward configuration', () => {
         expect(target.ExitOnForwardFailure).to.eql('YeS');
         expect(target.ClearAllForwardings).to.eql('nO');
     });
+
+    it('preserves directive order across Host *, Include, and a specific Host', async () => {
+        const includedConfig = path.join(os.homedir(), '.ssh', 'forwarding.conf');
+        vol.fromJSON({
+            [USER_CONFIG]: [
+                'Host *',
+                '  RemoteForward 1000 global.example:2000',
+                'Include forwarding.conf',
+                'Host target',
+                '  RemoteForward 1002 target.example:2002',
+            ].join('\n'),
+            [includedConfig]: [
+                'Host target',
+                '  RemoteForward 1001 included.example:2001',
+            ].join('\n'),
+        });
+
+        const config = await SSHConfiguration.loadFromFS();
+
+        expect(config.getHostConfiguration('target').RemoteForward).to.eql([
+            '1000 global.example:2000',
+            '1001 included.example:2001',
+            '1002 target.example:2002',
+        ]);
+    });
 });
 
 describe('parseRemoteForward', () => {

@@ -35,7 +35,7 @@ function unsupported(value: string, reason: string): never {
 function splitArguments(value: string): string[] {
     const args: string[] = [];
     let current = '';
-    let quote: '"' | "'" | undefined;
+    let quote: '"' | '\'' | undefined;
     let escaped = false;
 
     for (const char of value.trim()) {
@@ -56,7 +56,7 @@ function splitArguments(value: string): string[] {
             }
             continue;
         }
-        if (char === '"' || char === "'") {
+        if (char === '"' || char === '\'') {
             quote = char;
             continue;
         }
