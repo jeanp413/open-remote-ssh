@@ -515,6 +515,261 @@ describe('package.json manifest drift guard', () => {
     });
 });
 
+// Drift guard for the root `overrides` map in package.json.
+//
+// npm's supported representation of `overrides` deliberately does NOT include an
+// `overrides` key in package-lock.json — npm never writes one. The observable
+// evidence that a root override is in effect is therefore NOT a lockfile key but
+// the *shape of the resolved tree*:
+//
+//   - the overridden package is hoisted to the top level, at
+//     `node_modules/<name>`, at exactly the pinned version;
+//   - and no nested `node_modules/<parent>/node_modules/<name>` copy exists — a
+//     nested copy means the override's constraint was lost for that dependent
+//     (npm satisfies every dependent with the hoisted override, so a nested copy
+//     is a real resolution drift, not a legitimate tree shape).
+//
+// This matters because neither `npm ci` nor `npm audit` can see a lost override:
+// `npm ci` validates package.json's dependencies/devDependencies against
+// `packages[""]` (not against `overrides`), and `npm audit`'s shape only reports
+// the resolved versions. A lockfile that silently resolves `undici` to an
+// overridden-away version installs an advisory-affected tree without any
+// command complaining. These assertions read the live manifest and lockfile —
+// no fixture copy — so a future `npm install` that loses an override trips a
+// real assertion instead of drifting apart silently.
+//
+// Deliberately shape-based: *which* version is pinned is free to move via a
+// deliberate re-pin (edit package.json, `npm install`), as long as it stays an
+// exact x.y.z pin and the lockfile agrees with it.
+describe('root dependency overrides', () => {
+    const overrides = (readPackageJson().overrides ?? {}) as Record<string, string>;
+
+    // The advisories this repository deliberately overrides, pinned here as an
+    // explicit list rather than derived from the manifest. Every check below
+    // is driven by the keys the manifest declares, so an `overrides` map that
+    // lost a key (e.g. `undici`) would narrow those checks to the survivors
+    // and pass vacuously — the package the lost key covered would be free to
+    // drift back to its advisory-affected version, and neither `npm ci` nor
+    // `npm audit` reports that. Only the *names* are pinned here: *which*
+    // version each one resolves to stays free to move via a deliberate
+    // re-pin (edit package.json, `npm install`).
+    const EXPECTED_OVERRIDE_NAMES = ['basic-ftp', 'glob', 'minimatch', 'undici'];
+
+    /**
+     * The pins the checks below run against: the manifest's `overrides` map,
+     * asserted to still cover every advisory in {@link EXPECTED_OVERRIDE_NAMES}.
+     * The assertion sits at the point of use, so dropping a key fails the
+     * resolution checks themselves instead of quietly narrowing them.
+     */
+    function pinsUnderTest(): Record<string, string> {
+        const missing = EXPECTED_OVERRIDE_NAMES.filter(name => !(name in overrides));
+        expect(
+            missing,
+            `These advisories are no longer overridden in package.json: ${missing.join(', ')} — the checks below only cover the keys the manifest declares, so a dropped override would let its package drift without failing this suite`
+        ).toEqual([]);
+        return overrides;
+    }
+
+    // The two guard rules live here, once, as pure functions over a lockfile's
+    // `packages` map. They are deliberately parameterised by the resolved tree
+    // ALONE — they never receive, read or depend on an `overrides` key, because
+    // npm never writes one into package-lock.json. Every assertion below is
+    // driven through these same functions, so "the verdict is the same with and
+    // without such a key" is a property of the code under test rather than of
+    // two hand-inlined copies that could drift apart.
+    type LockPackages = Record<string, JsonObject>;
+
+    interface OverrideDrift {
+        name: string;
+        pinned: string;
+        locked: string | undefined;
+    }
+
+    /**
+     * Rule 1: the lockfile's supported representation of an override is the
+     * top-level `node_modules/<name>` entry's version. A mismatch means the
+     * lockfile resolved a different version than the manifest pins — the tree
+     * `npm ci` installs is not the tree the manifest asked for.
+     */
+    function overrideVersionDrift(packages: LockPackages, pins: Record<string, string>): OverrideDrift[] {
+        return Object.entries(pins)
+            .map(([name, pinned]) => {
+                const installed = packages[`node_modules/${name}`];
+                return { name, pinned, locked: installed?.version as string | undefined };
+            })
+            .filter(({ pinned, locked }) => locked !== pinned);
+    }
+
+    /**
+     * Rule 2: a nested copy of an overridden package means the override was lost
+     * for that dependent — npm hoists the overridden version to the top of the
+     * tree and satisfies every dependent with it, so a nested copy is a
+     * resolution drift, not a legitimate tree shape.
+     */
+    function nestedOverrideCopies(packages: LockPackages, pins: Record<string, string>): string[] {
+        const nested: string[] = [];
+        for (const location of Object.keys(packages)) {
+            for (const name of Object.keys(pins)) {
+                if (location.endsWith(`/node_modules/${name}`) && location !== `node_modules/${name}`) {
+                    nested.push(`${location} (overridden: ${name})`);
+                }
+            }
+        }
+        return nested;
+    }
+
+    // The set of overridden advisories is this guard's own expectation, so it
+    // cannot be read back from the manifest it polices: dropping `undici`
+    // from `overrides` would leave every check below iterating the three
+    // survivors, and the suite would stay green while the locked `undici`
+    // version drifted back to its advisory-affected version.
+    it('overrides every advisory this repository pins', () => {
+        pinsUnderTest();
+    });
+
+    // A range ("^6.2.0", ">=6") is not a pin: it lets the next `npm install`
+    // float the resolved version and the lockfile's top-level entry stops being
+    // a deterministic assertion of the constraint.
+    it('pins every override to an exact x.y.z version', () => {
+        const notExact = Object.entries(pinsUnderTest())
+            .filter(([, version]) => !/^\d+\.\d+\.\d+$/.test(version))
+            .map(([name, version]) => `${name}@${version}`);
+
+        expect(
+            notExact,
+            `These overrides are not exact x.y.z pins: ${notExact.join(', ')}`
+        ).toEqual([]);
+    });
+
+    // The lockfile's supported representation of the override: the top-level
+    // `node_modules/<name>` entry's version. A mismatch means the lockfile
+    // resolved a different version than the manifest pins — the tree `npm ci`
+    // installs is not the tree the manifest asked for.
+    it('locks every override at the top level to the pinned version', () => {
+        const lockPackages = readPackageLockJson().packages as LockPackages;
+
+        const drifted = overrideVersionDrift(lockPackages, pinsUnderTest());
+
+        expect(
+            drifted,
+            `These overrides are not honoured by the lockfile (top-level node_modules/<name> entry does not carry the pinned version): ${drifted.map(d => `${d.name} pinned ${d.pinned}, locked ${d.locked ?? 'missing'}`).join('; ')}`
+        ).toEqual([]);
+    });
+
+    // A nested copy of an overridden package means the override was lost for that
+    // dependent: npm hoists the overridden version to the top of the tree and
+    // satisfies every dependent with it, so a nested copy is a resolution drift.
+    it('has no nested copy of an overridden package in the lockfile', () => {
+        const lockPackages = readPackageLockJson().packages as LockPackages;
+
+        const nested = nestedOverrideCopies(lockPackages, pinsUnderTest());
+
+        expect(
+            nested,
+            `These nested copies of an overridden package mean the override was lost for that dependent: ${nested.join(', ')}`
+        ).toEqual([]);
+    });
+
+    // A guard that cannot fail is not a guard. Pin the *failure* direction too:
+    // move a locked top-level version off its pin and the guard must report the
+    // drift rather than pass silently. Driven on a synthetic copy of the real
+    // lockfile so the committed files are never touched.
+    it('fails when a locked top-level version drifts off the override pin', () => {
+        const lockPackages = readPackageLockJson().packages as LockPackages;
+        const pins = pinsUnderTest();
+
+        // Every advisory this repository pins, not just whichever key happens
+        // to come first in the manifest — the guard has to be shown to catch a
+        // drift on each of them.
+        for (const name of EXPECTED_OVERRIDE_NAMES) {
+            const pinned = pins[name];
+            const driftedPackages: LockPackages = {
+                ...lockPackages,
+                [`node_modules/${name}`]: { version: '0.0.0-drifted' },
+            };
+
+            const drifted = overrideVersionDrift(driftedPackages, pins);
+
+            expect(
+                drifted.map(d => d.name),
+                `a locked version moved off its override pin must be reported as drift (${name})`
+            ).toContain(name);
+            expect(
+                drifted.find(d => d.name === name),
+                'the reported drift must name the pinned version and the version actually locked'
+            ).toMatchObject({ pinned, locked: '0.0.0-drifted' });
+        }
+    });
+
+    // Same for the nested-copy rule: introducing a nested copy of an overridden
+    // package must trip the guard, not slip past it.
+    it('fails when a nested copy of an overridden package appears in the lockfile', () => {
+        const lockPackages = readPackageLockJson().packages as LockPackages;
+        const pins = pinsUnderTest();
+
+        for (const name of EXPECTED_OVERRIDE_NAMES) {
+            const nestedLocation = `node_modules/some-parent/node_modules/${name}`;
+            const driftedPackages: LockPackages = {
+                ...lockPackages,
+                [nestedLocation]: { version: '0.0.0-drifted' },
+            };
+
+            const nested = nestedOverrideCopies(driftedPackages, pins);
+
+            expect(
+                nested,
+                'a nested copy of an overridden package must be reported'
+            ).toContain(`${nestedLocation} (overridden: ${name})`);
+        }
+    });
+
+    // npm never writes an `overrides` key into package-lock.json, so its absence
+    // is NOT an installation failure and must never fail this guard — asserting
+    // the key's presence would be a guard that can only ever fail. The checks
+    // above must reach their verdict from the resolved tree alone, with or
+    // without such a key. Prove it on two INDEPENDENTLY parsed fixtures: the
+    // real lockfile (no `overrides` key) and a separate parse of the same bytes
+    // with an `overrides` key added. Both must reach the same verdict — and the
+    // fixtures are distinct objects, so a difference could actually surface.
+    it('reaches its verdict without an "overrides" key in the lockfile (npm never writes one)', () => {
+        const lock = readPackageLockJson();
+        const lockPackages = lock.packages as LockPackages;
+
+        // Fixture A: the real lockfile, which carries no `overrides` key.
+        expect(
+            lock.overrides,
+            'npm never writes an "overrides" key into package-lock.json — if this ever appears, npm changed its representation and this guard must be revisited'
+        ).toBeUndefined();
+
+        // Fixture B: an independent parse of the same lockfile bytes, with an
+        // `overrides` key added. A separate parse (not a shallow spread of the
+        // object above) so the two fixtures are genuinely distinct objects and
+        // the comparison below is not a tautology.
+        const withKeyLock = JSON.parse(fs.readFileSync(packageLockJsonPath, 'utf8')) as JsonObject;
+        withKeyLock.overrides = pinsUnderTest();
+        const withKeyPackages = withKeyLock.packages as LockPackages;
+
+        expect(
+            withKeyLock.packages,
+            'the two fixtures must be distinct objects, otherwise the comparison below is vacuous'
+        ).not.toBe(lockPackages);
+
+        // The verdict must be identical whether the lockfile happens to carry an
+        // `overrides` key or not — npm does not write one, so a guard that read
+        // it would be reading a key that is not there. Adding one must change
+        // nothing: the resolved tree is the only input.
+        expect(
+            overrideVersionDrift(withKeyPackages, pinsUnderTest()),
+            'adding an "overrides" key must not change the verdict'
+        ).toEqual(overrideVersionDrift(lockPackages, pinsUnderTest()));
+
+        expect(
+            nestedOverrideCopies(withKeyPackages, pinsUnderTest()),
+            'adding an "overrides" key must not change the verdict'
+        ).toEqual(nestedOverrideCopies(lockPackages, pinsUnderTest()));
+    });
+});
+
 describe('README fork identity', () => {
     const readme = fs.readFileSync(path.resolve(repoRoot, 'README.md'), 'utf8');
 
