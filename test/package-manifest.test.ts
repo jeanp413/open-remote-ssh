@@ -408,6 +408,81 @@ describe('package.json manifest drift guard', () => {
         });
     });
 
+    // The two git-sourced runtime dependencies (simple-socks, ssh2) used to sit on
+    // upstream's *moving* branch refs (`#main` / `#master`): every `npm install` or
+    // `taze` refresh silently re-resolved them to whatever upstream had pushed that
+    // day — the same unreproducible-install class the dts guards above fix for the
+    // typings toolchain, except these two ship inside the extension and carry every
+    // SSH connection. They are now pinned to exact commit SHAs. These guards keep it
+    // that way and keep the three copies in agreement — manifest spec, lockfile root
+    // mirror (what `npm ci` validates the manifest against), installed resolved URL.
+    // Deliberately shape-based: *which* commit is pinned is free to move via a
+    // deliberate re-pin (edit the manifest, `npm install`), as long as it stays a
+    // full 40-hex commit everywhere.
+    describe('git dependency pins (simple-socks, ssh2)', () => {
+        const dependencies = pkg.dependencies as Record<string, string>;
+        // Package name and upstream repo happen to be identical for both; the owner is
+        // part of the pin — these forks (transport fixes) live in jeanp413's repos, not npm.
+        const gitPins = [
+            { name: 'simple-socks', repo: 'simple-socks' },
+            { name: 'ssh2', repo: 'ssh2' }
+        ];
+
+        /** The manifest spec for `name`, asserted to be a git+https URL pinned to a full 40-hex commit (no branch/tag fragment). */
+        function pinnedSpec(name: string, repo: string): { spec: string; sha: string } {
+            const spec = dependencies[name];
+            expect(spec, `${name} must stay a runtime dependency of the extension`).toBeDefined();
+
+            const sha = spec!.match(new RegExp(`^git\\+https://github\\.com/jeanp413/${repo}#([0-9a-f]{40})$`))?.[1];
+            expect(
+                sha,
+                `${name} must be pinned to an exact commit — expected git+https://github.com/jeanp413/${repo}#<40-hex-sha>, got "${spec ?? ''}"; a branch/tag fragment (e.g. #main) silently re-resolves on every npm install / taze run`
+            ).toBeDefined();
+            return { spec: spec!, sha: sha! };
+        }
+
+        it('pins each git dependency to an exact 40-hex commit, never a branch/tag ref', () => {
+            for (const { name, repo } of gitPins) {
+                pinnedSpec(name, repo);
+            }
+        });
+
+        // The lockfile root mirror is exactly what `npm ci` compares package.json against —
+        // one drifted character and CI fails with "lock file does not satisfy package.json".
+        // Pin the mirror byte-for-byte so that failure happens here, at test time.
+        it('the lockfile root mirrors each manifest pin byte-for-byte, so npm ci installs exactly these commits', () => {
+            const lockPackages = readPackageLockJson().packages as Record<string, JsonObject>;
+            const root = lockPackages[''];
+            expect(root, 'package-lock.json is missing its packages[""] root entry').toBeDefined();
+            const rootDependencies = (root!.dependencies as Record<string, string> | undefined) ?? {};
+
+            for (const { name, repo } of gitPins) {
+                const { spec } = pinnedSpec(name, repo);
+                expect(rootDependencies[name], `lockfile root dependencies does not mirror the ${name} manifest spec`).toBe(spec);
+            }
+        });
+
+        it('the installed package resolves to the same commit each manifest pin names', () => {
+            const lockPackages = readPackageLockJson().packages as Record<string, JsonObject>;
+
+            for (const { name, repo } of gitPins) {
+                const { sha } = pinnedSpec(name, repo);
+                const installed = lockPackages[`node_modules/${name}`];
+                expect(installed, `package-lock.json has no node_modules/${name} entry`).toBeDefined();
+
+                // Transport-agnostic on purpose: npm records the resolved URL in git+ssh
+                // form while the manifest keeps git+https — the property that must hold is
+                // same repo, same commit, not npm's choice of transport spelling.
+                const resolved = installed!.resolved as string | undefined;
+                expect(resolved, `node_modules/${name} has no resolved URL in the lockfile`).toBeDefined();
+                expect(
+                    resolved,
+                    `node_modules/${name} resolves to a commit other than the manifest pin (${sha}) — the tree npm ci installs is not the code the manifest pins; re-run npm install so they agree`
+                ).toMatch(new RegExp(`github\\.com[/:]jeanp413/${repo}(\\.git)?#${sha}$`));
+            }
+        });
+    });
+
     it('the kill command\'s manifest id matches the constant exported by commands.ts', () => {
         const killCommand = commands.find(c => c.command === KILL_WORKSPACE_SESSIONS_COMMAND_ID);
         expect(killCommand, `expected contributes.commands to contain "${KILL_WORKSPACE_SESSIONS_COMMAND_ID}"`).toBeDefined();

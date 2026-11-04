@@ -45,10 +45,10 @@
 		"@zokugun/is-it-type": "0.8.1",
 		"glob": "14.0.3",
 		"semver": "7.8.4",
-		"simple-socks": "git+https://github.com/jeanp413/simple-socks#main",
+		"simple-socks": "git+https://github.com/jeanp413/simple-socks#2ac739301a82d6baff04804ed494436a026acb60",
 		"socks": "2.8.9",
 		"ssh-config": "5.1.0",
-		"ssh2": "git+https://github.com/jeanp413/ssh2#master"
+		"ssh2": "git+https://github.com/jeanp413/ssh2#a169f627213aa663e0aa2fd2f0ef5c8931890c26"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "20.5.3",
