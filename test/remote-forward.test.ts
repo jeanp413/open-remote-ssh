@@ -134,6 +134,8 @@ describe('parseRemoteForward', () => {
         '[fe80::1%eth0%extra]:9000 localhost:3000',
         '"9000 localhost:3000',
         '9000 localhost:3000\\',
+        '"" localhost:3000',
+        '\'\' localhost:3000',
     ])('rejects malformed syntax: %s', (value) => {
         expect(() => parseRemoteForward(value)).toThrow(MalformedRemoteForwardError);
     });
@@ -152,6 +154,8 @@ describe('parseRemoteForward', () => {
         '9000',
         'localhost:9000',
         '[::1]:9000',
+        '9000 ""',
+        '9000 \'\'',
     ])('reports remote dynamic TCP forwarding separately: %s', (value) => {
         expect(() => parseRemoteForward(value)).toThrow(UnsupportedRemoteForwardError);
         expect(() => parseRemoteForward(value)).toThrow(/remote dynamic TCP forwarding/);

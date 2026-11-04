@@ -68,7 +68,7 @@ Host example
 
 The supported form is `RemoteForward [bind_address:]port host:hostport`. Multiple directives are applied in configuration order. IPv4, bracketed IPv6, wildcard or empty bind addresses, and remote port `0` are supported. The destination host is resolved from the local machine, as in OpenSSH. An omitted bind address uses loopback semantics; `*` or an empty address requests all interfaces and remains subject to the server's `GatewayPorts` policy.
 
-`ClearAllForwardings yes` suppresses configured remote forwards. Listener failures abort the connection only when `ExitOnForwardFailure yes` is set; malformed specifications are always fatal. Syntactically valid forms that are not yet implemented are skipped with a warning. Remote dynamic SOCKS forwarding, Unix-domain sockets, `%` expansion tokens, and slash-delimited forwarding syntax are not currently supported. For native GSSAPI connections, the system OpenSSH client applies the original SSH configuration directly.
+`ClearAllForwardings yes` suppresses configured remote forwards. Listener failures abort the connection only when `ExitOnForwardFailure yes` is set; malformed specifications are always fatal. Syntactically valid forms that are not yet implemented are skipped with a warning. Remote dynamic SOCKS forwarding, Unix-domain sockets, `%` expansion tokens, and slash-delimited forwarding syntax are not currently supported. For native GSSAPI connections on POSIX, the system OpenSSH ControlMaster handles `RemoteForward`. On Windows, persistent `RemoteForward` behavior is not guaranteed for native GSSAPI connections.
 
 ## SSH configuration guides
 

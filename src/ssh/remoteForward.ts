@@ -37,11 +37,13 @@ function splitArguments(value: string): string[] {
     let current = '';
     let quote: '"' | '\'' | undefined;
     let escaped = false;
+    let hasArgument = false;
 
     for (const char of value.trim()) {
         if (escaped) {
             current += char;
             escaped = false;
+            hasArgument = true;
             continue;
         }
         if (char === '\\') {
@@ -58,16 +60,19 @@ function splitArguments(value: string): string[] {
         }
         if (char === '"' || char === '\'') {
             quote = char;
+            hasArgument = true;
             continue;
         }
         if (/\s/.test(char)) {
-            if (current) {
+            if (hasArgument) {
                 args.push(current);
                 current = '';
+                hasArgument = false;
             }
             continue;
         }
         current += char;
+        hasArgument = true;
     }
 
     if (quote) {
@@ -76,7 +81,7 @@ function splitArguments(value: string): string[] {
     if (escaped) {
         malformed(value, 'trailing escape character');
     }
-    if (current) {
+    if (hasArgument) {
         args.push(current);
     }
 
@@ -224,8 +229,11 @@ export function parseRemoteForward(value: string): TCPRemoteForward {
         rejectUnsupportedExpansion(value, arg);
     }
 
-    if (args.length === 1) {
+    if (args.length === 1 || (args.length === 2 && args[1] === '')) {
         const [listener] = args;
+        if (!listener) {
+            malformed(value, 'remote listener must not be empty');
+        }
         if (looksLikeUnixSocket(listener)) {
             unsupported(value, 'single-argument Unix socket forwarding is not supported');
         }
@@ -238,6 +246,9 @@ export function parseRemoteForward(value: string): TCPRemoteForward {
     }
 
     const [listener, destination] = args;
+    if (!listener) {
+        malformed(value, 'remote listener must not be empty');
+    }
     if (looksLikeSlashEndpoint(listener) || looksLikeSlashEndpoint(destination)) {
         unsupported(value, 'slash-delimited OpenSSH forwarding syntax is not supported');
     }

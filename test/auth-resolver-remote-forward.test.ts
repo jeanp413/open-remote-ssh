@@ -82,6 +82,33 @@ describe('RemoteForward resolver integration', () => {
         expect(connection.close).not.toHaveBeenCalled();
     });
 
+    it('accepts mixed-case yes/no values', async () => {
+        const connection = createConnection();
+
+        await applyRemoteForwardConfig(connection, {
+            RemoteForward: ['9000 localhost:3000'],
+            ClearAllForwardings: 'nO',
+            ExitOnForwardFailure: 'yEs',
+        }, createLogger());
+
+        expect(connection.addRemoteTunnel).toHaveBeenCalledOnce();
+        expect(connection.close).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['ClearAllForwardings', 'true'],
+        ['ExitOnForwardFailure', 'maybe'],
+    ] as const)('rejects invalid %s values', async (directive, value) => {
+        const connection = createConnection();
+
+        await expect(applyRemoteForwardConfig(connection, {
+            [directive]: value,
+        }, createLogger())).rejects.toThrow(`Invalid ${directive} value '${value}': expected yes or no`);
+
+        expect(connection.addRemoteTunnel).not.toHaveBeenCalled();
+        expect(connection.close).toHaveBeenCalledOnce();
+    });
+
     it('logs listener failures and continues by default', async () => {
         const connection = createConnection(async config => {
             if (config.remotePort === 9000) {

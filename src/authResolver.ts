@@ -171,8 +171,20 @@ type RemoteForwardHostConfiguration = Pick<HostConfiguration, 'RemoteForward' | 
 type RemoteForwardConnection = Pick<SSHConnection, 'addRemoteTunnel' | 'close'>;
 type RemoteForwardLogger = Pick<Log, 'info' | 'error'>;
 
-function isYes(value: string | undefined): boolean {
-    return value?.toLowerCase() === 'yes';
+function parseYesNo(value: string | undefined, directive: 'ExitOnForwardFailure' | 'ClearAllForwardings'): boolean {
+    if (value === undefined) {
+        return false;
+    }
+
+    const normalized = value.toLowerCase();
+    if (normalized === 'yes') {
+        return true;
+    }
+    if (normalized === 'no') {
+        return false;
+    }
+
+    throw new Error(`Invalid ${directive} value '${value}': expected yes or no`);
 }
 
 function getRemoteBindAddress(value: string | undefined): string {
@@ -203,6 +215,17 @@ export async function applyRemoteForwardConfig(
     hostConfig: RemoteForwardHostConfiguration,
     logger: RemoteForwardLogger,
 ): Promise<void> {
+    let clearAllForwardings: boolean;
+    let exitOnForwardFailure: boolean;
+    try {
+        clearAllForwardings = parseYesNo(hostConfig.ClearAllForwardings, 'ClearAllForwardings');
+        exitOnForwardFailure = parseYesNo(hostConfig.ExitOnForwardFailure, 'ExitOnForwardFailure');
+    } catch (error) {
+        logger.error('Invalid SSH forwarding configuration', error);
+        await closeAfterRemoteForwardFailure(connection, logger);
+        throw error;
+    }
+
     const directives = hostConfig.RemoteForward || [];
     if (!directives.length) {
         return;
@@ -226,12 +249,11 @@ export async function applyRemoteForwardConfig(
         }
     }
 
-    if (isYes(hostConfig.ClearAllForwardings)) {
+    if (clearAllForwardings) {
         logger.info('ClearAllForwardings is enabled; skipping configured RemoteForward listeners');
         return;
     }
 
-    const exitOnFailure = isYes(hostConfig.ExitOnForwardFailure);
     for (const [index, { value, forward }] of parsedDirectives.entries()) {
         try {
             const tunnel = await connection.addRemoteTunnel({
@@ -247,7 +269,7 @@ export async function applyRemoteForwardConfig(
             const message = `Failed to establish RemoteForward '${value}': ${detail}`;
             logger.error(message, error);
 
-            if (exitOnFailure) {
+            if (exitOnForwardFailure) {
                 await closeAfterRemoteForwardFailure(connection, logger);
                 const failure = new Error(message) as Error & { cause: unknown };
                 failure.cause = error;
@@ -561,80 +583,91 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             await applyRemoteForwardConfig(ssh2Connection, sshHostConfig, this.logger);
         }
 
-        const envVariables: Record<string, string | null> = {};
-        if (agentForward) {
-            // The agent-forwarding socket sshd creates is scoped to the ssh channel that
-            // requested it and is torn down as soon as that channel closes. The server
-            // install/start script runs on its own short-lived exec channel, so any
-            // SSH_AUTH_SOCK it reports is already stale by the time we get here. Keep a
-            // dedicated channel open for the lifetime of the connection instead, and use
-            // its socket path everywhere else (terminals, extension host). Agent
-            // forwarding is best-effort: a failure here must not prevent connecting.
-            try {
-                const remoteAgentSock = await this.openAgentForwardSession();
-                if (remoteAgentSock) {
-                    envVariables['SSH_AUTH_SOCK'] = remoteAgentSock;
+        try {
+            const envVariables: Record<string, string | null> = {};
+            if (agentForward) {
+                // The agent-forwarding socket sshd creates is scoped to the ssh channel that
+                // requested it and is torn down as soon as that channel closes. The server
+                // install/start script runs on its own short-lived exec channel, so any
+                // SSH_AUTH_SOCK it reports is already stale by the time we get here. Keep a
+                // dedicated channel open for the lifetime of the connection instead, and use
+                // its socket path everywhere else (terminals, extension host). Agent
+                // forwarding is best-effort: a failure here must not prevent connecting.
+                try {
+                    const remoteAgentSock = await this.openAgentForwardSession();
+                    if (remoteAgentSock) {
+                        envVariables['SSH_AUTH_SOCK'] = remoteAgentSock;
+                    }
+                } catch (e) {
+                    this.logger.error(`Failed to setup agent forwarding`, e);
                 }
-            } catch (e) {
-                this.logger.error(`Failed to setup agent forwarding`, e);
             }
-        }
 
-        // Find the custom install path for this hostname (supports wildcards)
-        const customInstallPath = findServerInstallPath(destination.hostname, serverInstallPathMap);
+            // Find the custom install path for this hostname (supports wildcards)
+            const customInstallPath = findServerInstallPath(destination.hostname, serverInstallPathMap);
 
-        const installResult = await installCodeServer(
-            this.sshConnection,
-            serverDownloadUrlTemplate,
-            serverVersion,
-            defaultExtensions,
-            [],
-            sendEnvVars,
-            remotePlatformMap[destination.hostname],
-            remoteServerListenOnSocket,
-            customInstallPath,
-            this.logger,
-            this.context.extensionPath
-        );
+            const installResult = await installCodeServer(
+                this.sshConnection,
+                serverDownloadUrlTemplate,
+                serverVersion,
+                defaultExtensions,
+                [],
+                sendEnvVars,
+                remotePlatformMap[destination.hostname],
+                remoteServerListenOnSocket,
+                customInstallPath,
+                this.logger,
+                this.context.extensionPath
+            );
 
-        // Update terminal env variables
-        this.context.environmentVariableCollection.persistent = false;
-        for (const [key, value] of Object.entries(envVariables)) {
-            if (value) {
-                this.context.environmentVariableCollection.replace(key, value);
+            // Update terminal env variables
+            this.context.environmentVariableCollection.persistent = false;
+            for (const [key, value] of Object.entries(envVariables)) {
+                if (value) {
+                    this.context.environmentVariableCollection.replace(key, value);
+                }
             }
-        }
 
-        if (enableDynamicForwarding) {
-            const socksPort = await findRandomPort();
-            this.socksTunnel = await this.sshConnection!.addTunnel({
-                name: `ssh_tunnel_socks_${socksPort}`,
-                localPort: socksPort,
-                socks: true
+            if (enableDynamicForwarding) {
+                const socksPort = await findRandomPort();
+                this.socksTunnel = await this.sshConnection!.addTunnel({
+                    name: `ssh_tunnel_socks_${socksPort}`,
+                    localPort: socksPort,
+                    socks: true
+                });
+            }
+
+            const tunnelConfig = await this.openTunnel(0, installResult.listeningOn);
+            this.tunnels.push(tunnelConfig);
+
+            // Enable ports view
+            vscode.commands.executeCommand('setContext', 'forwardedPortsViewEnabled', true);
+
+            this.labelFormatterDisposable?.dispose();
+            this.labelFormatterDisposable = vscode.workspace.registerResourceLabelFormatter({
+                scheme: 'vscode-remote',
+                authority: `${REMOTE_SSH_AUTHORITY}+*`,
+                formatting: {
+                    label: '${path}',
+                    separator: '/',
+                    tildify: true,
+                    workspaceSuffix: `SSH: ${destination.hostname}` + (destination.port && destination.port !== 22 ? `:${destination.port}` : '')
+                }
             });
-        }
 
-        const tunnelConfig = await this.openTunnel(0, installResult.listeningOn);
-        this.tunnels.push(tunnelConfig);
-
-        // Enable ports view
-        vscode.commands.executeCommand('setContext', 'forwardedPortsViewEnabled', true);
-
-        this.labelFormatterDisposable?.dispose();
-        this.labelFormatterDisposable = vscode.workspace.registerResourceLabelFormatter({
-            scheme: 'vscode-remote',
-            authority: `${REMOTE_SSH_AUTHORITY}+*`,
-            formatting: {
-                label: '${path}',
-                separator: '/',
-                tildify: true,
-                workspaceSuffix: `SSH: ${destination.hostname}` + (destination.port && destination.port !== 22 ? `:${destination.port}` : '')
+            const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
+            resolvedResult.extensionHostEnv = envVariables;
+            return resolvedResult;
+        } catch (error) {
+            if (ssh2Connection) {
+                try {
+                    await ssh2Connection.close();
+                } catch (cleanupError) {
+                    this.logger.error('Failed to clean up SSH connection after setup failure', cleanupError);
+                }
             }
-        });
-
-        const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
-        resolvedResult.extensionHostEnv = envVariables;
-        return resolvedResult;
+            throw error;
+        }
     }
 
     // @types/ssh2 predates the current runtime and types the key as a string;
@@ -1042,10 +1075,11 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         this.agentForwardSession?.close();
         this.agentForwardSession = undefined;
         // If there's proxy connections then just close the parent connection
-        if (this.proxyConnections.length) {
-            this.proxyConnections[0].close();
-        } else {
-            this.sshConnection?.close();
+        const connection = this.proxyConnections.length ? this.proxyConnections[0] : this.sshConnection;
+        if (connection) {
+            void connection.close().catch(error => {
+                this.logger.error('Failed to close SSH connection during disposal', error);
+            });
         }
         this.proxyCommandProcess?.kill();
         this.labelFormatterDisposable?.dispose();
