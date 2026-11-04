@@ -11,6 +11,7 @@ import * as ssh2 from 'ssh2';
 import { Log } from './common/logger';
 import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
+import { parseRemoteForward, UnsupportedRemoteForwardError } from './ssh/remoteForward';
 import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, removeHostFromEntry, findConflictingEntries, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
 import NativeSSHConnection, { isGssapiAuthenticationRequested } from './ssh/nativeClient';
 import type { SSHClient, SSHExecChannel } from './ssh/sshClient';
@@ -165,6 +166,96 @@ export function getProxyJumpPort(dest: SSHDestination, config: Record<string, st
 export const MAX_PROXY_JUMPS = 10;
 
 export type ProxyJumpHop = [SSHDestination, HostConfiguration];
+
+type RemoteForwardHostConfiguration = Pick<HostConfiguration, 'RemoteForward' | 'ExitOnForwardFailure' | 'ClearAllForwardings'>;
+type RemoteForwardConnection = Pick<SSHConnection, 'addRemoteTunnel' | 'close'>;
+type RemoteForwardLogger = Pick<Log, 'info' | 'error'>;
+
+function isYes(value: string | undefined): boolean {
+    return value?.toLowerCase() === 'yes';
+}
+
+function getRemoteBindAddress(value: string | undefined): string {
+    if (value === undefined) {
+        return 'localhost';
+    }
+
+    // RFC 4254 uses the empty string for all protocol families. OpenSSH also
+    // accepts '*' for this spelling in RemoteForward.
+    return value === '*' ? '' : value;
+}
+
+async function closeAfterRemoteForwardFailure(connection: RemoteForwardConnection, logger: RemoteForwardLogger): Promise<void> {
+    try {
+        await connection.close();
+    } catch (error) {
+        logger.error('Failed to clean up SSH connection after RemoteForward failure', error);
+    }
+}
+
+/**
+ * Apply the static TCP RemoteForward directives handled by the ssh2 backend.
+ * Native OpenSSH applies the original configuration itself and must not call
+ * this function.
+ */
+export async function applyRemoteForwardConfig(
+    connection: RemoteForwardConnection,
+    hostConfig: RemoteForwardHostConfiguration,
+    logger: RemoteForwardLogger,
+): Promise<void> {
+    const directives = hostConfig.RemoteForward || [];
+    if (!directives.length) {
+        return;
+    }
+
+    const parsedDirectives = [];
+    for (const value of directives) {
+        try {
+            parsedDirectives.push({ value, forward: parseRemoteForward(value) });
+        } catch (error) {
+            if (error instanceof UnsupportedRemoteForwardError) {
+                logger.info(`Warning: Skipping unsupported RemoteForward '${value}': ${error.message}`);
+                continue;
+            }
+
+            // OpenSSH treats malformed forwarding specifications as fatal
+            // configuration errors, independently of ExitOnForwardFailure.
+            logger.error('Failed to parse RemoteForward configuration', error);
+            await closeAfterRemoteForwardFailure(connection, logger);
+            throw error;
+        }
+    }
+
+    if (isYes(hostConfig.ClearAllForwardings)) {
+        logger.info('ClearAllForwardings is enabled; skipping configured RemoteForward listeners');
+        return;
+    }
+
+    const exitOnFailure = isYes(hostConfig.ExitOnForwardFailure);
+    for (const [index, { value, forward }] of parsedDirectives.entries()) {
+        try {
+            const tunnel = await connection.addRemoteTunnel({
+                name: `ssh_config_remote_forward_${index}`,
+                remoteAddr: getRemoteBindAddress(forward.remoteBindAddress),
+                remotePort: forward.remotePort,
+                localHost: forward.localHost,
+                localPort: forward.localPort,
+            });
+            logger.info(`RemoteForward '${value}' listening on ${tunnel.remoteAddr || '*'}:${tunnel.remotePort}`);
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            const message = `Failed to establish RemoteForward '${value}': ${detail}`;
+            logger.error(message, error);
+
+            if (exitOnFailure) {
+                await closeAfterRemoteForwardFailure(connection, logger);
+                const failure = new Error(message) as Error & { cause: unknown };
+                failure.cause = error;
+                throw failure;
+            }
+        }
+    }
+}
 
 /**
  * The hops of a `ProxyJump` value, in the order they have to be connected to.
@@ -346,6 +437,8 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
         let proxyStream: ssh2.ClientChannel | stream.Duplex | undefined;
 
+        let ssh2Connection: SSHConnection | undefined;
+
         if (!useNativeClient) {
             const preferredAuthentications = sshHostConfig['PreferredAuthentications'] ? sshHostConfig['PreferredAuthentications'].split(',').map(s => s.trim()) : ['publickey', 'password', 'keyboard-interactive'];
 
@@ -437,7 +530,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             // Create final shh connection
             const sshAuthHandler = this.getSSHAuthHandler(sshUser, sshHostName, identityKeys, preferredAuthentications);
 
-            this.sshConnection = new SSHConnection({
+            ssh2Connection = new SSHConnection({
                 host: !proxyStream ? sshHostName : undefined,
                 port: !proxyStream ? sshPort : undefined,
                 sock: proxyStream,
@@ -449,6 +542,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 hostVerifier: this.createHostVerifier(sshHostName, sshPort, sshHostConfig, verifyUnknownHosts, verifyKnownHosts),
                 authHandler: (arg0, arg1, arg2) => (sshAuthHandler(arg0, arg1, arg2), undefined),
             });
+            this.sshConnection = ssh2Connection;
         } else {
             this.logger.info(`GSSAPI authentication requested for ${destination.hostname}; connecting via the local SSH client`);
             this.sshConnection = new NativeSSHConnection({
@@ -462,6 +556,10 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         }
 
         await this.sshConnection.connect();
+
+        if (ssh2Connection) {
+            await applyRemoteForwardConfig(ssh2Connection, sshHostConfig, this.logger);
+        }
 
         const envVariables: Record<string, string | null> = {};
         if (agentForward) {
