@@ -25,6 +25,9 @@ export type HostConfiguration = {
     RemoteForward?: string[];
     DynamicForward?: string[];
     CertificateFile?: string[];
+
+    ClearAllForwardings?: string;
+    ExitOnForwardFailure?: string;
 } & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
@@ -58,6 +61,8 @@ function isSpecialHost(value: string) {
 }
 
 const SSH_CONFIG_PROPERTIES: Record<string, string> = {
+    'clearallforwardings': 'ClearAllForwardings',
+    'exitonforwardfailure': 'ExitOnForwardFailure',
     'forwardagent': 'ForwardAgent',
     'globalknownhostsfile': 'GlobalKnownHostsFile',
     'gssapiauthentication': 'GSSAPIAuthentication',
@@ -74,6 +79,7 @@ const SSH_CONFIG_PROPERTIES: Record<string, string> = {
     'preferredauthentications': 'PreferredAuthentications',
     'proxycommand': 'ProxyCommand',
     'proxyjump': 'ProxyJump',
+    'remoteforward': 'RemoteForward',
     'sendenv': 'SendEnv',
     'user': 'User',
     'userknownhostsfile': 'UserKnownHostsFile',

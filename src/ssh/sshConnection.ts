@@ -3,7 +3,7 @@
 import { EventEmitter } from 'events';
 import * as net from 'net';
 import * as fs from 'fs';
-import { Client, ClientChannel, ClientErrorExtensions, ExecOptions, ShellOptions, ConnectConfig } from 'ssh2';
+import { Client, ClientChannel, ClientErrorExtensions, ExecOptions, ShellOptions, ConnectConfig, TcpConnectionDetails } from 'ssh2';
 import { Server } from 'net';
 import socks from 'simple-socks';
 // eslint-disable-next-line no-duplicate-imports
@@ -37,6 +37,39 @@ export interface SSHTunnelConfig {
     name?: string;
 }
 
+export interface SSHRemoteTunnelConfig {
+    /** Address to bind on the SSH server. */
+    remoteAddr: string;
+    /** Port to bind on the SSH server. Use 0 to request an allocated port. */
+    remotePort: number;
+    /** Host to connect to from the local machine. */
+    localHost: string;
+    /** Port to connect to from the local machine. */
+    localPort: number;
+    /** Unique name used to reuse and close the tunnel. */
+    name?: string;
+}
+
+export interface SSHRemoteTunnel extends SSHRemoteTunnelConfig {
+    name: string;
+    /** Actual port allocated by the SSH server. */
+    remotePort: number;
+}
+
+interface ActiveRemoteTunnel {
+    client: Client;
+    tunnel: SSHRemoteTunnel;
+}
+
+interface ActiveRemoteChannel {
+    client: Client;
+    tunnelName: string;
+    channel: ClientChannel;
+    socket: net.Socket;
+}
+
+type TCPConnectionListener = (details: TcpConnectionDetails, accept: () => ClientChannel, reject: () => void) => void;
+
 const defaultOptions: Partial<SSHConnectConfig> = {
     reconnect: false,
     port: 22,
@@ -62,6 +95,9 @@ export default class SSHConnection extends EventEmitter {
     public config: SSHConnectConfig;
 
     private activeTunnels: { [index: string]: SSHTunnelConfig & { server: Server } } = {};
+    private activeRemoteTunnels: { [index: string]: ActiveRemoteTunnel } = {};
+    private activeRemoteChannels = new Set<ActiveRemoteChannel>();
+    private remoteForwardListeners = new Map<Client, TCPConnectionListener>();
     private __$connectPromise: Promise<SSHConnection> | null = null;
     private __retries: number = 0;
     private __err: Error & ClientErrorExtensions & { code?: string } | null = null;
@@ -187,6 +223,88 @@ export default class SSHConnection extends EventEmitter {
     }
 
     /**
+     * Ask the SSH server to listen on a TCP address and forward incoming
+     * connections to a TCP service reachable from the local machine.
+     */
+    addRemoteTunnel(config: SSHRemoteTunnelConfig): Promise<SSHRemoteTunnel> {
+        const name = config.name || `${config.remoteAddr}:${config.remotePort}->${config.localHost}:${config.localPort}`;
+        const existing = this.activeRemoteTunnels[name];
+
+        if (existing) {
+            return Promise.resolve(existing.tunnel);
+        }
+
+        return this.connect().then(() => new Promise<SSHRemoteTunnel>((resolve, reject) => {
+            const client = this.sshConnection!;
+
+            client.forwardIn(config.remoteAddr, config.remotePort, (err, remotePort) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                if (!this.remoteForwardListeners.has(client)) {
+                    reject(new Error('SSH connection closed while creating remote tunnel'));
+                    return;
+                }
+
+                const tunnel: SSHRemoteTunnel = {
+                    ...config,
+                    name,
+                    remotePort,
+                };
+
+                this.activeRemoteTunnels[name] = { client, tunnel };
+                resolve(tunnel);
+            });
+        }));
+    }
+
+    /**
+     * Return an active remote tunnel by name.
+     */
+    getRemoteTunnel(name: string): SSHRemoteTunnel | undefined {
+        return this.activeRemoteTunnels[name]?.tunnel;
+    }
+
+    /**
+     * Close one remote tunnel by name, or every remote tunnel when omitted.
+     */
+    closeRemoteTunnel(name?: string): Promise<void> {
+        if (!name) {
+            return Promise.all(Object.keys(this.activeRemoteTunnels).map((key) => this.closeRemoteTunnel(key))).then(() => { });
+        }
+
+        const activeTunnel = this.activeRemoteTunnels[name];
+        if (!activeTunnel) {
+            return Promise.resolve();
+        }
+
+        delete this.activeRemoteTunnels[name];
+        this.closeRemoteChannels(activeTunnel.client, name);
+
+        return new Promise((resolve, reject) => {
+            try {
+                activeTunnel.client.unforwardIn(
+                    activeTunnel.tunnel.remoteAddr,
+                    activeTunnel.tunnel.remotePort,
+                    (err) => err ? reject(err) : resolve(),
+                );
+            } catch (err) {
+                // The remote listener disappears with its SSH transport. Local
+                // state has already been removed, so a disconnected transport
+                // requires no further cleanup.
+                if (!this.remoteForwardListeners.has(activeTunnel.client)) {
+                    resolve();
+                    return;
+                }
+
+                reject(err);
+            }
+        });
+    }
+
+    /**
      * Get a Socks Port
      */
     getSocksPort(localPort: number): Promise<number> {
@@ -198,14 +316,27 @@ export default class SSHConnection extends EventEmitter {
     /**
      * Close SSH Connection
      */
-    close(): Promise<void> {
+    async close(): Promise<void> {
         this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.BEFOREDISCONNECT);
-        return this.closeTunnel().then(() => {
-            if (this.sshConnection) {
-                this.sshConnection.end();
-                this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT);
-            }
-        });
+        let remoteTunnelError: unknown;
+
+        try {
+            await this.closeRemoteTunnel();
+        } catch (err) {
+            remoteTunnelError = err;
+        }
+
+        await this.closeTunnel();
+
+        if (this.sshConnection) {
+            this.removeRemoteForwardListener(this.sshConnection);
+            this.sshConnection.end();
+            this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT);
+        }
+
+        if (remoteTunnelError) {
+            throw remoteTunnelError;
+        }
     }
 
     /**
@@ -236,6 +367,8 @@ export default class SSHConnection extends EventEmitter {
 
             //Start ssh server connection
             this.sshConnection = new Client();
+            const client = this.sshConnection;
+            this.addRemoteForwardListener(client);
             this.sshConnection.on('ready', (err: Error & ClientErrorExtensions) => {
                 if (err) {
                     this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT, { err: err });
@@ -250,6 +383,7 @@ export default class SSHConnection extends EventEmitter {
                 this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT, { err: err });
                 this.__err = err;
             }).on('close', () => {
+                this.clearRemoteForwarding(client);
                 this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT, { err: this.__err });
                 if (this.config.reconnect && this.__retries <= this.config.reconnectTries! && this.__err && this.__err.level !== 'client-authentication' && this.__err.code !== 'ENOTFOUND') {
                     setTimeout(() => {
@@ -372,6 +506,109 @@ export default class SSHConnection extends EventEmitter {
         }
 
         return Promise.resolve();
+    }
+
+    private addRemoteForwardListener(client: Client): void {
+        const listener: TCPConnectionListener = (details, accept, reject) => {
+            this.handleRemoteTCPConnection(client, details, accept, reject);
+        };
+
+        this.remoteForwardListeners.set(client, listener);
+        client.on('tcp connection', listener);
+    }
+
+    private removeRemoteForwardListener(client: Client): void {
+        const listener = this.remoteForwardListeners.get(client);
+        if (!listener) {
+            return;
+        }
+
+        client.removeListener('tcp connection', listener);
+        this.remoteForwardListeners.delete(client);
+    }
+
+    private clearRemoteForwarding(client: Client): void {
+        this.removeRemoteForwardListener(client);
+
+        for (const [name, activeTunnel] of Object.entries(this.activeRemoteTunnels)) {
+            if (activeTunnel.client === client) {
+                delete this.activeRemoteTunnels[name];
+            }
+        }
+
+        this.closeRemoteChannels(client);
+    }
+
+    private closeRemoteChannels(client: Client, tunnelName?: string): void {
+        for (const activeChannel of [...this.activeRemoteChannels]) {
+            if (activeChannel.client === client && (!tunnelName || activeChannel.tunnelName === tunnelName)) {
+                this.disposeRemoteChannel(activeChannel);
+            }
+        }
+    }
+
+    private disposeRemoteChannel(activeChannel: ActiveRemoteChannel): void {
+        this.activeRemoteChannels.delete(activeChannel);
+
+        if (!activeChannel.socket.destroyed) {
+            activeChannel.socket.destroy();
+        }
+        if (!activeChannel.channel.destroyed) {
+            activeChannel.channel.destroy();
+        }
+    }
+
+    private handleRemoteTCPConnection(
+        client: Client,
+        details: TcpConnectionDetails,
+        accept: () => ClientChannel,
+        reject: () => void,
+    ): void {
+        const activeTunnel = Object.values(this.activeRemoteTunnels).find(({ client: tunnelClient, tunnel }) => (
+            tunnelClient === client
+            && tunnel.remoteAddr === details.destIP
+            && tunnel.remotePort === details.destPort
+        ));
+
+        if (!activeTunnel) {
+            reject();
+            return;
+        }
+
+        let channel: ClientChannel;
+        try {
+            channel = accept();
+        } catch {
+            reject();
+            return;
+        }
+
+        let socket: net.Socket;
+        try {
+            socket = net.connect({
+                host: activeTunnel.tunnel.localHost,
+                port: activeTunnel.tunnel.localPort,
+            });
+        } catch {
+            channel.destroy();
+            return;
+        }
+
+        const activeChannel: ActiveRemoteChannel = {
+            client,
+            tunnelName: activeTunnel.tunnel.name,
+            channel,
+            socket,
+        };
+        this.activeRemoteChannels.add(activeChannel);
+
+        socket.pipe(channel);
+        channel.pipe(socket);
+
+        socket.once('close', () => this.disposeRemoteChannel(activeChannel));
+        socket.once('error', () => this.disposeRemoteChannel(activeChannel));
+        channel.once('close', () => this.disposeRemoteChannel(activeChannel));
+        channel.once('error', () => this.disposeRemoteChannel(activeChannel));
     }
 
     private createSshForwardTarget(destination: DestinationInfo, origin: OriginInfo, callback: ConnectionOptionsCallback) {
