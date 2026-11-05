@@ -540,7 +540,8 @@ describe('package.json manifest drift guard', () => {
 //
 // Deliberately shape-based: *which* version is pinned is free to move via a
 // deliberate re-pin (edit package.json, `npm install`), as long as it stays an
-// exact x.y.z pin and the lockfile agrees with it.
+// exact x.y.z pin and the lockfile agrees with it. Advisory floors below also
+// prevent an agreeing manifest and lockfile from pinning a vulnerable version.
 describe('root dependency overrides', () => {
     const overrides = (readPackageJson().overrides ?? {}) as Record<string, string>;
 
@@ -617,6 +618,87 @@ describe('root dependency overrides', () => {
         }
         return nested;
     }
+
+    /** Require the upstream patched release, independently of npm's advisory feed. */
+    function basicFtpAdvisoryViolations(packages: LockPackages, pins: Record<string, string>): string[] {
+        const versions: Record<string, unknown> = {
+            'overrides.basic-ftp': pins['basic-ftp'],
+            'node_modules/basic-ftp': packages['node_modules/basic-ftp']?.version,
+        };
+        for (const [location, installed] of Object.entries(packages)) {
+            if (location.endsWith('/node_modules/basic-ftp')) {
+                versions[location] = installed.version;
+            }
+        }
+        return Object.entries(versions)
+            .filter(([, version]) => typeof version !== 'string' || !satisfies(version, '>=6.2.6'))
+            .map(([location, version]) => `${location}: ${String(version)}`);
+    }
+
+    // GHSA-2w5v-vj22-jp27 names 6.2.6 as patched; do not infer 6.2.5 is safe
+    // from its affected-range header. This also covers GHSA-5rfr-xx34-2xxv
+    // (<=6.2.1, patched in 6.2.2). Equality with the manifest is not sufficient.
+    it('requires basic-ftp >=6.2.6 in the manifest and every lockfile copy', () => {
+        const violations = basicFtpAdvisoryViolations(readPackageLockJson().packages as LockPackages, pinsUnderTest());
+        expect(violations, `basic-ftp must be >=6.2.6: ${violations.join('; ')}`).toEqual([]);
+    });
+
+    it.each(['6.2.1', '6.2.5'])('rejects basic-ftp %s in either the manifest or resolved tree', version => {
+        const patchedPackages = { 'node_modules/basic-ftp': { version: '6.2.6' } };
+        const vulnerablePackages = { 'node_modules/basic-ftp': { version } };
+        expect(basicFtpAdvisoryViolations(patchedPackages, { 'basic-ftp': version }))
+            .toEqual([`overrides.basic-ftp: ${version}`]);
+        expect(basicFtpAdvisoryViolations(vulnerablePackages, { 'basic-ftp': '6.2.6' }))
+            .toEqual([`node_modules/basic-ftp: ${version}`]);
+        expect(basicFtpAdvisoryViolations(vulnerablePackages, { 'basic-ftp': version }))
+            .toEqual([`overrides.basic-ftp: ${version}`, `node_modules/basic-ftp: ${version}`]);
+    });
+
+    it.each(['6.2.1', '6.2.5'])('rejects a nested basic-ftp %s even when the pin and hoisted copy are patched', version => {
+        const packages = {
+            'node_modules/basic-ftp': { version: '6.2.6' },
+            'node_modules/get-uri/node_modules/basic-ftp': { version },
+        };
+        expect(basicFtpAdvisoryViolations(packages, { 'basic-ftp': '6.2.6' }))
+            .toEqual([`node_modules/get-uri/node_modules/basic-ftp: ${version}`]);
+    });
+
+    it('rejects a missing basic-ftp override even when the resolution is patched', () => {
+        expect(basicFtpAdvisoryViolations({ 'node_modules/basic-ftp': { version: '6.2.6' } }, {}))
+            .toEqual(['overrides.basic-ftp: undefined']);
+    });
+
+    it('rejects a missing hoisted basic-ftp resolution even when a patched nested copy exists', () => {
+        const pins = { 'basic-ftp': '6.2.6' };
+        expect(basicFtpAdvisoryViolations({}, pins))
+            .toEqual(['node_modules/basic-ftp: undefined']);
+        expect(basicFtpAdvisoryViolations({ 'node_modules/get-uri/node_modules/basic-ftp': { version: '6.2.6' } }, pins))
+            .toEqual(['node_modules/basic-ftp: undefined']);
+    });
+
+    it.each(['', 'not-a-version', '6.2', '^6.2.6', '>=6.2.6'])('rejects malformed basic-ftp version %j in the pin', version => {
+        expect(basicFtpAdvisoryViolations({ 'node_modules/basic-ftp': { version: '6.2.6' } }, { 'basic-ftp': version }))
+            .toEqual([`overrides.basic-ftp: ${version}`]);
+    });
+
+    it.each(['', 'not-a-version', '6.2', '^6.2.6', '>=6.2.6', undefined, null, 626])(
+        'rejects malformed basic-ftp version %j in hoisted and nested resolutions', version => {
+            const pins = { 'basic-ftp': '6.2.6' };
+            expect(basicFtpAdvisoryViolations({ 'node_modules/basic-ftp': { version } }, pins))
+                .toEqual([`node_modules/basic-ftp: ${String(version)}`]);
+            const packages = {
+                'node_modules/basic-ftp': { version: '6.2.6' },
+                'node_modules/get-uri/node_modules/basic-ftp': { version },
+            };
+            expect(basicFtpAdvisoryViolations(packages, pins))
+                .toEqual([`node_modules/get-uri/node_modules/basic-ftp: ${String(version)}`]);
+        }
+    );
+
+    it('accepts the patched basic-ftp 6.2.6 pin and resolution', () => {
+        expect(basicFtpAdvisoryViolations({ 'node_modules/basic-ftp': { version: '6.2.6' } }, { 'basic-ftp': '6.2.6' }))
+            .toEqual([]);
+    });
 
     // The set of overridden advisories is this guard's own expectation, so it
     // cannot be read back from the manifest it polices: dropping `undici`

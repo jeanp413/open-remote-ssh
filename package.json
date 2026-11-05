@@ -496,7 +496,7 @@
 		"Other"
 	],
 	"overrides": {
-		"basic-ftp": "6.2.1",
+		"basic-ftp": "6.2.6",
 		"glob": "14.0.3",
 		"minimatch": "11.0.3",
 		"undici": "7.30.1"
