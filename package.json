@@ -18,8 +18,8 @@
 	"scripts": {
 		"audit:fix": "npm audit fix --min-release-age=0",
 		"build": "npm run clean && npm run compile:src && npm run bundle",
-		"bundle": "webpack --mode production",
-		"bundle:dev": "webpack --mode development",
+		"bundle": "node scripts/patch-ssh2.js && webpack --mode production",
+		"bundle:dev": "node scripts/patch-ssh2.js && webpack --mode development",
 		"ci:lint": "pipx run zizmor .",
 		"ci:lint:fix": "pipx run zizmor . --fix=all",
 		"clean": "rimraf lib out *.vsix",
@@ -29,7 +29,7 @@
 		"lint:fix": "eslint --fix",
 		"lint:package": "fixpack || true",
 		"package": "rimraf *.vsix && vsce package",
-		"postinstall": "npm run update:dts",
+		"postinstall": "node scripts/patch-ssh2.js && npm run update:dts",
 		"prepare": "husky; npm run lint:package",
 		"release": "release-it",
 		"test": "vitest run",
@@ -48,7 +48,7 @@
 		"simple-socks": "git+https://github.com/jeanp413/simple-socks#2ac739301a82d6baff04804ed494436a026acb60",
 		"socks": "2.8.9",
 		"ssh-config": "5.1.0",
-		"ssh2": "git+https://github.com/jeanp413/ssh2#a169f627213aa663e0aa2fd2f0ef5c8931890c26"
+		"ssh2": "1.17.0"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "20.5.3",

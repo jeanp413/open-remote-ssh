@@ -374,7 +374,9 @@ describe('package.json manifest drift guard', () => {
         });
 
         it('routes postinstall through npm run update:dts and invokes the installed binary, never npx', () => {
-            expect(scripts['postinstall']).toBe('npm run update:dts');
+            // The ssh2 patcher now runs ahead of the typings step (its wiring is
+            // guarded by test/package-ssh2.test.ts); the dts routing itself is unchanged.
+            expect(scripts['postinstall']).toBe('node scripts/patch-ssh2.js && npm run update:dts');
             // The installed binary's name is `dts` (@vscode/dts's bin); `vscode-dts` is the
             // deprecated pre-rename package and must not come back in any form.
             expect(scripts['update:dts']).toMatch(/\bdts\b/);
@@ -408,24 +410,25 @@ describe('package.json manifest drift guard', () => {
         });
     });
 
-    // The two git-sourced runtime dependencies (simple-socks, ssh2) used to sit on
-    // upstream's *moving* branch refs (`#main` / `#master`): every `npm install` or
-    // `taze` refresh silently re-resolved them to whatever upstream had pushed that
-    // day — the same unreproducible-install class the dts guards above fix for the
-    // typings toolchain, except these two ship inside the extension and carry every
-    // SSH connection. They are now pinned to exact commit SHAs. These guards keep it
-    // that way and keep the three copies in agreement — manifest spec, lockfile root
-    // mirror (what `npm ci` validates the manifest against), installed resolved URL.
-    // Deliberately shape-based: *which* commit is pinned is free to move via a
-    // deliberate re-pin (edit the manifest, `npm install`), as long as it stays a
-    // full 40-hex commit everywhere.
-    describe('git dependency pins (simple-socks, ssh2)', () => {
+    // The git-sourced runtime dependency (simple-socks) used to sit on upstream's
+    // *moving* branch ref (`#main`): every `npm install` or `taze` refresh silently
+    // re-resolved it to whatever upstream had pushed that day — the same
+    // unreproducible-install class the dts guards above fix for the typings
+    // toolchain, except it ships inside the extension and carries the proxy path of
+    // every SSH connection. It is now pinned to an exact commit SHA. (Its former
+    // neighbour ssh2 moved to an exact npm registry pin — strict-kex /
+    // CVE-2023-48795 — and is guarded by test/package-ssh2.test.ts, not here.)
+    // These guards keep the pin in place and keep the three copies in agreement —
+    // manifest spec, lockfile root mirror (what `npm ci` validates the manifest
+    // against), installed resolved URL. Deliberately shape-based: *which* commit is
+    // pinned is free to move via a deliberate re-pin (edit the manifest,
+    // `npm install`), as long as it stays a full 40-hex commit everywhere.
+    describe('git dependency pins (simple-socks)', () => {
         const dependencies = pkg.dependencies as Record<string, string>;
-        // Package name and upstream repo happen to be identical for both; the owner is
-        // part of the pin — these forks (transport fixes) live in jeanp413's repos, not npm.
+        // Package name and upstream repo happen to be identical; the owner is
+        // part of the pin — this fork (transport fixes) lives in jeanp413's repo, not npm.
         const gitPins = [
-            { name: 'simple-socks', repo: 'simple-socks' },
-            { name: 'ssh2', repo: 'ssh2' }
+            { name: 'simple-socks', repo: 'simple-socks' }
         ];
 
         /** The manifest spec for `name`, asserted to be a git+https URL pinned to a full 40-hex commit (no branch/tag fragment). */
