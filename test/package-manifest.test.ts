@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import { describe, expect, it } from 'vitest';
 import { satisfies } from 'semver';
 import { KILL_WORKSPACE_SESSIONS_COMMAND_ID } from '../src/commands';
@@ -320,6 +322,134 @@ describe('package.json manifest drift guard', () => {
             expect(tmuxProfile, 'no contributed profile with id "tmux"').toBeDefined();
             expect(tmuxProfile!.title).toBe(TMUX_PROFILE_TITLE);
         });
+    });
+
+    describe('maintenance tools', () => {
+        const scripts = pkg.scripts as Record<string, string>;
+        const devDependencies = pkg.devDependencies as Record<string, string>;
+        const dependencies = pkg.dependencies as Record<string, string>;
+        // [bot] These smoke tests require /bin/sh and Unix executable semantics (Linux/macOS tooling only).
+        const supportsMaintenanceTools = process.platform === 'linux' || process.platform === 'darwin';
+
+        it('pins artifact exactly as a developer tool, not a runtime dependency', () => {
+            expect(devDependencies['@zokugun/artifact']).toBe('0.13.1');
+            expect(dependencies['@zokugun/artifact']).toBeUndefined();
+        });
+
+        it('locks the artifact pin and its executable mapping', () => {
+            const packages = readPackageLockJson().packages as Record<string, JsonObject>;
+            const root = packages[''];
+            const installed = packages['node_modules/@zokugun/artifact'];
+            expect((root.devDependencies as Record<string, string>)['@zokugun/artifact']).toBe('0.13.1');
+            expect((root.dependencies as Record<string, string>)['@zokugun/artifact']).toBeUndefined();
+            expect(installed).toMatchObject({
+                version: devDependencies['@zokugun/artifact'],
+                dev: true,
+                bin: { artifact: 'bin/artifact' },
+            });
+            expect(installed.resolved).toBe('https://registry.npmjs.org/@zokugun/artifact/-/artifact-0.13.1.tgz');
+            expect(installed.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+={0,2}$/);
+        });
+
+        it('keeps every pacote resolution above the GHSA-w4pp-8pjf-rmxw advisory floor', () => {
+            // [bot] Check nested copies too: a safe hoisted version must not hide an affected copy.
+            const packages = readPackageLockJson().packages as Record<string, JsonObject>;
+            const copies = Object.entries(packages).filter(([location]) =>
+                location === 'node_modules/pacote' || location.endsWith('/node_modules/pacote'));
+            expect(copies.length).toBeGreaterThan(0);
+            for (const [location, installed] of copies) {
+                expect(typeof installed.version, location).toBe('string');
+                expect(satisfies(installed.version as string, '>=21.5.1'), `${location}: ${installed.version}`).toBe(true);
+            }
+        });
+
+        it('preserves maintenance commands and the seven-day pinact cooldown', () => {
+            expect(scripts['update:artifacts']).toBe('artifact update');
+            expect(scripts['update:ci']).toBe('PINACT_MIN_AGE=7 pinact run --update');
+            expect(devDependencies.pinact).toBeUndefined();
+            expect(dependencies.pinact).toBeUndefined();
+        });
+
+        it('documents both installation steps, npm PATH, and non-mutating help checks', () => {
+            const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+            const maintenance = readme.split('### Maintenance tools (Linux/macOS)')[1]?.split('\n### ')[0];
+            expect(maintenance).toBeDefined();
+            const text = maintenance!.replace(/\s+/g, ' ');
+            expect(text).toContain('Complete maintenance setup requires **both** steps');
+            expect(text).toContain('`npm install` (or `bin/setup`) alone does **not** install pinact');
+            expect(text).toContain('brew install pinact');
+            expect(text).toContain('https://github.com/suzuki-shunsuke/pinact/blob/main/INSTALL.md');
+            expect(text).toContain('verify');
+            expect(text).toContain('PATH inherited by npm');
+            expect(text).toContain('export PATH="$HOME/.local/bin:$PATH"');
+            expect(text).toContain('./node_modules/.bin/artifact --help');
+            expect(text).toContain('npm run update:artifacts -- --help');
+            expect(text).toContain('pinact --version');
+            expect(text).toContain('pinact run --help');
+            expect(text).toContain('npm run update:ci -- --help');
+            expect(text).toContain('**modify repository files**');
+            expect(text).toContain('Neither update target runs automatically during installation');
+        });
+
+        it.runIf(supportsMaintenanceTools).each([0, 23])('passes arguments and cooldown through npm to a pinact stub (exit %i, not real pinact)', (exitCode) => {
+            const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'pinact-npm-'));
+            try {
+                const binDir = path.join(fixture, 'bin');
+                fs.mkdirSync(binDir);
+                // [bot] Copy only the live script: no repository workflows or lifecycle hooks can be updated here.
+                fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({
+                    private: true,
+                    scripts: { 'update:ci': scripts['update:ci'] },
+                }));
+                const capture = path.join(fixture, 'invocation');
+                fs.writeFileSync(path.join(binDir, 'pinact'), [
+                    '#!/bin/sh',
+                    'printf "%s\\n" "$PINACT_MIN_AGE" "$@" > "$PINACT_TEST_CAPTURE"',
+                    'printf "%s\\n" "pinact stub, not real pinact"',
+                    `exit ${exitCode}`,
+                    '',
+                ].join('\n'), { mode: 0o755 });
+                const npmCli = process.env.npm_execpath;
+                expect(npmCli, 'run this smoke test through npm test').toBeDefined();
+                const result = spawnSync(process.execPath, [npmCli!, '--silent', '--script-shell=/bin/sh', 'run', 'update:ci', '--', '--help'], {
+                    cwd: fixture,
+                    env: { ...process.env, PATH: binDir, PINACT_MIN_AGE: '0', PINACT_TEST_CAPTURE: capture },
+                    encoding: 'utf8',
+                    timeout: 15000,
+                    killSignal: 'SIGKILL',
+                    maxBuffer: 1024 * 1024,
+                });
+                expect(result.error).toBeUndefined();
+                expect(result.status, result.stderr).toBe(exitCode);
+                expect(result.stdout.trim()).toBe('pinact stub, not real pinact');
+                expect(fs.readFileSync(capture, 'utf8')).toBe('7\nrun\n--update\n--help\n');
+            } finally {
+                fs.rmSync(fixture, { recursive: true, force: true });
+            }
+        }, 20000);
+
+        it.runIf(supportsMaintenanceTools)('runs update:artifacts help using the installed local executable', () => {
+            const binDir = path.join(repoRoot, 'node_modules', '.bin');
+            const artifact = path.join(binDir, 'artifact');
+            const entry = path.join(repoRoot, 'node_modules', '@zokugun', 'artifact', 'bin', 'artifact');
+            // [bot] Fail before spawning if the local binary is missing; a global install must never hide it.
+            expect(fs.realpathSync(artifact)).toBe(fs.realpathSync(entry));
+            fs.accessSync(artifact, fs.constants.X_OK);
+            const npmCli = process.env.npm_execpath;
+            expect(npmCli, 'run this smoke test through npm test').toBeDefined();
+            const result = spawnSync(process.execPath, [npmCli!, '--silent', '--script-shell=/bin/sh', 'run', 'update:artifacts', '--', '--help'], {
+                cwd: repoRoot,
+                env: { ...process.env, PATH: [binDir, path.dirname(process.execPath)].join(path.delimiter) },
+                encoding: 'utf8',
+                timeout: 15000,
+                killSignal: 'SIGKILL',
+                maxBuffer: 1024 * 1024,
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr).toBe(0);
+            expect(result.stdout).toMatch(/Usage: artifact update\b/);
+            expect(result.stdout).toContain('update the current project using the installed artifacts');
+        }, 20000);
     });
 
     // The typings acquisition (`update:dts`) used to run `npx vscode-dts dev && npx

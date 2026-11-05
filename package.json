@@ -64,6 +64,7 @@
 		"@typescript-eslint/parser": "8.61.0",
 		"@vscode/dts": "0.4.1",
 		"@vscode/vsce": "3.9.2",
+		"@zokugun/artifact": "0.13.1",
 		"eslint": "10.5.0",
 		"eslint-plugin-jsdoc": "62.9.0",
 		"fixpack": "4.0.0",

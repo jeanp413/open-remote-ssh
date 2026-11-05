@@ -100,6 +100,50 @@ First use (and cache refresh) requires network access to the Python package
 index and writable pipx/cache directories. An offline empty cache cannot run
 this check; acquisition errors fail the hook rather than skipping it.
 
+### Maintenance tools (Linux/macOS)
+
+These tools maintain this repository; they are not extension requirements.
+Complete maintenance setup requires **both** steps:
+
+1. From the repository root, run `npm install` (also run by `bin/setup`) to
+   install the pinned **project-local artifact** CLI, including devDependencies.
+2. Install official **pinact**, a separate Go binary, not an npm dependency.
+   With Homebrew on Linux/macOS, run `brew install pinact`. Alternatively,
+   download the Linux/macOS release binary for your architecture and verify it
+   using the upstream
+   [installation and verification instructions](https://github.com/suzuki-shunsuke/pinact/blob/main/INSTALL.md).
+   Place the verified executable in a directory on the **PATH inherited by npm**,
+   not only behind an interactive shell alias. For example, if installed in
+   `$HOME/.local/bin`, run `export PATH="$HOME/.local/bin:$PATH"` before invoking
+   npm, and persist that PATH in the environment used by your editor or hooks.
+   For Homebrew, ensure its binary directory is likewise on npm's PATH.
+
+`npm install` (or `bin/setup`) alone does **not** install pinact; it completes
+only step 1. After both steps, check installation from the repository root
+without updating maintenance files:
+
+```sh
+./node_modules/.bin/artifact --help
+npm run update:artifacts -- --help
+pinact --version
+pinact run --help
+npm run update:ci -- --help
+```
+
+When deliberately refreshing maintenance files, run:
+
+```sh
+npm run update:artifacts
+npm run update:ci
+```
+
+Installation and real updates require network access. Unlike the help/version
+checks, real updates **modify repository files**: artifact refreshes files
+managed by `.artifactrc.yml`, and pinact updates GitHub Actions pins in workflow
+files. Review the resulting diff before committing. `update:ci` preserves
+`PINACT_MIN_AGE=7 pinact run --update`: the seven-day release cooldown remains
+in force. Neither update target runs automatically during installation.
+
 ### What the hook checks
 
 [`.lintstagedrc.yml`](.lintstagedrc.yml) runs fixpack on a staged `package.json`,
