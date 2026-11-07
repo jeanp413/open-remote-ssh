@@ -1,6 +1,6 @@
 # Brief: is the project healthy?
 
-Daily checkup fired by `schedules: health`: the failures no issue or PR announces.
+Weekly (Monday) checkup fired by `schedules: health`: the failures no issue or PR announces.
 
 ## Signals
 

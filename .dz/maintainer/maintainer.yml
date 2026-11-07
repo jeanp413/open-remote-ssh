@@ -52,8 +52,9 @@ escalate:
   ask_before_acting: []
 
 schedules:
+  # Weekly (owner, 2026-11-06: routine maintenance weekly, CVE daily). Security has its own lanes.
   - name: health
-    days: [mon, tue, wed, thu, fri, sat, sun]
+    days: [mon]
     hours_utc: [7]
     brief_file: .dz/briefs/health.md
   - name: improve
