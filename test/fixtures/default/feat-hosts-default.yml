@@ -6,7 +6,6 @@ client:
 
       Host test alias
         HostName 127.0.0.1
-        Port 2222
         User openremotessh
         Password openremotessh
     /bin/vscodium/app/product.json: >

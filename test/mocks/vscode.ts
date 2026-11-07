@@ -6,6 +6,11 @@ type ProgressTask = <R>(progress: vscode.Progress<{ message?: string; increment?
 let $password: string = '';
 let $warningAnswer: string | undefined = undefined;
 let $config: Record<string, unknown> = {};
+let $rootDir: string | undefined = undefined;
+
+function setRootDir(path: string) {
+    $rootDir = path;
+}
 
 const DEFAULT_CONFIG: Record<string, unknown> = {
     verifyKnownHosts: 'accept',
@@ -17,11 +22,52 @@ const commands = {
 };
 
 const env = {
-    appRoot: '/bin/vscodium/app'
+    get appRoot(): string {
+        if ($rootDir) {
+            return `${$rootDir}/vscodium/app`;
+        }
+        return '/bin/vscodium/app';
+    }
 };
 
+class Uri {
+    private constructor(
+        private path: string
+    ) {}
+
+    static file(path: string): Uri {
+        return new Uri(path);
+    }
+
+    get fsPath(): string {
+        return this.path;
+    }
+}
+
 class ExtensionContext {
-    extensionPath = '/data/vscodium/extensions/open-remote-ssh';
+    get extensionPath(): string {
+        if ($rootDir) {
+            return `${$rootDir}/vscodium/extensions/open-remote-ssh`;
+        }
+        return '/data/vscodium/extensions/open-remote-ssh';
+    }
+
+    get globalStorageUri(): Uri {
+        if ($rootDir) {
+            return Uri.file(`${$rootDir}/vscodium/config/user/open-remote-ssh`);
+        }
+        return Uri.file('/data/vscodium/config/user/open-remote-ssh');
+    }
+
+    extension = {
+        id: 'jeanp413.open-remote-ssh',
+        packageJSON: {
+            name: 'open-remote-ssh',
+            version: '0.5.2',
+            publisher: 'jeanp413',
+        }
+    };
+
     environmentVariableCollection = {
         persistent: false,
         replace: vi.fn(),
@@ -78,7 +124,7 @@ const window = {
     showErrorMessage: vi.fn(async () => undefined),
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showInputBox: async (options?: vscode.InputBoxOptions, _token?: vscode.CancellationToken) => {
-        if(options?.title?.startsWith('Enter password for')) {
+        if(options?.title?.startsWith('Enter password for') || options?.title?.startsWith('SSH Authentication')) {
             return $password;
         }
 
@@ -120,4 +166,5 @@ export {
     window,
     version,
     workspace,
+    setRootDir
 };

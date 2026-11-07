@@ -10,6 +10,8 @@ import * as vscode from './mocks/vscode';
 import { runDocker } from './utils/run-docker';
 import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
+import SSHConfig from 'ssh-config';
+import { defaultSSHConfigPath } from '../src/ssh/sshConfig';
 
 const ROOT = fse.join('.', 'test', 'fixtures', 'default');
 const SERVER_SETUP_BASH = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
@@ -72,6 +74,8 @@ for (const file of files.value) {
   }
 
   describe(name, async () => {
+    let hostPort: number | undefined;
+
     beforeAll(async () => {
       vol.reset();
 
@@ -88,7 +92,7 @@ for (const file of files.value) {
         '--name',
         containerName,
         '--publish',
-        '2222:2222',
+        '2222',
         '--env',
         `USER_NAME=${server.username}`,
         '--env',
@@ -102,20 +106,28 @@ for (const file of files.value) {
         server.image,
       ]);
 
-      const hostPort = getMappedPort(containerName);
+      hostPort = getMappedPort(containerName);
 
       await waitForSSHReady(server.username, server.password, hostPort, 60_000, containerName);
     }, 120_000);
 
     afterAll(() => {
       runDocker(['rm', '-f', containerName], true);
-    });
+    }, 120_000);
 
     it(`test-${name}`, async () => {
+      const sshConfig = SSHConfig.parse(`
+Host *
+  Port ${hostPort}
+  User ${server.username}
+  Password ${server.password}
+`);
+
       vol.fromJSON({
         ...client.files,
-        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.sh': SERVER_SETUP_BASH,
-        '/data/vscodium/extensions/open-remote-ssh/src/scripts/server-setup.ps1': SERVER_SETUP_POWERSHELL,
+        [defaultSSHConfigPath]: sshConfig.toString(),
+        '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.sh': SERVER_SETUP_BASH,
+        '/data/vscodium/extensions/open-remote-ssh/lib/scripts/server-setup.ps1': SERVER_SETUP_POWERSHELL,
       });
 
       vscode.window.setPassword(server.password);

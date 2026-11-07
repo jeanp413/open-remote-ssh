@@ -1,6 +1,6 @@
+import { sleep } from '../../src/common/sleep';
 import SSHConnection from '../../src/ssh/sshConnection';
 import { runDocker } from './run-docker';
-import { sleep } from './sleep';
 
 export async function waitForSSHReady(username: string, password: string, port: number, timeoutMs: number, containerName: string): Promise<void> {
     const start = Date.now();

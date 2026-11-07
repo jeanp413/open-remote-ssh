@@ -28,7 +28,7 @@ export type HostConfiguration = {
 } & Record<string, string>;
 
 const systemSSHConfig = isWindows ? path.resolve(process.env.ALLUSERSPROFILE || 'C:\\ProgramData', 'ssh\\ssh_config') : '/etc/ssh/ssh_config';
-const defaultSSHConfigPath = path.resolve(os.homedir(), '.ssh/config');
+export const defaultSSHConfigPath = path.resolve(os.homedir(), '.ssh/config');
 
 export function getSSHConfigPath() {
     const sshConfigPath = vscode.workspace.getConfiguration('remote.SSH').get<string>('configFile');

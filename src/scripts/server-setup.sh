@@ -27,6 +27,7 @@ SERVER_ARCH="%%SERVER_ARCH%%"
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
 SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
+SCRIPT_PREVENT_EXIT=%%SCRIPT_PREVENT_EXIT%%
 
 LISTENING_ON=
 OS_RELEASE_ID=
@@ -42,7 +43,7 @@ get_installed_commit() {
 }
 
 # Mimic output from logs of remote-ssh extension
-print_install_results_and_exit() {
+print_install_results() {
   echo "%%SCRIPT_ID%%: start"
   echo "exitCode==$1=="
   echo "listeningOn==$LISTENING_ON=="
@@ -53,6 +54,10 @@ print_install_results_and_exit() {
   echo "tmpDir==$TMP_DIR=="
 %%ENV_VAR_LINES%%
   echo "%%SCRIPT_ID%%: end"
+}
+
+fail_and_exit() {
+  print_install_results "$1"
   exit 0
 }
 
@@ -89,7 +94,7 @@ if command -v flock >/dev/null 2>&1; then
 
   if flock --help 2>&1 | grep -q -- '-w'; then
     # wait 30s to acquire lock, otherwise fail
-    flock -x -w 30 $FD || print_install_results_and_exit 1
+    flock -x -w 30 $FD || fail_and_exit 1
   else
     ELAPSED=0
 
@@ -105,7 +110,7 @@ if command -v flock >/dev/null 2>&1; then
 
     if [[ $ELAPSED -ge 30 ]]; then
       echo "Warning: flock cannot acquire the install lock"
-      print_install_results_and_exit 1
+      fail_and_exit 1
     fi
   fi
 
@@ -117,7 +122,7 @@ fi
 # Check if platform is supported
 if ! command -v uname >/dev/null 2>&1; then
   echo "Error: 'uname' command not found, could not get platform/arch data."
-  print_install_results_and_exit 1
+  fail_and_exit 1
 fi
 
 # https://www.freedesktop.org/software/systemd/man/os-release.html
@@ -133,7 +138,7 @@ fi
 if [[ ! -d $SERVER_DIR ]]; then
   mkdir -p $SERVER_DIR || (
     echo "Error: creating server install directory"
-    print_install_results_and_exit 1
+    fail_and_exit 1
   )
 fi
 
@@ -157,7 +162,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
       ;;
     *)
       echo "Error: '$PLATFORM' needs manual installation of remote extension host"
-      print_install_results_and_exit 1
+      fail_and_exit 1
       ;;
   esac
 
@@ -171,25 +176,25 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
     fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
   else
     echo "Error: no tool to download server binary"
-    print_install_results_and_exit 1
+    fail_and_exit 1
   fi
 
   if (( $? > 0 )); then
     echo "Error downloading server from $SERVER_DOWNLOAD_URL"
     rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    fail_and_exit 1
   fi
 
   tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (
     echo "Error downloaded tarball is corrupt or incomplete"
     rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    fail_and_exit 1
   )
 
   tar -xf vscode-server.tar.gz --strip-components 1 || (
     echo "Error while extracting server contents"
     rm -rf vscode-server.tar.gz
-    print_install_results_and_exit 1
+    fail_and_exit 1
   )
 
   rm -f vscode-server.tar.gz
@@ -201,7 +206,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     rm -rf $SERVER_DIR/*
 
-    print_install_results_and_exit 1
+    fail_and_exit 1
   fi
 
   if ! validate_installed_commit; then
@@ -210,7 +215,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     rm -rf "$SERVER_DIR"/*
 
-    print_install_results_and_exit 1
+    fail_and_exit 1
   fi
 else
   echo "Server script already installed in $SERVER_SCRIPT"
@@ -257,10 +262,11 @@ if [[ -f $SERVER_TOKENFILE ]]; then
   SERVER_CONNECTION_TOKEN="$(cat $SERVER_TOKENFILE)"
 else
   echo "Error: server token file not found $SERVER_TOKENFILE"
-  print_install_results_and_exit 1
+  fail_and_exit 1
 fi
 
-for i in {1..35}; do
+waitUntil=$((SECONDS+20))
+while (( SECONDS < waitUntil )) do
   if [[ -f $SERVER_LOGFILE ]]; then
     if [[ -n "$(cat $SERVER_LOGFILE | grep 'Error loading shared library libstdc++.so')" ]]; then
       echo "Error: missing libstdc++"
@@ -268,20 +274,37 @@ for i in {1..35}; do
     fi
 
     LISTENING_ON="$(cat $SERVER_LOGFILE | grep -E 'Extension host agent listening on .+' | sed 's/Extension host agent listening on //')"
-
     if [[ -n $LISTENING_ON ]]; then
-      # Finish server setup
-      print_install_results_and_exit 0
+      break
     fi
   fi
 
-  sleep 0.5
+  # Some systems may not support fractional time
+  sleep 0.5 || sleep 1
 done
 
-if [[ -f $SERVER_LOGFILE ]]; then
-  echo "Error: server did not start successfully"
-else
+if [[ ! -f $SERVER_LOGFILE ]]; then
   echo "Error: server log file not found $SERVER_LOGFILE"
+  fail_and_exit 1
+fi
+if [[ -z $LISTENING_ON ]]; then
+  echo "Error: server did not start successfully"
+  fail_and_exit 1
 fi
 
-print_install_results_and_exit 1
+# Finish server setup
+print_install_results 0
+
+# Release lock
+if [[ -n "$FD" ]]; then
+  flock -u "$FD" 2>/dev/null || true
+  exec 9>&-
+  trap - EXIT INT HUP
+fi
+
+if (( SCRIPT_PREVENT_EXIT )); then
+  while true;
+    do sleep 150;
+    printf ' ';
+  done
+fi

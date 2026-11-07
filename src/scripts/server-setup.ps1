@@ -22,14 +22,14 @@ $SERVER_SCRIPT="$SERVER_DIR\bin\$SERVER_APP_NAME.cmd"
 $SERVER_LOGFILE="$SERVER_DATA_DIR\.$DISTRO_COMMIT.log"
 $SERVER_PIDFILE="$SERVER_DATA_DIR\.$DISTRO_COMMIT.pid"
 $SERVER_TOKENFILE="$SERVER_DATA_DIR\.$DISTRO_COMMIT.token"
-$SERVER_ARCH=
-$SERVER_CONNECTION_TOKEN=
+$SERVER_ARCH=""
+$SERVER_CONNECTION_TOKEN=""
 $SERVER_DOWNLOAD_URL="%%SERVER_DOWNLOAD_URL%%"
 $SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
 
-$LISTENING_ON=
-$OS_RELEASE_ID=
-$ARCH=
+$LISTENING_ON=""
+$OS_RELEASE_ID=""
+$ARCH=""
 $PLATFORM="win32"
 
 # Get commit from installed server's product.json
@@ -63,6 +63,11 @@ function printInstallResults($code) {
   "%%SCRIPT_ID%%: end"
 }
 
+function failAndExit($code) {
+  printInstallResults $code
+  exit 0
+}
+
 # Test the commit of the installed server against the expected one (DISTRO_COMMIT)
 #
 # The install directory is named for the client's commit, but the download URL may still return a different build
@@ -93,8 +98,7 @@ if(($ARCH -eq "AMD64") -or ($ARCH -eq "IA64") -or ($ARCH -eq "ARM64")) {
 }
 else {
   "Error architecture not supported: $ARCH"
-  printInstallResults 1
-  exit 0
+  failAndExit 1
 }
 
 # Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
@@ -110,12 +114,12 @@ if(!(Test-Path $SERVER_DIR)) {
     ni -it d $SERVER_DIR -f -ea si
   } catch {
     "Error creating server install directory - $($_.ToString())"
-    exit 1
+    failAndExit 1
   }
 
   if(!(Test-Path $SERVER_DIR)) {
     "Error creating server install directory"
-    exit 1
+    failAndExit 1
   }
 }
 
@@ -132,11 +136,12 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     TimeoutSec=20
     OutFile="vscode-server.tar.gz"
     UseBasicParsing=$True
+    ErrorAction= "Stop"
   }
 
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-  Invoke-RestMethod @REQUEST_ARGUMENTS
+  Invoke-WebRequest @REQUEST_ARGUMENTS
 
   if(Test-Path "vscode-server.tar.gz") {
     tar -xOf vscode-server.tar.gz | Out-Null
@@ -144,7 +149,7 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     if($LastExitCode -ne 0) {
       del vscode-server.tar.gz
       "Error downloaded tarball is corrupt or incomplete"
-      exit 1
+      failAndExit 1
     }
 
     tar -xf vscode-server.tar.gz --strip-components 1
@@ -152,7 +157,7 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     if($LastExitCode -ne 0) {
       del vscode-server.tar.gz
       "Error while extracting server contents"
-      exit 1
+      failAndExit 1
     }
 
     del vscode-server.tar.gz
@@ -160,7 +165,7 @@ if(!(Test-Path $SERVER_SCRIPT)) {
 
   if(!(Test-Path $SERVER_SCRIPT)) {
     "Error while installing the server binary"
-    exit 1
+    failAndExit 1
   }
 
   if(!(Test-InstalledCommit)) {
@@ -169,7 +174,7 @@ if(!(Test-Path $SERVER_SCRIPT)) {
 
     Remove-Item -Recurse -Force "$SERVER_DIR\*"
 
-    exit 1
+    failAndExit 1
   }
 }
 else {
@@ -224,8 +229,7 @@ if(Test-Path $SERVER_TOKENFILE) {
 }
 else {
   "Error server token file not found $SERVER_TOKENFILE"
-  printInstallResults 1
-  exit 0
+  failAndExit 1
 }
 
 sleep -Milliseconds 500
@@ -250,8 +254,7 @@ for($I = 1; $I -le 5; $I++) {
 
 if(!(Test-Path $SERVER_LOGFILE)) {
   "Error server log file not found $SERVER_LOGFILE"
-  printInstallResults 1
-  exit 0
+  failAndExit 1
 }
 
 # Finish server setup
