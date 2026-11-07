@@ -2,5 +2,8 @@ rules:
   superfluous-actions:
     ignore:
       # allows `softprops/action-gh-release` action
-      - preview.yml:78
-      - publish.yml:106
+      # NOTE: these are LINE numbers — re-check them whenever the workflows gain
+      # or lose a line above the Release step (the packaging Node pin and the
+      # engine guard step both shift them).
+      - preview.yml:87
+      - publish.yml:116

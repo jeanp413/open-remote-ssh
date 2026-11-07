@@ -30,10 +30,16 @@ jobs:
           echo "VERSION=$LATEST_TAG" >> $GITHUB_ENV
           echo "Using version: $LATEST_TAG"
 
+      # The release-packaging runtime deliberately deviates from .nvmrc (Node 20):
+      # the locked @vscode/vsce packaging subtree requires Node >= 22.13.0
+      # (@azure/identity and @azure/core-process demand >= 22.0.0; the eslint-family
+      # ranges demand ^20.19.0 || ^22.13.0 || >=24). `npm ci` only *warns* about an
+      # unmet engine floor, so the guard below turns that warning into a hard
+      # failure before anything is packaged. Keep this pin in sync with publish.yml.
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: .nvmrc
+          node-version: '22'
           package-manager-cache: false
 
       # - name: Update package.json
@@ -60,6 +66,9 @@ jobs:
           VERSION="$(jq -r .version package.json)"
 
           echo "RELEASE_TAG=v$VERSION" >> $GITHUB_ENV
+
+      - name: Check packaging Node compatibility
+        run: node .github/scripts/check-packaging-node.js
 
       - name: Build
         run: |
