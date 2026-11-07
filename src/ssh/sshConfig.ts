@@ -90,7 +90,9 @@ const MAX_INCLUDE_DEPTH = 16;
 // Walks `config` looking for Include directives to expand in place, and
 // recurses into Host/Match sections so a host-scoped Include (inside a
 // `Host foo { Include ... }` block) is honoured too, not just top-level ones.
-async function resolveIncludes(config: SSHConfig, userConfig: boolean, visited: Set<string>): Promise<void> {
+// `includeDir` is where a relative Include resolves: OpenSSH reads it against ~/.ssh for the
+// user config and against the system config's own directory for the system config.
+async function resolveIncludes(config: SSHConfig, includeDir: string, visited: Set<string>): Promise<void> {
     const includedConfigs: [number, SSHConfig[]][] = [];
     for (let i = 0; i < config.length; i++) {
         const line = config[i];
@@ -112,15 +114,15 @@ async function resolveIncludes(config: SSHConfig, userConfig: boolean, visited: 
             for (const value of values) {
                 const includePaths = await glob(normalizeToSlash(untildify(value)), {
                     absolute: true,
-                    cwd: normalizeToSlash(path.dirname(userConfig ? defaultSSHConfigPath : systemSSHConfig))
+                    cwd: normalizeToSlash(includeDir)
                 });
                 for (const p of includePaths) {
-                    configs.push(await parseSSHConfigFromFile(p, userConfig, visited));
+                    configs.push(await parseSSHConfigFromFile(p, includeDir, visited));
                 }
             }
             includedConfigs.push([i, configs]);
         } else if (isNestedSection(line)) {
-            await resolveIncludes(line.config, userConfig, visited);
+            await resolveIncludes(line.config, includeDir, visited);
         }
     }
     for (const [idx, includeConfigs] of includedConfigs.reverse()) {
@@ -128,7 +130,7 @@ async function resolveIncludes(config: SSHConfig, userConfig: boolean, visited: 
     }
 }
 
-async function parseSSHConfigFromFile(filePath: string, userConfig: boolean, visited: Set<string> = new Set()): Promise<SSHConfig> {
+async function parseSSHConfigFromFile(filePath: string, includeDir: string, visited: Set<string> = new Set()): Promise<SSHConfig> {
     // Guard against Include cycles (self-include, mutual A<->B include) and
     // runaway include chains, both of which would otherwise hang the
     // resolver by recursing forever. `visited` tracks the ancestor chain for
@@ -147,16 +149,18 @@ async function parseSSHConfigFromFile(filePath: string, userConfig: boolean, vis
 
     const nestedVisited = new Set(visited);
     nestedVisited.add(resolvedPath);
-    await resolveIncludes(config, userConfig, nestedVisited);
+    await resolveIncludes(config, includeDir, nestedVisited);
 
     return config;
 }
 
 export default class SSHConfiguration {
 
-    static async loadFromFS(): Promise<SSHConfiguration> {
-        const config = await parseSSHConfigFromFile(getSSHConfigPath(), true);
-        config.push(...await parseSSHConfigFromFile(systemSSHConfig, false));
+    // The system config is a parameter so a caller (a test) can pin it: the default reads the
+    // host's real /etc/ssh/ssh_config, whose hosts differ machine to machine.
+    static async loadFromFS(systemConfigPath: string = systemSSHConfig): Promise<SSHConfiguration> {
+        const config = await parseSSHConfigFromFile(getSSHConfigPath(), path.dirname(defaultSSHConfigPath));
+        config.push(...await parseSSHConfigFromFile(systemConfigPath, path.dirname(systemConfigPath)));
 
         return new SSHConfiguration(config);
     }

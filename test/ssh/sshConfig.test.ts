@@ -96,12 +96,30 @@ describe('SSHConfiguration.loadFromFS', () => {
         expect(config.getHostConfiguration('foo')['HostName']).toBe('foo.example.com');
     });
 
+    // The system config is pinned to a missing file: with the default, loadFromFS also reads
+    // the host's /etc/ssh/ssh_config, and the GitHub runner's lists hosts of its own
+    // (`.host`, `machine/.host`, 2026-11-07), so this assertion depended on the machine.
     it('returns an empty configuration when the configured file does not exist', async () => {
         tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ssh-config-test-'));
         configOverrides.set('remote.SSH.configFile', path.join(tmpDir, 'does-not-exist'));
 
-        const config = await SSHConfiguration.loadFromFS();
+        const config = await SSHConfiguration.loadFromFS(path.join(tmpDir, 'no-system-config'));
         expect(config.getAllConfiguredHosts()).toEqual([]);
+    });
+
+    it('appends the system config after the user config, resolving its relative Include against its own directory', async () => {
+        tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ssh-config-test-'));
+        const userPath = path.join(tmpDir, 'user-config');
+        await fs.promises.writeFile(userPath, 'Host user-host\n    HostName user.example.com\n');
+        const systemDir = path.join(tmpDir, 'etc-ssh');
+        await fs.promises.mkdir(path.join(systemDir, 'ssh_config.d'), { recursive: true });
+        await fs.promises.writeFile(path.join(systemDir, 'ssh_config.d', 'a.conf'), 'Host system-host\n    HostName system.example.com\n');
+        await fs.promises.writeFile(path.join(systemDir, 'ssh_config'), 'Include ssh_config.d/*.conf\n');
+        configOverrides.set('remote.SSH.configFile', userPath);
+
+        const config = await SSHConfiguration.loadFromFS(path.join(systemDir, 'ssh_config'));
+        expect(config.getAllConfiguredHosts()).toEqual(['user-host', 'system-host']);
+        expect(config.getHostConfiguration('system-host')['HostName']).toBe('system.example.com');
     });
 
     // A self-including or mutually-including config previously recursed forever
