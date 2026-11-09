@@ -58,7 +58,7 @@ To use an SSH config file, run the `Remote-SSH: Open SSH Configuration File...` 
 
 ## SSH configuration guides
 
-- [GSSAPI / Kerberos authentication](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/gssapi-kerberos-authentication.md.md)
+- [GSSAPI / Kerberos authentication](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/gssapi-kerberos-authentication.md)
 - [Jump hosts](https://github.com/jeanp413/open-remote-ssh/blob/master/docs/jump-hosts.md)
 
 ## Note for VSCode-OSS users
