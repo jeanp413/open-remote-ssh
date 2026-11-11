@@ -266,7 +266,7 @@ else
 fi
 
 waitUntil=$((SECONDS+20))
-while (( SECONDS < waitUntil )) do
+while (( SECONDS < waitUntil )); do
   if [[ -f $SERVER_LOGFILE ]]; then
     if [[ -n "$(cat $SERVER_LOGFILE | grep 'Error loading shared library libstdc++.so')" ]]; then
       echo "Error: missing libstdc++"
