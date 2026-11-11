@@ -3,6 +3,13 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+[v0.6.1](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.6.1) | 2026-11-10
+--------------------------------------------------------------------------------------
+
+### Fixed
+
+- fix invalid syntax in server-setup.sh (#407)
+
 [v0.6.0](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.6.0) | 2026-11-10
 --------------------------------------------------------------------------------------
 
