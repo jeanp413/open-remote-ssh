@@ -28,6 +28,9 @@ $SERVER_DOWNLOAD_URL="%%SERVER_DOWNLOAD_URL%%"
 $SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
 $LOCAL_SERVER_DOWNLOAD="%%LOCAL_SERVER_DOWNLOAD%%"
 
+$DOWNLOAD_MARKER="$SERVER_DIR\.server-local-download.done"
+$DOWNLOAD_REQUEST_SENT=$False
+
 $LISTENING_ON=""
 $OS_RELEASE_ID=""
 $ARCH=""
@@ -67,6 +70,25 @@ function printInstallResults($code) {
 function failAndExit($code) {
   printInstallResults $code
   exit 0
+}
+
+function Print-LocalDownloadRequest {
+  "%%SCRIPT_ID%%: local-download-request"
+  "platform==$PLATFORM=="
+  "serverArch==$SERVER_ARCH=="
+  "serverDir==$serverDirForScp=="
+  "%%SCRIPT_ID%%: local-download-request-end"
+}
+
+function Await-LocalDownload {
+  $deadline = (Get-Date).AddSeconds(300)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Path $DOWNLOAD_MARKER) {
+      return $True
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  return $False
 }
 
 # Test the commit of the installed server against the expected one (DISTRO_COMMIT)
@@ -132,17 +154,73 @@ if(!(Test-Path $SERVER_SCRIPT)) {
     del vscode-server.tar.gz
   }
 
-  $REQUEST_ARGUMENTS = @{
-    Uri="$SERVER_DOWNLOAD_URL"
-    TimeoutSec=20
-    OutFile="vscode-server.tar.gz"
-    UseBasicParsing=$True
-    ErrorAction= "Stop"
+  $DOWNLOAD_OK=$False
+
+  if($LOCAL_SERVER_DOWNLOAD -eq "always") {
+    Print-LocalDownloadRequest
+    $DOWNLOAD_REQUEST_SENT=$True
+
+    if(!(Await-LocalDownload)) {
+      "Error: local download transfer did not complete in time"
+      failAndExit 1
+    }
+    $DOWNLOAD_OK=$True
+  }
+  else {
+    try {
+      $REQUEST_ARGUMENTS = @{
+        Uri="$SERVER_DOWNLOAD_URL"
+        TimeoutSec=20
+        OutFile="vscode-server.tar.gz"
+        UseBasicParsing=$True
+        ErrorAction= "Stop"
+      }
+
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+      Invoke-WebRequest @REQUEST_ARGUMENTS
+      $DOWNLOAD_OK=$True
+    }
+    catch {
+      $DOWNLOAD_OK=$False
+    }
+
+    if(!$DOWNLOAD_OK -and $LOCAL_SERVER_DOWNLOAD -eq "auto") {
+      "Remote download failed; requesting local download"
+      if(Test-Path vscode-server.tar.gz) {
+        del vscode-server.tar.gz
+      }
+      Print-LocalDownloadRequest
+      $DOWNLOAD_REQUEST_SENT=$True
+
+      if(!(Await-LocalDownload)) {
+        "Error: local download transfer did not complete in time"
+        failAndExit 1
+      }
+      $DOWNLOAD_OK=$True
+    }
+
+    if(!$DOWNLOAD_OK) {
+      "Error downloading server from $SERVER_DOWNLOAD_URL"
+      if(Test-Path vscode-server.tar.gz) {
+        del vscode-server.tar.gz
+      }
+      failAndExit 1
+    }
   }
 
-  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-  Invoke-WebRequest @REQUEST_ARGUMENTS
+  if($DOWNLOAD_REQUEST_SENT) {
+    if(!(Test-Path "$SERVER_DIR\vscode-server.tar.gz")) {
+      "Error: local download reported complete but no server archive was transferred"
+      if(Test-Path $DOWNLOAD_MARKER) {
+        del $DOWNLOAD_MARKER -Force -ErrorAction SilentlyContinue
+      }
+      failAndExit 1
+    }
+    if(Test-Path $DOWNLOAD_MARKER) {
+      del $DOWNLOAD_MARKER -Force -ErrorAction SilentlyContinue
+    }
+  }
 
   if(Test-Path "vscode-server.tar.gz") {
     tar -xOf vscode-server.tar.gz | Out-Null
