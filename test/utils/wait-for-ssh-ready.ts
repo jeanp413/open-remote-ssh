@@ -1,4 +1,4 @@
-import { sleep } from '../../src/common/sleep';
+import { timeout } from '../../src/common/async';
 import SSHConnection from '../../src/ssh/sshConnection';
 import { runDocker } from './run-docker';
 
@@ -22,7 +22,7 @@ export async function waitForSSHReady(username: string, password: string, port: 
 
             return;
         } catch {
-            await sleep(1000);
+            await timeout(1000);
         }
     }
 

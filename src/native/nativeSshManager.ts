@@ -1,41 +1,35 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import * as cp from 'child_process';
+import * as fs from 'fs/promises';
+import * as vscode from 'vscode';
+import * as path from 'path';
 import { exists } from '../common/files';
-import { getProductJson } from '../server-config/get-product-json';
-import { sleep } from '../common/sleep';
+import { disposableTimeout, timeout, TimeoutTimer } from '../common/async';
 import { ILogger } from '../common/logger';
 import { AUTH_CONFIRMED_RE, CommandRunner, LineParser } from './nativeSshParser';
-import { RemotePlatform } from '../common/platform';
+import { isWindows, platform, RemotePlatform } from '../common/platform';
 import { NativeSshServerClient, NativeSshKeepalive } from './nativeSshServerClient';
-import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, parseKernelName, parseMachineArch, parseServerInstallOutput, Platform, ServerInstallError, ServerInstallResult } from '../serverSetup';
+import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, LocalDownloadRequest, parseKernelName, parseLocalDownloadMarker, parseMachineArch, parseServerInstallOutput, Platform, resolveServerDownloadUrl, ServerInstallError, ServerInstallOptions, ServerInstallResult } from '../serverSetup';
 import { ServerVersion } from '../server-config/types';
-import { getNativeSshSocketPath } from './nativeSshConnection';
+import { computeScpArgs, computeSshArgs, getNativeSshSocketPath } from './nativeSshConnection';
+import SSHDestination from '../ssh/sshDestination';
+import { NativeSshRegistry, NativeSshRegistryEntry } from './nativeSshRegistry';
+import type { NativeSshServerConfig } from './nativeSshServer';
+import { quote } from '../common/quote';
+import { IDisposable } from '../common/disposable';
 
 export interface NativeSshConnectionOptions {
     authorityKey: string;
     sshExecutable: string;
     sshArgs: string[];
+    scpExecutable: string;
+    scpArgs: string[];
     label: string;
     remotePlatform: RemotePlatform | undefined;
     socksPort: number;
+    sshDestination: SSHDestination;
 }
 
-export type NativeSshRegistryEntry = {
-    schemaVersion: number;
-    socketPath: string;
-    socksPort: number;
-    pid: number;
-} & ServerInstallResult;
-
-export type NativeSshServerConfig = {
-    sshExecutable: string;
-    sshArgs: string[];
-    socketPath: string;
-    registryFilePath: string;
-};
-
-export type NativeSshServerInfo = {
+type NativeSshServerInfo = {
     socketPath: string;
     pid: number;
     reused: boolean;
@@ -65,82 +59,12 @@ export interface NativeInstallInputs {
     customInstallPath: string | undefined;
     extensionPath: string;
     remotePlatform: RemotePlatform | undefined;
+    localServerDownload: 'auto' | 'always' | 'off';
 }
 
 const SCHEMA_VERSION = 1;
 const SERVER_READY_TIMEOUT_MS = 10_000;
 const SERVER_READY_POLL_MS = 100;
-
-export class NativeSshRegistry {
-    private constructor(private readonly registryFilePath: string) { }
-
-    static async forAuthority(
-        globalStorageDir: string,
-        authorityKey: string,
-        extensionVersion: string
-    ): Promise<NativeSshRegistry> {
-        const productJson = await getProductJson();
-        return new NativeSshRegistry(
-            path.join(
-                globalStorageDir,
-                'native-ssh',
-                `ssh-host-${authorityKey}-${productJson.commit as string}-${extensionVersion}`,
-                'data.json'
-            )
-        );
-    }
-
-    get filePath(): string {
-        return this.registryFilePath;
-    }
-
-    async read(): Promise<NativeSshRegistryEntry | undefined> {
-        try {
-            const raw = await fs.readFile(this.registryFilePath, 'utf8');
-            const parsed = JSON.parse(raw) as NativeSshRegistryEntry;
-            return isValidRegistryEntry(parsed) ? parsed : undefined;
-        } catch {
-            return undefined;
-        }
-    }
-
-    async write(entry: NativeSshRegistryEntry): Promise<void> {
-        await fs.mkdir(path.dirname(this.registryFilePath), { recursive: true, mode: 0o700 });
-        const tmp = `${this.registryFilePath}.tmp-${process.pid}-${Date.now()}`;
-        await fs.writeFile(tmp, JSON.stringify(entry, null, 2), { mode: 0o600 });
-        await fs.rename(tmp, this.registryFilePath);
-    }
-
-    async removeIfOwnedBy(pid: number): Promise<void> {
-        const entry = await this.read();
-        if (!entry || entry.pid !== pid) {
-            return;
-        }
-        try {
-            await fs.unlink(this.registryFilePath);
-        } catch (err: unknown) {
-            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-                throw err;
-            }
-        }
-    }
-}
-
-function isValidRegistryEntry(value: unknown): value is NativeSshRegistryEntry {
-    if (!value || typeof value !== 'object') {
-        return false;
-    }
-    const v = value as Record<string, unknown>;
-    return (
-        typeof v.socketPath === 'string' && v.socketPath.length > 0 &&
-        typeof v.pid === 'number' && Number.isInteger(v.pid) && v.pid > 0 &&
-        typeof v.connectionToken === 'string' && v.connectionToken.length > 0 &&
-        (
-            typeof v.listeningOn === 'string' && v.listeningOn.length > 0 ||
-            typeof v.listeningOn === 'number' && Number.isInteger(v.listeningOn) && v.listeningOn > 0
-        )
-    );
-}
 
 export class NativeSshManager {
     private serverProcess: cp.ChildProcess | undefined;
@@ -265,12 +189,25 @@ export class NativeSshManager {
     async runCommand<T>(
         command: string,
         predicate: (stdout: string | undefined, stderr: string | undefined) => T | undefined,
-        timeout?: number
+        options: { signal?: AbortSignal; timeout?: number }
     ): Promise<T> {
         if (!this.cmdRunner) {
             throw new Error('No helper process owned by this window.');
         }
-        return this.cmdRunner.run(command, predicate, timeout);
+
+        let disposable: IDisposable | undefined;
+        let signal = options.signal;
+        if (!signal) {
+            const ms = options.timeout || 10_000;
+            const controller = new AbortController();
+            disposable = disposableTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+            signal = controller.signal;
+        }
+
+        return this.cmdRunner.run(command, predicate, signal)
+            .finally(()=>{
+                disposable?.dispose();
+            });
     }
 
     private async nativeDetectPlatform(
@@ -281,7 +218,7 @@ export class NativeSshManager {
         if (!platform || platform === 'windows') {
             const stdout = await this.runCommand('echo %COMSPEC%~$PSHOME', (stdout) => {
                 return stdout;
-            });
+            }, { timeout: 10_000 });
             const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
 
             if (comspec && comspec !== '%COMSPEC%') {
@@ -297,7 +234,7 @@ export class NativeSshManager {
                         return { stdout };
                     }
                     return undefined;
-                });
+                }, { timeout: 10_000 });
                 if (result.stderr) {
                     throw new ServerInstallError(`Cannot execute "uname -s", yields: ${result.stderr}`);
                 }
@@ -329,7 +266,7 @@ export class NativeSshManager {
                     return { stdout };
                 }
                 return undefined;
-            });
+            }, { timeout: 10_000 });
             if (result.stderr) {
                 throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
             }
@@ -352,7 +289,7 @@ export class NativeSshManager {
                 return true;
             }
             return undefined;
-        });
+        }, { timeout: 10_000 });
     }
 
     private async probeRemotePlatform(): Promise<RemotePlatform> {
@@ -376,7 +313,7 @@ export class NativeSshManager {
                 }
             }
             return undefined;
-        });
+        }, { timeout: 10_000 });
     }
 
     private async nativeInstallCodeServer(
@@ -390,6 +327,7 @@ export class NativeSshManager {
             useSocketPath,
             customInstallPath,
             extensionPath,
+            localServerDownload
         } = inputs;
 
         const { detectedPlatform, detectedArch } = await this.nativeDetectPlatform(inputs.remotePlatform);
@@ -406,6 +344,7 @@ export class NativeSshManager {
             detectedPlatform,
             detectedArch,
             true,
+            localServerDownload,
             this.options.logger,
         );
 
@@ -425,6 +364,11 @@ export class NativeSshManager {
             remoteCmd = `scriptWrapper() {\n ${generateBashInstallScript(installOptions, extensionPath)}\n }\n scriptWrapper`;
         }
 
+        const controller = new AbortController();
+        const timer = new TimeoutTimer(() => controller.abort(), 90_000);
+
+        let localDownloadDispatched = false;
+
         let stdoutBuffer = '';
         let stderrBuffer = '';
         const commandOutput = await this.runCommand(
@@ -436,12 +380,25 @@ export class NativeSshManager {
                 if (stderr !== undefined) {
                     stderrBuffer += stderr + '\n';
                 }
-                if (stdout?.includes(`${this.options.connection.label}: end`)) {
+
+                if (stdout?.includes(`${installOptions.id}: local-download-request-end`) && !localDownloadDispatched) {
+                    localDownloadDispatched = true;
+
+                    const downloadRequest = parseLocalDownloadMarker(stdoutBuffer, installOptions.id);
+                    if (!downloadRequest) {
+                        throw new ServerInstallError('Failed parsing local download request');
+                    }
+
+                    timer.cancelAndSet(() => controller.abort(), 300_000);
+                    this.runLocalDownloadAndTransfer(installOptions, downloadRequest);
+                }
+
+                if (stdout?.includes(`${installOptions.id}: end`)) {
                     return { stdout: stdoutBuffer, stderr: stderrBuffer };
                 }
                 return undefined;
             },
-            90_000
+            { signal: controller.signal }
         );
 
         this.options.logger.trace('Server install stdout:', commandOutput.stdout);
@@ -484,7 +441,7 @@ export class NativeSshManager {
                 return true;
             }
             return undefined;
-        });
+        }, { timeout: 10_000 });
     }
 
     private async waitPowershellReady(): Promise<void> {
@@ -493,7 +450,7 @@ export class NativeSshManager {
                 return true;
             }
             return undefined;
-        });
+        }, { timeout: 10_000 });
     }
 
     private async spawnFresh(): Promise<NativeSshServerInfo> {
@@ -504,7 +461,7 @@ export class NativeSshManager {
 
         const serverConfig: NativeSshServerConfig = {
             sshExecutable: this.connection.sshExecutable,
-            sshArgs: this.connection.sshArgs,
+            sshArgs: computeSshArgs(this.connection.sshDestination, this.connection.sshArgs),
             socketPath: getNativeSshSocketPath('sshServer'),
             registryFilePath: this.registry.filePath
         };
@@ -601,10 +558,10 @@ export class NativeSshManager {
     private async waitUntilSshServerReady(
         socketPath: string,
         checkSpawnError: () => Error | undefined,
-        timeout: number
+        timeoutMs: number
     ): Promise<void> {
         const client = new NativeSshServerClient(socketPath);
-        const deadline = Date.now() + timeout;
+        const deadline = Date.now() + timeoutMs;
 
         while (Date.now() < deadline) {
             const err = checkSpawnError();
@@ -616,12 +573,90 @@ export class NativeSshManager {
                 return;
             }
 
-            await sleep(SERVER_READY_POLL_MS);
+            await timeout(SERVER_READY_POLL_MS);
         }
 
         throw new Error(
-            `Native SSH local server did not become ready within ${Math.floor(timeout / 1000)}s`
+            `Native SSH local server did not become ready within ${Math.floor(timeoutMs / 1000)}s`
         );
+    }
+
+    private async runLocalDownloadAndTransfer(
+        installOptions: ServerInstallOptions,
+        request: LocalDownloadRequest,
+    ): Promise<void> {
+        const waitForTerminal = (terminal: vscode.Terminal) =>{
+            return new Promise<void>((resolve) => {
+                const finish = () => {
+                    closeSub.dispose();
+                    resolve();
+                };
+
+                const closeSub = vscode.window.onDidCloseTerminal((t) => {
+                    if (t === terminal) {
+                        finish();
+                    }
+                });
+            });
+        };
+
+        let serverPath: string | undefined;
+        let localMarkerPath: string | undefined;
+        try {
+            const url = await resolveServerDownloadUrl(installOptions, request);
+            this.options.logger.info(`[local-download] downloading ${url}`);
+            const downloadPath = await vscode.commands.executeCommand<vscode.Uri>('_workbench.downloadResource',vscode.Uri.parse(url));
+            const downloadDir = path.dirname(downloadPath.fsPath);
+            const targetDir = path.join(downloadDir, `code_server_${Date.now()}`);
+            serverPath = path.join(targetDir, 'vscode-server.tar.gz');
+            if (!await exists(targetDir)) {
+                await fs.mkdir(targetDir, { recursive: true, mode: 0o700 });
+            }
+            await fs.rename(downloadPath.fsPath, serverPath);
+
+            localMarkerPath = path.join(targetDir, `.server-local-download.done`);
+            await fs.writeFile(localMarkerPath, '');
+
+            let cmd = [
+                quote(this.options.connection.scpExecutable, platform),
+                ...computeScpArgs(
+                    this.options.connection.sshDestination,
+                    this.options.connection.scpArgs,
+                    [serverPath, localMarkerPath],
+                    request.serverDir
+                )
+            ].join(' ');
+
+            if (isWindows) {
+                cmd = cmd
+                    .replace(/(\\*)"/g, '$1$1\\"')
+                    .replace(/(\\+)$/, '$1$1');
+            }
+
+            this.options.logger.info(`[local-download] launching scp in terminal: ${cmd}`);
+
+            const terminal = vscode.window.createTerminal({
+                name: 'Copy server to host',
+                cwd: targetDir,
+                shellPath: isWindows ? 'powershell.exe' : '/bin/sh',
+                shellArgs: isWindows ? `-NoProfile -Command "${cmd}; exit 0"` : ['-c', `${cmd}\nexit 0`]
+            });
+            terminal.show(true);
+            const completion = waitForTerminal(terminal);
+            await completion;
+
+            this.options.logger.info('[local-download] scp terminal idle; remote script will detect outcome via marker');
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.options.logger.error(`[local-download] failed: ${message}`);
+        } finally {
+            if (serverPath) {
+                await fs.rm(serverPath, { force: true }).catch(() => undefined);
+            }
+            if (localMarkerPath) {
+                await fs.rm(localMarkerPath, { force: true }).catch(() => undefined);
+            }
+        }
     }
 
     async dispose(): Promise<void> {

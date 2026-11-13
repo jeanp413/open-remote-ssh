@@ -109,7 +109,7 @@ export class CommandRunner {
     async run<T>(
         command: string,
         predicate: (stdout: string | undefined, stderr: string | undefined) => T | undefined,
-        timeoutMs = 10_000,
+        signal: AbortSignal,
     ): Promise<T> {
         return new Promise<T>((resolve, reject) => {
             let settled = false;
@@ -119,7 +119,7 @@ export class CommandRunner {
                     return;
                 }
                 settled = true;
-                clearTimeout(timer);
+                signal.removeEventListener('abort', onAbort);
                 stdoutSubscription.dispose();
                 stderrSubscription.dispose();
                 if (err) {
@@ -129,10 +129,17 @@ export class CommandRunner {
                 }
             };
 
-            const timer = setTimeout(() => {
-                finish(new Error(`command timed out after ${timeoutMs}ms: ${command}`));
-            }, timeoutMs);
-            timer.unref();
+            const onAbort = () => {
+                const reason = signal.reason instanceof Error
+                    ? signal.reason
+                    : new Error('command aborted');
+                finish(reason);
+            };
+            if (signal.aborted) {
+                onAbort();
+                return;
+            }
+            signal.addEventListener('abort', onAbort);
 
             const stdoutSubscription = this.stdoutParser.subscribe({
                 onLine: (line) => {

@@ -33,8 +33,7 @@ vi.mock('child_process', async (importOriginal) => {
     };
 });
 
-import { NativeSshServer } from '../src/native/nativeSshServer';
-import { NativeSshServerConfig } from '../src/native/nativeSshManager';
+import { NativeSshServer, NativeSshServerConfig } from '../src/native/nativeSshServer';
 import { getNativeSshSocketPath } from '../src/native/nativeSshConnection';
 
 async function makeServer(overrides: Partial<NativeSshServerConfig> = {}): Promise<{

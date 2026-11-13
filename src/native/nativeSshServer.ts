@@ -4,7 +4,14 @@ import * as fs from 'fs';
 import * as cp from 'child_process';
 import * as stream from 'stream';
 
-import { type NativeSshServerConfig, NativeSshRegistryEntry } from './nativeSshManager';
+import { NativeSshRegistryEntry } from './nativeSshRegistry';
+
+export interface NativeSshServerConfig {
+    sshExecutable: string;
+    sshArgs: string[];
+    socketPath: string;
+    registryFilePath: string;
+};
 
 const HELPER_IDLE_TIMEOUT_MS = 10_000;
 

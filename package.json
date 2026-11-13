@@ -251,6 +251,22 @@
 						"The remote server won't validate the client.",
 						"The remote server and client's commits must match. (default)"
 					]
+				},
+				"remote.SSH.localServerDownload": {
+					"type": "string",
+					"description": "Whether the extension can download the VS Code Server on the client and transfer it to the host with scp, instead of downloading it on the host.\n- auto: The server will first be downloaded on the host, and if that fails, will fall back to downloading locally\n- always: The server will only be downloaded locally and transferred to the host\n- off: The server will only be downloaded on the host",
+					"scope": "application",
+					"default": "autor",
+					"enum": [
+						"auto",
+						"always",
+						"off"
+					],
+					"enumDescriptions": [
+						"The server will first be downloaded on the host, and if that fails, will fall back to downloading locally",
+						"The server will only be downloaded locally and transferred to the host",
+						"The server will only be downloaded on the host"
+					]
 				}
 			}
 		},
