@@ -65,6 +65,7 @@ export default class SSHConnection extends EventEmitter {
     private __$connectPromise: Promise<SSHConnection> | null = null;
     private __retries: number = 0;
     private __err: Error & ClientErrorExtensions & { code?: string } | null = null;
+    private __closed: boolean = false;
     private sshConnection: Client | null = null;
 
     constructor(options: SSHConnectConfig) {
@@ -118,7 +119,12 @@ export default class SSHConnection extends EventEmitter {
                     }
                     let stdout = '';
                     let stderr = '';
-                    stream.on('close', function () {
+                    stream.on('close', () => {
+                        // ssh2 closes pending channels after the connection itself closes;
+                        // the command's output is incomplete, so don't report it as a result
+                        if (this.__closed) {
+                            return reject(this.connectionLostError(cmd));
+                        }
                         return resolve({ stdout, stderr });
                     }).on('data', function (data: Buffer | string) {
                         stdout += data.toString();
@@ -144,8 +150,11 @@ export default class SSHConnection extends EventEmitter {
                     let stdout = '';
                     let stderr = '';
                     let resolved = false;
-                    stream.on('close', function () {
+                    stream.on('close', () => {
                         if (!resolved) {
+                            if (this.__closed) {
+                                return reject(this.connectionLostError(cmd));
+                            }
                             return resolve({ stdout, stderr });
                         }
                     }).on('data', function (data: Buffer | string) {
@@ -195,6 +204,11 @@ export default class SSHConnection extends EventEmitter {
         });
     }
 
+    private connectionLostError(cmd: string): Error {
+        const reason = this.__err ? `: ${this.__err.message}` : '';
+        return new Error(`SSH connection closed while running '${cmd.split(' ')[0]}'${reason}`);
+    }
+
     /**
      * Close SSH Connection
      */
@@ -236,6 +250,7 @@ export default class SSHConnection extends EventEmitter {
 
             //Start ssh server connection
             this.sshConnection = new Client();
+            this.__closed = false;
             this.sshConnection.on('ready', (err: Error & ClientErrorExtensions) => {
                 if (err) {
                     this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT, { err: err });
@@ -250,6 +265,7 @@ export default class SSHConnection extends EventEmitter {
                 this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT, { err: err });
                 this.__err = err;
             }).on('close', () => {
+                this.__closed = true;
                 this.emit(SSHConstants.CHANNEL.SSH, SSHConstants.STATUS.DISCONNECT, { err: this.__err });
                 if (this.config.reconnect && this.__retries <= this.config.reconnectTries! && this.__err && this.__err.level !== 'client-authentication' && this.__err.code !== 'ENOTFOUND') {
                     setTimeout(() => {

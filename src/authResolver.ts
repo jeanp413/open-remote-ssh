@@ -165,6 +165,25 @@ export function getProxyJumpPort(dest: SSHDestination, config: Record<string, st
     return (config['Port'] && parseInt(config['Port'], 10)) || dest.port || 22;
 }
 
+/**
+ * Keepalive settings for the ssh2 client, taken from `ServerAliveInterval` and
+ * `ServerAliveCountMax`.
+ *
+ * Without keepalives a connection whose peer silently went away (e.g. the
+ * client machine slept while a reconnect was in flight) is never detected:
+ * pending commands wait forever and the resolver hangs. Unlike OpenSSH, this
+ * defaults to probing every 15s; an explicit `ServerAliveInterval 0` disables it.
+ */
+export function getKeepaliveConfig(config: Record<string, string>): { keepaliveInterval: number; keepaliveCountMax: number } {
+    const interval = parseInt(config['ServerAliveInterval'], 10);
+    const countMax = parseInt(config['ServerAliveCountMax'], 10);
+
+    return {
+        keepaliveInterval: (Number.isNaN(interval) || interval < 0 ? 15 : interval) * 1000,
+        keepaliveCountMax: Number.isNaN(countMax) || countMax < 0 ? 3 : countMax,
+    };
+}
+
 export const MAX_PROXY_JUMPS = 10;
 
 export type ProxyJumpHop = [SSHDestination, HostConfiguration];
@@ -502,6 +521,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     sock: proxyStream,
                     username: proxyUser,
                     readyTimeout: connectTimeout * 1000,
+                    ...getKeepaliveConfig(proxyHostConfig),
                     strictVendor: false,
                     agentForward: proxyAgentForward,
                     agent: proxyAgent,
@@ -564,6 +584,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
             sock: proxyStream,
             username: sshUser,
             readyTimeout: connectTimeout * 1000,
+            ...getKeepaliveConfig(sshHostConfig),
             strictVendor: false,
             agentForward,
             agent,
