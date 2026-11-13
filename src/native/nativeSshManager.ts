@@ -637,7 +637,7 @@ export class NativeSshManager {
 
             const terminal = vscode.window.createTerminal({
                 name: 'Copy server to host',
-                cwd: targetDir,
+                cwd: vscode.Uri.file(targetDir),
                 shellPath: isWindows ? 'powershell.exe' : '/bin/sh',
                 shellArgs: isWindows ? `-NoProfile -Command "${cmd}; exit 0"` : ['-c', `${cmd}\nexit 0`]
             });

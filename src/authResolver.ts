@@ -312,7 +312,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 
                 const socksPort = await findRandomPort();
                 const sshArgs: string[] = ['-v', '-T', '-D', String(socksPort), '-o', `ConnectTimeout=${connectTimeout}`];
-                const scpArgs: string[] = ['-v', '-o', `ConnectTimeout=${connectTimeout}`];
+                const scpArgs: string[] = ['-o', `ConnectTimeout=${connectTimeout}`];
 
                 const marker = crypto.randomBytes(12).toString('hex');
                 const connection: NativeSshConnectionOptions = {
