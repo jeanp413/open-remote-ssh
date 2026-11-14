@@ -126,8 +126,12 @@ export function parseKernelName(stdout: string): RemotePlatform {
     switch (stdout) {
         case 'Darwin':
             return 'macos';
-        default:
+        case 'Linux':
+        case 'FreeBSD':
+        case 'DragonFly':
             return 'linux';
+        default:
+            throw new ServerInstallError(`Platform not supported: ${stdout}`);
     }
 }
 

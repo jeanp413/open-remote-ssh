@@ -222,12 +222,13 @@ export class NativeSshManager {
                 if (lower.includes('darwin') || lower.includes('macos') || lower.includes('mac os x')) {
                     return 'macos';
                 }
-                if (lower.includes('linux')) {
+                if (lower.includes('linux') || lower.includes('freebsd') || lower.includes('dragonfly')) {
                     return 'linux';
                 }
                 if (lower.includes('cygwin') || lower.includes('mingw') || lower.includes('windows')) {
                     return 'windows';
                 }
+                throw new ServerInstallError(`Platform not supported: ${stdout}`);
             } else if (stderr) {
                 const lower = stderr.toLowerCase();
                 if (lower.includes(`'uname'`)) {
