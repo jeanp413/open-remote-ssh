@@ -3,6 +3,13 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+[v0.6.2](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.6.2) | 2026-11-14
+--------------------------------------------------------------------------------------
+
+### Added
+
+- add local server download (#411)
+
 [v0.6.1](https://github.com/jeanp413/open-remote-ssh/releases/tag/v0.6.1) | 2026-11-10
 --------------------------------------------------------------------------------------
 
