@@ -631,6 +631,7 @@ export class NativeSshManager {
                 cmd = cmd
                     .replace(/(\\*)"/g, '$1$1\\"')
                     .replace(/(\\+)$/, '$1$1');
+                cmd = `& ${cmd}`;
             }
 
             this.options.logger.info(`[local-download] launching scp in terminal: ${cmd}`);
