@@ -118,6 +118,59 @@ const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/rele
 
 export type Shell = 'cmd' | 'powershell' | 'bash';
 
+export function parseKernelName(stdout: string): RemotePlatform {
+    if (/MINGW|MSYS|CYGWIN/i.test(stdout)) {
+        return 'windows';
+    }
+
+    switch (stdout) {
+        case 'Darwin':
+            return 'macos';
+        default:
+            return 'linux';
+    }
+}
+
+export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: ILogger): Promise<{ platform: RemotePlatform; shell: Shell }> {
+    let detectedPlatform: RemotePlatform;
+    let detectedShell: Shell = 'bash';
+
+    // detect platform and shell for windows
+    if (!platform || platform === 'windows') {
+        const { stdout } = await conn.exec('echo %COMSPEC%~$PSHOME');
+        const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
+
+        if (comspec && comspec !== '%COMSPEC%') {
+            detectedPlatform = 'windows';
+            detectedShell = 'cmd';
+        } else if (pshome) {
+            detectedShell = 'powershell';
+            detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
+        } else if (!platform) {
+            const result = await conn.exec('echo "==$(uname -s)=="');
+            const uname = /==\s*(.+?)\s*==/.exec(result.stdout);
+
+            if (uname) {
+                detectedPlatform = parseKernelName(uname[1].trim());
+            } else if (result.stderr) {
+                throw new ServerInstallError(`Cannot execute "uname -s", yields: ${result.stderr}`);
+            } else {
+                throw new ServerInstallError(`Platform not found: ${result.stdout}`);
+            }
+        } else {
+            detectedPlatform = 'windows';
+        }
+    } else if (platform === 'macos') {
+        detectedPlatform = 'macos';
+    } else {
+        detectedPlatform = 'linux';
+    }
+
+    logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
+
+    return { platform: detectedPlatform, shell: detectedShell };
+}
+
 export async function installCodeServer(
     conn: SSHClient,
     serverDownloadUrlTemplate: string | undefined,
@@ -131,19 +184,7 @@ export async function installCodeServer(
     logger: ILogger,
     extensionPath: string
 ): Promise<ServerInstallResult> {
-    let detectedShell: Shell = 'bash';
-
-    // detect platform and shell for windows
-    if (!platform || platform === 'windows') {
-        const { stdout } = await conn.exec('echo %COMSPEC%~$PSHOME');
-        const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
-
-        if (comspec && comspec !== '%COMSPEC%') {
-            detectedShell = 'cmd';
-        } else if (pshome) {
-            detectedShell = 'powershell';
-        }
-    }
+    const { platform: detectedPlatform, shell } = await detectPlatform(conn, platform, logger);
 
     const scriptId = crypto.randomBytes(12).toString('hex');
     const { options: installOptions, vscodeServerConfig } =
@@ -163,8 +204,8 @@ export async function installCodeServer(
 
     const commandOutput = await runInstallScript(
         conn,
-        platform,
-        detectedShell,
+        detectedPlatform,
+        shell,
         installOptions,
         vscodeServerConfig,
         installOptions.id,
@@ -179,7 +220,7 @@ export async function installCodeServer(
 
 async function runInstallScript(
     conn: SSHClient,
-    platform: string | undefined,
+    platform: RemotePlatform,
     shell: string,
     installOptions: ServerInstallOptions,
     vscodeServerConfig: { serverDataFolderName: string; commit: string },
@@ -379,42 +420,42 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
 
     const RENAME_MAP: [RegExp, string][] = [
         // --- $SERVER_* (longer first) ---
-        [/\$SERVER_DATA_DIR_FLAG(?!\w)/g,       '$df'],
-        [/\$SERVER_DATA_DIR(?!\w)/g,            '$d'],
-        [/\$SERVER_DOWNLOAD_URL(?!\w)/g,        '$u'],
-        [/\$SERVER_VALIDATION_FLAG(?!\w)/g,     '$vf'],
-        [/\$SERVER_CONNECTION_TOKEN(?!\w)/g,    '$ct'],
-        [/\$SERVER_INITIAL_EXTENSIONS(?!\w)/g,  '$ei'],
-        [/\$SERVER_LISTEN_FLAG(?!\w)/g,         '$lf'],
-        [/\$SERVER_TOKENFILE(?!\w)/g,           '$tf'],
-        [/\$SERVER_LOGFILE(?!\w)/g,             '$l'],
-        [/\$SERVER_PIDFILE(?!\w)/g,             '$p'],
-        [/\$SERVER_APP_NAME(?!\w)/g,            '$a'],
-        [/\$SERVER_SCRIPT(?!\w)/g,              '$sc'],
-        [/\$SERVER_ARCH(?!\w)/g,                '$ar'],
-        [/\$SERVER_ID(?!\w)/g,                  '$id'],
-        [/\$SERVER_DIR(?!\w)/g,                 '$s'],
+        [/\$SERVER_DATA_DIR_FLAG(?!\w)/g, '$df'],
+        [/\$SERVER_DATA_DIR(?!\w)/g, '$d'],
+        [/\$SERVER_DOWNLOAD_URL(?!\w)/g, '$u'],
+        [/\$SERVER_VALIDATION_FLAG(?!\w)/g, '$vf'],
+        [/\$SERVER_CONNECTION_TOKEN(?!\w)/g, '$ct'],
+        [/\$SERVER_INITIAL_EXTENSIONS(?!\w)/g, '$ei'],
+        [/\$SERVER_LISTEN_FLAG(?!\w)/g, '$lf'],
+        [/\$SERVER_TOKENFILE(?!\w)/g, '$tf'],
+        [/\$SERVER_LOGFILE(?!\w)/g, '$l'],
+        [/\$SERVER_PIDFILE(?!\w)/g, '$p'],
+        [/\$SERVER_APP_NAME(?!\w)/g, '$a'],
+        [/\$SERVER_SCRIPT(?!\w)/g, '$sc'],
+        [/\$SERVER_ARCH(?!\w)/g, '$ar'],
+        [/\$SERVER_ID(?!\w)/g, '$id'],
+        [/\$SERVER_DIR(?!\w)/g, '$s'],
 
         // --- function names ---
-        [/\bGet-Content\b/gi,                   'gc'],
-        [/\bSet-Content\b/gi,                   'sc'],   // Windows PowerShell 5.1 only
-        [/\bRemove-Item\b/gi,                   'ri'],
-        [/\bStart-Sleep\b/gi,                   'sleep'],
-        [/\bSelect-String\b/gi,                 'sls'],
-        [/\bGet-Process\b/gi,                   'gps'],
-        [/\bInvoke-WebRequest\b/gi,             'iwr'],
-        [/\bStart-Process\b/gi,                 'saps'],
-        [/\bNew-Item\b/gi,                      'ni'],
-        [/\bWrite-Output\b/gi,                  'echo'],
+        [/\bGet-Content\b/gi, 'gc'],
+        [/\bSet-Content\b/gi, 'sc'],   // Windows PowerShell 5.1 only
+        [/\bRemove-Item\b/gi, 'ri'],
+        [/\bStart-Sleep\b/gi, 'sleep'],
+        [/\bSelect-String\b/gi, 'sls'],
+        [/\bGet-Process\b/gi, 'gps'],
+        [/\bInvoke-WebRequest\b/gi, 'iwr'],
+        [/\bStart-Process\b/gi, 'saps'],
+        [/\bNew-Item\b/gi, 'ni'],
+        [/\bWrite-Output\b/gi, 'echo'],
 
-        [/\bPrint-LocalDownloadRequest\b/g,     'pld'],
-        [/\bRequest-LocalDownload\b/g,          'rld'],
-        [/\bAwait-LocalDownload\b/g,            'ald'],
-        [/\bTest-InstalledCommit\b/g,           'tic'],
-        [/\bGet-InstalledCommit\b/g,            'gic'],
-        [/\bRemove-IfExists\b/g,                'rif'],
-        [/\bprintInstallResults\b/g,            'pir'],
-        [/\bFailAndExit\b/g,                    'fae'],
+        [/\bPrint-LocalDownloadRequest\b/g, 'pld'],
+        [/\bRequest-LocalDownload\b/g, 'rld'],
+        [/\bAwait-LocalDownload\b/g, 'ald'],
+        [/\bTest-InstalledCommit\b/g, 'tic'],
+        [/\bGet-InstalledCommit\b/g, 'gic'],
+        [/\bRemove-IfExists\b/g, 'rif'],
+        [/\bprintInstallResults\b/g, 'pir'],
+        [/\bFailAndExit\b/g, 'fae'],
     ];
 
     for (const [re, rep] of RENAME_MAP) {
@@ -422,12 +463,12 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
     }
 
     return compiledScript
-            // remove comments
-            .replace(/^\s*#.*$/gm, '')
-            // remove empty lines
-            .replace(/(\r?\n\s*){2,}/g, '\n')
-            // remove leading spaces
-            .replace(/^\s*/gm, '');
+        // remove comments
+        .replace(/^\s*#.*$/gm, '')
+        // remove empty lines
+        .replace(/(\r?\n\s*){2,}/g, '\n')
+        // remove leading spaces
+        .replace(/^\s*/gm, '');
 }
 
 export async function buildServerInstallOptions(
