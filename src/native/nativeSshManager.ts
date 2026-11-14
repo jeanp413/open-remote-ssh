@@ -2,6 +2,8 @@ import * as cp from 'child_process';
 import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import { exists } from '../common/files';
 import { disposableTimeout, timeout, TimeoutTimer } from '../common/async';
 import { ILogger } from '../common/logger';
@@ -16,6 +18,7 @@ import { NativeSshRegistry, NativeSshRegistryEntry } from './nativeSshRegistry';
 import type { NativeSshServerConfig } from './nativeSshServer';
 import { quote } from '../common/quote';
 import { IDisposable } from '../common/disposable';
+import { downloadWithRetries } from '../common/fetch';
 
 export interface NativeSshConnectionOptions {
     authorityKey: string;
@@ -605,7 +608,20 @@ export class NativeSshManager {
         try {
             const url = await resolveServerDownloadUrl(installOptions, request);
             this.options.logger.info(`[local-download] downloading ${url}`);
-            const downloadPath = await vscode.commands.executeCommand<vscode.Uri>('_workbench.downloadResource',vscode.Uri.parse(url));
+
+            let downloadPath: vscode.Uri;
+            try {
+                // This could fail due to CORS in the case of vscodium as the donwload url is from github
+                downloadPath = await vscode.commands.executeCommand<vscode.Uri>('_workbench.downloadResource',vscode.Uri.parse(url));
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                this.options.logger.error(`[local-download] _workbench.downloadResource failed (${message}); falling back to fetch`);
+
+                const tmpPath = path.join(os.tmpdir(), crypto.randomUUID());
+                await downloadWithRetries(url, tmpPath);
+                downloadPath = vscode.Uri.file(tmpPath);
+            }
+
             const downloadDir = path.dirname(downloadPath.fsPath);
             const targetDir = path.join(downloadDir, `code_server_${Date.now()}`);
             serverPath = path.join(targetDir, 'vscode-server.tar.gz');

@@ -15,19 +15,19 @@ export interface ParsedPrompt {
 
 function parseHostKeyPrompt(prompt: string): PromptKind | null {
     // Initial prompt with fingerprint option (OpenSSH 7.6+)
-    if (/^Are you sure you want to continue connecting \(yes\/no\/\[fingerprint\]\)\?/i.test(prompt)) {
+    if (/^Are you sure you want to continue connecting \(yes\/no\/\[fingerprint\]\)\?/im.test(prompt)) {
         return 'host-key-confirm-fp';
     }
     // Initial prompt (all versions)
-    if (/^Are you sure you want to continue connecting \(yes\/no\)\?/i.test(prompt)) {
+    if (/^Are you sure you want to continue connecting \(yes\/no\)\?/im.test(prompt)) {
         return 'host-key-confirm';
     }
     // Re-prompt accepting a fingerprint
-    if (/^Please type 'yes', 'no' or the fingerprint:/i.test(prompt)) {
+    if (/^Please type 'yes', 'no' or the fingerprint:/im.test(prompt)) {
         return 'host-key-retry-fp';
     }
     // Re-prompt, generic
-    if (/^Please type 'yes' or 'no':/i.test(prompt)) {
+    if (/^Please type 'yes' or 'no':/im.test(prompt)) {
         return 'host-key-retry';
     }
     return null;
