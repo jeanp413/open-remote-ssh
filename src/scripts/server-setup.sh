@@ -22,8 +22,7 @@ SERVER_SCRIPT="$SERVER_DIR/bin/$SERVER_APP_NAME"
 SERVER_LOGFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.log"
 SERVER_PIDFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.pid"
 SERVER_TOKENFILE="$SERVER_DATA_DIR/.$DISTRO_COMMIT.token"
-SERVER_PLATFORM="%%SERVER_PLATFORM%%"
-SERVER_ARCH="%%SERVER_ARCH%%"
+SERVER_ARCH=
 SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
 SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
@@ -35,7 +34,8 @@ DOWNLOAD_REQUEST_SENT=0
 
 LISTENING_ON=
 OS_RELEASE_ID=
-PLATFORM=$SERVER_PLATFORM
+ARCH=
+PLATFORM=
 
 # Get commit from installed server's product.json
 get_installed_commit() {
@@ -46,6 +46,12 @@ get_installed_commit() {
   sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{7,\}\)".*/\1/p' "$SERVER_DIR/product.json" 2>/dev/null | head -n 1
 }
 
+remove_if_exist() {
+  if [[ -f "$1" ]]; then
+    rm -f -- "$1"
+  fi
+}
+
 # Mimic output from logs of remote-ssh extension
 print_install_results() {
   echo "%%SCRIPT_ID%%: start"
@@ -54,6 +60,7 @@ print_install_results() {
   echo "connectionToken==$SERVER_CONNECTION_TOKEN=="
   echo "logFile==$SERVER_LOGFILE=="
   echo "osReleaseId==$OS_RELEASE_ID=="
+  echo "arch==$ARCH=="
   echo "platform==$PLATFORM=="
   echo "tmpDir==$TMP_DIR=="
 %%ENV_VAR_LINES%%
@@ -71,6 +78,18 @@ print_local_download_request() {
   echo "serverArch==$SERVER_ARCH=="
   echo "serverDir==$SERVER_DIR=="
   echo "%%SCRIPT_ID%%: local-download-request-end"
+}
+
+request_local_download() {
+  print_local_download_request
+  DOWNLOAD_REQUEST_SENT=1
+
+  if ! await_local_download; then
+    echo "Error: local download transfer did not complete in time"
+    fail_and_exit 1
+  fi
+
+  DOWNLOAD_OK=1
 }
 
 await_local_download() {
@@ -146,6 +165,60 @@ if ! command -v uname >/dev/null 2>&1; then
   fail_and_exit 1
 fi
 
+KERNEL="$(uname -s)"
+case $KERNEL in
+  Darwin)
+    PLATFORM="darwin"
+    ;;
+  Linux)
+    PLATFORM="linux"
+    ;;
+  FreeBSD)
+    PLATFORM="freebsd"
+    ;;
+  DragonFly)
+    PLATFORM="dragonfly"
+    ;;
+  "")
+    echo "Error: uname -s yields empty result"
+    fail_and_exit 1
+    ;;
+  *)
+    echo "Error: platform not supported: $KERNEL"
+    fail_and_exit 1
+    ;;
+esac
+
+# Check machine architecture
+ARCH="$(uname -m)"
+case $ARCH in
+  x86_64 | amd64)
+    SERVER_ARCH="x64"
+    ;;
+  armv7l | armv8l)
+    SERVER_ARCH="armhf"
+    ;;
+  arm64 | aarch64)
+    SERVER_ARCH="arm64"
+    ;;
+  ppc64le)
+    SERVER_ARCH="ppc64le"
+    ;;
+  riscv64)
+    SERVER_ARCH="riscv64"
+    ;;
+  loongarch64)
+    SERVER_ARCH="loong64"
+    ;;
+  s390x)
+    SERVER_ARCH="s390x"
+    ;;
+  *)
+    echo "Error: architecture not supported: $ARCH"
+    fail_and_exit 1
+    ;;
+esac
+
 # https://www.freedesktop.org/software/systemd/man/os-release.html
 OS_RELEASE_ID="$(grep -i '^ID=' /etc/os-release 2>/dev/null | sed 's/^ID=//gi' | sed 's/"//g')"
 if [[ -z $OS_RELEASE_ID ]]; then
@@ -191,13 +264,7 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
   DOWNLOAD_OK=0
   if [[ "$LOCAL_SERVER_DOWNLOAD" == "always" ]]; then
-    print_local_download_request
-    DOWNLOAD_REQUEST_SENT=1
-    if ! await_local_download; then
-      echo "Error: local download transfer did not complete in time"
-      fail_and_exit 1
-    fi
-    DOWNLOAD_OK=1
+    request_local_download
   else
     if command -v wget >/dev/null 2>&1; then
       wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
@@ -215,19 +282,13 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
     if [[ $DOWNLOAD_OK -ne 0 && "$LOCAL_SERVER_DOWNLOAD" == "auto" ]]; then
       echo "Remote download failed; requesting local download"
-      rm -f vscode-server.tar.gz
-      print_local_download_request
-      DOWNLOAD_REQUEST_SENT=1
-      if ! await_local_download; then
-        echo "Error: local download transfer did not complete in time"
-        fail_and_exit 1
-      fi
-      DOWNLOAD_OK=1
+      remove_if_exist vscode-server.tar.gz
+      request_local_download
     fi
 
     if [[ $DOWNLOAD_OK -ne 0 ]]; then
       echo "Error downloading server from $SERVER_DOWNLOAD_URL"
-      rm -rf vscode-server.tar.gz
+      remove_if_exist vscode-server.tar.gz
       fail_and_exit 1
     fi
   fi
@@ -235,25 +296,25 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
   if (( DOWNLOAD_REQUEST_SENT )); then
     if [[ ! -f "$SERVER_DIR/vscode-server.tar.gz" ]]; then
       echo "Error: local download reported complete but no server archive was transferred"
-      rm -f "$DOWNLOAD_MARKER"
+      remove_if_exist "$DOWNLOAD_MARKER"
       fail_and_exit 1
     fi
-    rm -f "$DOWNLOAD_MARKER"
+    remove_if_exist "$DOWNLOAD_MARKER"
   fi
 
   tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (
     echo "Error downloaded tarball is corrupt or incomplete"
-    rm -rf vscode-server.tar.gz
+    remove_if_exist vscode-server.tar.gz
     fail_and_exit 1
   )
 
   tar -xf vscode-server.tar.gz --strip-components 1 || (
     echo "Error while extracting server contents"
-    rm -rf vscode-server.tar.gz
+    remove_if_exist vscode-server.tar.gz
     fail_and_exit 1
   )
 
-  rm -f vscode-server.tar.gz
+  remove_if_exist vscode-server.tar.gz
 
   popd > /dev/null || exit
 
@@ -296,12 +357,8 @@ else
 fi
 
 if [[ -z $SERVER_RUNNING_PROCESS ]]; then
-  if [[ -f $SERVER_LOGFILE ]]; then
-    rm $SERVER_LOGFILE
-  fi
-  if [[ -f $SERVER_TOKENFILE ]]; then
-    rm $SERVER_TOKENFILE
-  fi
+  remove_if_exist "$SERVER_LOGFILE"
+  remove_if_exist "$SERVER_TOKENFILE"
 
   touch $SERVER_TOKENFILE
   chmod 600 $SERVER_TOKENFILE

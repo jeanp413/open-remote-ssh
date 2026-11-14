@@ -10,7 +10,7 @@ import { ILogger } from '../common/logger';
 import { AUTH_CONFIRMED_RE, CommandRunner, LineParser } from './nativeSshParser';
 import { isWindows, platform, RemotePlatform } from '../common/platform';
 import { NativeSshServerClient, NativeSshKeepalive } from './nativeSshServerClient';
-import { Architecture, buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, LocalDownloadRequest, parseKernelName, parseLocalDownloadMarker, parseMachineArch, parseServerInstallOutput, Platform, resolveServerDownloadUrl, ServerInstallError, ServerInstallOptions, ServerInstallResult } from '../serverSetup';
+import { buildServerInstallOptions, generateBashInstallScript, generatePowerShellInstallScript, LocalDownloadRequest, parseLocalDownloadMarker, parseServerInstallOutput, resolveServerDownloadUrl, ServerInstallError, ServerInstallOptions, ServerInstallResult } from '../serverSetup';
 import { ServerVersion } from '../server-config/types';
 import { computeScpArgs, computeSshArgs, getNativeSshSocketPath } from './nativeSshConnection';
 import SSHDestination from '../ssh/sshDestination';
@@ -48,11 +48,6 @@ export interface NativeSshManagerOptions {
     logger: ILogger;
 }
 
-interface NativeDetectedPlatform {
-    detectedPlatform: Platform;
-    detectedArch: Architecture;
-}
-
 export interface NativeInstallInputs {
     serverDownloadUrlTemplate: string | undefined;
     serverVersion: ServerVersion;
@@ -88,9 +83,6 @@ export class NativeSshManager {
         if (!registryEntry) {
             await this.waitAuthSucceeded();
             await this.waitRemoteShellReady();
-
-            const platform = await this.probeRemotePlatform();
-            this.options.logger.info(`Detected remote platform: ${platform}`);
 
             const result = await this.nativeInstallCodeServer(installScriptInputs);
 
@@ -213,78 +205,6 @@ export class NativeSshManager {
             });
     }
 
-    private async nativeDetectPlatform(
-        platform: RemotePlatform | undefined,
-    ): Promise<NativeDetectedPlatform> {
-        let detectedPlatform: Platform;
-
-        if (!platform || platform === 'windows') {
-            const stdout = await this.runCommand('echo %COMSPEC%~$PSHOME', (stdout) => {
-                return stdout;
-            }, { timeout: 10_000 });
-            const [comspec, pshome = ''] = stdout.replace(/\r?\n/g, ' ').trim().split('~');
-
-            if (comspec && comspec !== '%COMSPEC%') {
-                detectedPlatform = 'windows';
-            } else if (pshome) {
-                detectedPlatform ||= /^[A-Za-z]:\\/.test(pshome) ? 'windows' : 'linux';
-            } else if (!platform) {
-                const result = await this.runCommand('echo "==$(uname -s)=="', (stdout, stderr) => {
-                    if (stderr) {
-                        return { stderr };
-                    }
-                    if (stdout) {
-                        return { stdout };
-                    }
-                    return undefined;
-                }, { timeout: 10_000 });
-                if (result.stderr) {
-                    throw new ServerInstallError(`Cannot execute "uname -s", yields: ${result.stderr}`);
-                }
-                const uname = /==\s*(.+?)\s*==/.exec(result.stdout!);
-                if (!uname) {
-                    throw new ServerInstallError(`Platform not found: ${result.stdout}`);
-                }
-                detectedPlatform = parseKernelName(uname[1].trim());
-            } else {
-                detectedPlatform = 'windows';
-            }
-        } else if (platform === 'macos') {
-            detectedPlatform = 'darwin';
-        } else {
-            detectedPlatform = 'linux';
-        }
-
-        this.options.logger.trace(`Detected platform: ${detectedPlatform}`);
-
-        let detectedArch: Architecture;
-        if (detectedPlatform === 'windows') {
-            detectedArch = 'x64';
-        } else {
-            const result = await this.runCommand('echo "==$(uname -m)=="', (stdout, stderr) => {
-                if (stderr) {
-                    return { stderr };
-                }
-                if (stdout) {
-                    return { stdout };
-                }
-                return undefined;
-            }, { timeout: 10_000 });
-            if (result.stderr) {
-                throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
-            }
-
-            const uname = /==\s*(.+?)\s*==/.exec(result.stdout!);
-            if (!uname) {
-                throw new ServerInstallError(`Architecture not found: ${result.stdout}`);
-            }
-            detectedArch = parseMachineArch(uname[1].trim());
-        }
-
-        this.options.logger.trace(`Detected architecture: ${detectedArch}`);
-        return { detectedPlatform, detectedArch };
-    }
-
     private async waitRemoteShellReady() {
         const readyMarker = `==${this.connection.label}==`;
         await this.runCommand(`echo '${readyMarker}'`, (stdout: string | undefined) => {
@@ -302,12 +222,13 @@ export class NativeSshManager {
                 if (lower.includes('darwin') || lower.includes('macos') || lower.includes('mac os x')) {
                     return 'macos';
                 }
-                if (lower.includes('linux')) {
+                if (lower.includes('linux') || lower.includes('freebsd') || lower.includes('dragonfly')) {
                     return 'linux';
                 }
                 if (lower.includes('cygwin') || lower.includes('mingw') || lower.includes('windows')) {
                     return 'windows';
                 }
+                throw new ServerInstallError(`Platform not supported: ${stdout}`);
             } else if (stderr) {
                 const lower = stderr.toLowerCase();
                 if (lower.includes(`'uname'`)) {
@@ -333,7 +254,8 @@ export class NativeSshManager {
             localServerDownload
         } = inputs;
 
-        const { detectedPlatform, detectedArch } = await this.nativeDetectPlatform(inputs.remotePlatform);
+        const detectedPlatform = await this.probeRemotePlatform();
+        this.options.logger.info(`Detected remote platform: ${detectedPlatform}`);
 
         const { options: installOptions } = await buildServerInstallOptions(
             this.options.connection.label,
@@ -344,8 +266,6 @@ export class NativeSshManager {
             {},
             useSocketPath,
             customInstallPath,
-            detectedPlatform,
-            detectedArch,
             true,
             localServerDownload,
             this.options.logger,
@@ -430,7 +350,7 @@ export class NativeSshManager {
             connectionToken: resultMap.connectionToken,
             logFile: resultMap.logFile,
             osReleaseId: resultMap.osReleaseId,
-            arch: resultMap.arch || installOptions.serverArch,
+            arch: resultMap.arch,
             platform: resultMap.platform,
             tmpDir: resultMap.tmpDir,
             ...remoteEnvVars

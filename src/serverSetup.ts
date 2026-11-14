@@ -92,8 +92,6 @@ export type ServerInstallOptions = {
     serverDownloadUrlTemplate: string;
     customInstallPath?: string;
     serverValidation: ServerValidation;
-    serverPlatform: Platform;
-    serverArch: Architecture;
     scriptPreventExit: boolean;
     localServerDownload: 'auto' | 'always' | 'off';
 };
@@ -118,61 +116,27 @@ export class ServerInstallError extends Error {
 
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/VSCodium/vscodium/releases/download/${version}.${release}/vscodium-reh-${os}-${arch}-${version}.${release}.tar.gz';
 
-export type Platform = 'alpine' | 'darwin' | 'dragonfly' | 'freebsd' | 'linux' | 'windows';
-export type Architecture = 'arm64' | 'armhf' | 'loong64' | 'ppc64le' | 'riscv64' | 's390x' | 'x64';
 export type Shell = 'cmd' | 'powershell' | 'bash';
 
-export type DetectedPlatform = {
-    detectedPlatform: Platform;
-    detectedArch: Architecture;
-    detectedShell: Shell;
-};
-
-export function parseKernelName(stdout: string): Platform {
-    if(/MINGW|MSYS|CYGWIN/i.test(stdout)) {
+export function parseKernelName(stdout: string): RemotePlatform {
+    if (/MINGW|MSYS|CYGWIN/i.test(stdout)) {
         return 'windows';
     }
 
     switch (stdout) {
         case 'Darwin':
-            return 'darwin';
+            return 'macos';
         case 'Linux':
-            return 'linux';
         case 'FreeBSD':
-            return 'freebsd';
         case 'DragonFly':
-            return 'dragonfly';
+            return 'linux';
         default:
             throw new ServerInstallError(`Platform not supported: ${stdout}`);
     }
 }
 
-export function parseMachineArch(stdout: string): Architecture {
-    switch (stdout) {
-        case 'x86_64':
-        case 'amd64':
-            return 'x64';
-        case 'armv7l':
-        case 'armv8l':
-            return 'armhf';
-        case 'arm64':
-        case 'aarch64':
-            return 'arm64';
-        case 'ppc64le':
-            return 'ppc64le';
-        case 'riscv64':
-            return 'riscv64';
-        case 'loongarch64':
-            return 'loong64';
-        case 's390x':
-            return 's390x';
-        default:
-            throw new ServerInstallError(`Architecture not supported: ${stdout}`);
-    }
-}
-
-export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: ILogger): Promise<DetectedPlatform> {
-    let detectedPlatform: Platform;
+export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: RemotePlatform | undefined, logger: ILogger): Promise<{ platform: RemotePlatform; shell: Shell }> {
+    let detectedPlatform: RemotePlatform;
     let detectedShell: Shell = 'bash';
 
     // detect platform and shell for windows
@@ -201,33 +165,14 @@ export async function detectPlatform(conn: Pick<SSHClient, 'exec'>, platform: Re
             detectedPlatform = 'windows';
         }
     } else if (platform === 'macos') {
-        detectedPlatform = 'darwin';
+        detectedPlatform = 'macos';
     } else {
         detectedPlatform = 'linux';
     }
 
     logger.trace(`Detected platform: ${detectedPlatform}, ${detectedShell}`);
 
-    let detectedArch: Architecture;
-
-    if (detectedPlatform === 'windows') {
-        detectedArch = 'x64';
-    } else {
-        const result = await conn.exec('echo "==$(uname -m)=="');
-        const uname = /==\s*(.+?)\s*==/.exec(result.stdout);
-
-        if (uname) {
-            detectedArch = parseMachineArch(uname[1].trim());
-        } else if (result.stderr) {
-            throw new ServerInstallError(`Cannot execute "uname -m", yields: ${result.stderr}`);
-        } else {
-            throw new ServerInstallError(`Architecture not found: ${result.stdout}`);
-        }
-    }
-
-    logger.trace(`Detected architecture: ${detectedArch}`);
-
-    return { detectedPlatform, detectedArch, detectedShell };
+    return { platform: detectedPlatform, shell: detectedShell };
 }
 
 export async function installCodeServer(
@@ -243,7 +188,7 @@ export async function installCodeServer(
     logger: ILogger,
     extensionPath: string
 ): Promise<ServerInstallResult> {
-    const { detectedPlatform, detectedArch, detectedShell: shell } = await detectPlatform(conn, platform, logger);
+    const { platform: detectedPlatform, shell } = await detectPlatform(conn, platform, logger);
 
     const scriptId = crypto.randomBytes(12).toString('hex');
     const { options: installOptions, vscodeServerConfig } =
@@ -256,26 +201,30 @@ export async function installCodeServer(
             sendEnvVars,
             useSocketPath,
             customInstallPath,
-            detectedPlatform,
-            detectedArch,
             false,
             'off',
             logger,
         );
 
     const commandOutput = await runInstallScript(
-        conn, detectedPlatform, shell, installOptions, vscodeServerConfig,
-        installOptions.id, logger, extensionPath,
+        conn,
+        detectedPlatform,
+        shell,
+        installOptions,
+        vscodeServerConfig,
+        installOptions.id,
+        logger,
+        extensionPath,
     );
 
     return parseInstallOutput(
-        commandOutput, installOptions, installOptions.id, envVariables, logger,
+        commandOutput, installOptions.id, envVariables, logger,
     );
 }
 
 async function runInstallScript(
     conn: SSHClient,
-    platform: string | undefined,
+    platform: RemotePlatform,
     shell: string,
     installOptions: ServerInstallOptions,
     vscodeServerConfig: { serverDataFolderName: string; commit: string },
@@ -337,7 +286,6 @@ async function runInstallScript(
 
 function parseInstallOutput(
     commandOutput: { stdout: string; stderr: string },
-    installOptions: ServerInstallOptions,
     scriptId: string,
     envVariables: string[],
     logger: ILogger
@@ -361,7 +309,6 @@ function parseInstallOutput(
         ? parseInt(resultMap.listeningOn, 10)
         : resultMap.listeningOn;
 
-    const { serverArch } = installOptions;
     const remoteEnvVars = Object.fromEntries(Object.entries(resultMap).filter(([key,]) => envVariables.includes(key)));
 
     return {
@@ -370,7 +317,7 @@ function parseInstallOutput(
         connectionToken: resultMap.connectionToken,
         logFile: resultMap.logFile,
         osReleaseId: resultMap.osReleaseId,
-        arch: resultMap.arch || serverArch,
+        arch: resultMap.arch,
         platform: resultMap.platform,
         tmpDir: resultMap.tmpDir,
         ...remoteEnvVars
@@ -403,7 +350,7 @@ export function parseServerInstallOutput(str: string, scriptId: string): { [k: s
     return resultMap;
 }
 
-export function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch, scriptPreventExit, localServerDownload }: ServerInstallOptions, extensionPath: string): string {
+export function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, scriptPreventExit, localServerDownload }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -431,8 +378,6 @@ export function generateBashInstallScript({ id, quality, version, commit, releas
         SEND_ENV_VAR_LINES: sendEnvVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? 'true' : 'false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
-        SERVER_PLATFORM: serverPlatform,
-        SERVER_ARCH: serverArch,
         SCRIPT_PREVENT_EXIT: String(scriptPreventExit),
         LOCAL_SERVER_DOWNLOAD: localServerDownload
     }, extensionPath);
@@ -479,42 +424,42 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
 
     const RENAME_MAP: [RegExp, string][] = [
         // --- $SERVER_* (longer first) ---
-        [/\$SERVER_DATA_DIR_FLAG(?!\w)/g,       '$df'],
-        [/\$SERVER_DATA_DIR(?!\w)/g,            '$d'],
-        [/\$SERVER_DOWNLOAD_URL(?!\w)/g,        '$u'],
-        [/\$SERVER_VALIDATION_FLAG(?!\w)/g,     '$vf'],
-        [/\$SERVER_CONNECTION_TOKEN(?!\w)/g,    '$ct'],
-        [/\$SERVER_INITIAL_EXTENSIONS(?!\w)/g,  '$ei'],
-        [/\$SERVER_LISTEN_FLAG(?!\w)/g,         '$lf'],
-        [/\$SERVER_TOKENFILE(?!\w)/g,           '$tf'],
-        [/\$SERVER_LOGFILE(?!\w)/g,             '$l'],
-        [/\$SERVER_PIDFILE(?!\w)/g,             '$p'],
-        [/\$SERVER_APP_NAME(?!\w)/g,            '$a'],
-        [/\$SERVER_SCRIPT(?!\w)/g,              '$sc'],
-        [/\$SERVER_ARCH(?!\w)/g,                '$ar'],
-        [/\$SERVER_ID(?!\w)/g,                  '$id'],
-        [/\$SERVER_DIR(?!\w)/g,                 '$s'],
+        [/\$SERVER_DATA_DIR_FLAG(?!\w)/g, '$df'],
+        [/\$SERVER_DATA_DIR(?!\w)/g, '$d'],
+        [/\$SERVER_DOWNLOAD_URL(?!\w)/g, '$u'],
+        [/\$SERVER_VALIDATION_FLAG(?!\w)/g, '$vf'],
+        [/\$SERVER_CONNECTION_TOKEN(?!\w)/g, '$ct'],
+        [/\$SERVER_INITIAL_EXTENSIONS(?!\w)/g, '$ei'],
+        [/\$SERVER_LISTEN_FLAG(?!\w)/g, '$lf'],
+        [/\$SERVER_TOKENFILE(?!\w)/g, '$tf'],
+        [/\$SERVER_LOGFILE(?!\w)/g, '$l'],
+        [/\$SERVER_PIDFILE(?!\w)/g, '$p'],
+        [/\$SERVER_APP_NAME(?!\w)/g, '$a'],
+        [/\$SERVER_SCRIPT(?!\w)/g, '$sc'],
+        [/\$SERVER_ARCH(?!\w)/g, '$ar'],
+        [/\$SERVER_ID(?!\w)/g, '$id'],
+        [/\$SERVER_DIR(?!\w)/g, '$s'],
 
         // --- function names ---
-        [/\bGet-Content\b/gi,                   'gc'],
-        [/\bSet-Content\b/gi,                   'sc'],   // Windows PowerShell 5.1 only
-        [/\bRemove-Item\b/gi,                   'ri'],
-        [/\bStart-Sleep\b/gi,                   'sleep'],
-        [/\bSelect-String\b/gi,                 'sls'],
-        [/\bGet-Process\b/gi,                   'gps'],
-        [/\bInvoke-WebRequest\b/gi,             'iwr'],
-        [/\bStart-Process\b/gi,                 'saps'],
-        [/\bNew-Item\b/gi,                      'ni'],
-        [/\bWrite-Output\b/gi,                  'echo'],
+        [/\bGet-Content\b/gi, 'gc'],
+        [/\bSet-Content\b/gi, 'sc'],   // Windows PowerShell 5.1 only
+        [/\bRemove-Item\b/gi, 'ri'],
+        [/\bStart-Sleep\b/gi, 'sleep'],
+        [/\bSelect-String\b/gi, 'sls'],
+        [/\bGet-Process\b/gi, 'gps'],
+        [/\bInvoke-WebRequest\b/gi, 'iwr'],
+        [/\bStart-Process\b/gi, 'saps'],
+        [/\bNew-Item\b/gi, 'ni'],
+        [/\bWrite-Output\b/gi, 'echo'],
 
-        [/\bPrint-LocalDownloadRequest\b/g,     'pld'],
-        [/\bRequest-LocalDownload\b/g,          'rld'],
-        [/\bAwait-LocalDownload\b/g,            'ald'],
-        [/\bTest-InstalledCommit\b/g,           'tic'],
-        [/\bGet-InstalledCommit\b/g,            'gic'],
-        [/\bRemove-IfExists\b/g,                'rif'],
-        [/\bprintInstallResults\b/g,            'pir'],
-        [/\bFailAndExit\b/g,                    'fae'],
+        [/\bPrint-LocalDownloadRequest\b/g, 'pld'],
+        [/\bRequest-LocalDownload\b/g, 'rld'],
+        [/\bAwait-LocalDownload\b/g, 'ald'],
+        [/\bTest-InstalledCommit\b/g, 'tic'],
+        [/\bGet-InstalledCommit\b/g, 'gic'],
+        [/\bRemove-IfExists\b/g, 'rif'],
+        [/\bprintInstallResults\b/g, 'pir'],
+        [/\bFailAndExit\b/g, 'fae'],
     ];
 
     for (const [re, rep] of RENAME_MAP) {
@@ -522,12 +467,12 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
     }
 
     return compiledScript
-            // remove comments
-            .replace(/^\s*#.*$/gm, '')
-            // remove empty lines
-            .replace(/(\r?\n\s*){2,}/g, '\n')
-            // remove leading spaces
-            .replace(/^\s*/gm, '');
+        // remove comments
+        .replace(/^\s*#.*$/gm, '')
+        // remove empty lines
+        .replace(/(\r?\n\s*){2,}/g, '\n')
+        // remove leading spaces
+        .replace(/^\s*/gm, '');
 }
 
 export async function buildServerInstallOptions(
@@ -539,8 +484,6 @@ export async function buildServerInstallOptions(
     sendEnvVars: Record<string, string>,
     useSocketPath: boolean,
     customInstallPath: string | undefined,
-    detectedPlatform: Platform,
-    detectedArch: Architecture,
     scriptPreventExit: boolean,
     localServerDownload: 'auto' | 'always' | 'off',
     logger: ILogger,
@@ -579,8 +522,6 @@ export async function buildServerInstallOptions(
             serverDownloadUrlTemplate: serverDownloadUrlTemplateFinal,
             customInstallPath,
             serverValidation: vscodeServerConfig.serverValidation,
-            serverPlatform: detectedPlatform,
-            serverArch: detectedArch,
             scriptPreventExit,
             localServerDownload
         },
