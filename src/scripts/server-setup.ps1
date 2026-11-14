@@ -54,8 +54,8 @@ function Get-InstalledCommit() {
 }
 
 function Remove-IfExists([string]$Path) {
-  if(Test-Path -LiteralPath $Path) {
-    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if(Test-Path $Path) {
+    Remove-Item $Path -Force -ErrorAction SilentlyContinue
   }
 }
 
@@ -83,7 +83,7 @@ function Print-LocalDownloadRequest {
   "%%SCRIPT_ID%%: local-download-request"
   "platform==$PLATFORM=="
   "serverArch==$SERVER_ARCH=="
-  "serverDir==$serverDirForScp=="
+  "serverDir==$SERVER_DIR=="
   "%%SCRIPT_ID%%: local-download-request-end"
 }
 
@@ -92,7 +92,7 @@ function Request-LocalDownload {
   $script:DOWNLOAD_REQUEST_SENT = $True
 
   if(!(Await-LocalDownload)) {
-    Fail "Error: local download transfer did not complete in time"
+    FailAndExit "Error: local download transfer did not complete in time"
   }
 
   $script:DOWNLOAD_OK = $True
@@ -104,7 +104,7 @@ function Await-LocalDownload {
     if (Test-Path $DOWNLOAD_MARKER) {
       return $True
     }
-    Start-Sleep -Milliseconds 500
+    sleep 1
   }
   return $False
 }
@@ -151,7 +151,7 @@ if(!(Test-InstalledCommit)) {
 # Create installation folder
 if(!(Test-Path $SERVER_DIR)) {
   try {
-    ni -it d $SERVER_DIR -f -ea si
+    New-Item -it d $SERVER_DIR -f -ea si
   } catch {
     FailAndExit "Error creating server install directory - $($_.ToString())"
   }
@@ -170,7 +170,6 @@ if(!(Test-Path $SERVER_SCRIPT)) {
   $DOWNLOAD_OK=$False
 
   if($LOCAL_SERVER_DOWNLOAD -eq "always") {
-    Print-LocalDownloadRequest
     Request-LocalDownload
   }
   else {
@@ -257,15 +256,9 @@ if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SE
   echo "Server script is already running $SERVER_SCRIPT"
 }
 else {
-  if(Test-Path $SERVER_LOGFILE) {
-    del $SERVER_LOGFILE
-  }
-  if(Test-Path $SERVER_PIDFILE) {
-    del $SERVER_PIDFILE
-  }
-  if(Test-Path $SERVER_TOKENFILE) {
-    del $SERVER_TOKENFILE
-  }
+  Remove-IfExists $SERVER_LOGFILE
+  Remove-IfExists $SERVER_PIDFILE
+  Remove-IfExists $SERVER_TOKENFILE
 
   $SERVER_CONNECTION_TOKEN="%%SERVER_CONNECTION_TOKEN%%"
   [System.IO.File]::WriteAllLines($SERVER_TOKENFILE, $SERVER_CONNECTION_TOKEN)

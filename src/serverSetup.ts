@@ -456,7 +456,7 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
     const envVarLines = envVariables.map(envVar => `    "${envVar}==$${envVar}=="`).join('\n');
     const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `$env:${key}="${value.replace(/"/g, '`"')}"`).join('\n');
 
-    const compiledScript = compileTemplate('server-setup.ps1', {
+    let compiledScript = compileTemplate('server-setup.ps1', {
         DISTRO_VERSION: version,
         DISTRO_COMMIT: commit,
         DISTRO_QUALITY: quality,
@@ -475,6 +475,51 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
         LOCAL_SERVER_DOWNLOAD: localServerDownload
     }, extensionPath);
+
+
+    const RENAME_MAP: [RegExp, string][] = [
+        // --- $SERVER_* (longer first) ---
+        [/\$SERVER_DATA_DIR_FLAG(?!\w)/g,       '$df'],
+        [/\$SERVER_DATA_DIR(?!\w)/g,            '$d'],
+        [/\$SERVER_DOWNLOAD_URL(?!\w)/g,        '$u'],
+        [/\$SERVER_VALIDATION_FLAG(?!\w)/g,     '$vf'],
+        [/\$SERVER_CONNECTION_TOKEN(?!\w)/g,    '$ct'],
+        [/\$SERVER_INITIAL_EXTENSIONS(?!\w)/g,  '$ei'],
+        [/\$SERVER_LISTEN_FLAG(?!\w)/g,         '$lf'],
+        [/\$SERVER_TOKENFILE(?!\w)/g,           '$tf'],
+        [/\$SERVER_LOGFILE(?!\w)/g,             '$l'],
+        [/\$SERVER_PIDFILE(?!\w)/g,             '$p'],
+        [/\$SERVER_APP_NAME(?!\w)/g,            '$a'],
+        [/\$SERVER_SCRIPT(?!\w)/g,              '$sc'],
+        [/\$SERVER_ARCH(?!\w)/g,                '$ar'],
+        [/\$SERVER_ID(?!\w)/g,                  '$id'],
+        [/\$SERVER_DIR(?!\w)/g,                 '$s'],
+
+        // --- function names ---
+        [/\bGet-Content\b/gi,                   'gc'],
+        [/\bSet-Content\b/gi,                   'sc'],   // Windows PowerShell 5.1 only
+        [/\bRemove-Item\b/gi,                   'ri'],
+        [/\bStart-Sleep\b/gi,                   'sleep'],
+        [/\bSelect-String\b/gi,                 'sls'],
+        [/\bGet-Process\b/gi,                   'gps'],
+        [/\bInvoke-WebRequest\b/gi,             'iwr'],
+        [/\bStart-Process\b/gi,                 'saps'],
+        [/\bNew-Item\b/gi,                      'ni'],
+        [/\bWrite-Output\b/gi,                  'echo'],
+
+        [/\bPrint-LocalDownloadRequest\b/g,     'pld'],
+        [/\bRequest-LocalDownload\b/g,          'rld'],
+        [/\bAwait-LocalDownload\b/g,            'ald'],
+        [/\bTest-InstalledCommit\b/g,           'tic'],
+        [/\bGet-InstalledCommit\b/g,            'gic'],
+        [/\bRemove-IfExists\b/g,                'rif'],
+        [/\bprintInstallResults\b/g,            'pir'],
+        [/\bFailAndExit\b/g,                    'fae'],
+    ];
+
+    for (const [re, rep] of RENAME_MAP) {
+        compiledScript = compiledScript.replace(re, rep);
+    }
 
     return compiledScript
             // remove comments
