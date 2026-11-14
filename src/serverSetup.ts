@@ -1,4 +1,4 @@
-import type { ServerValidation, ServerVersion } from './server-config/types';
+import type { IServerConfig, ServerValidation, ServerVersion } from './server-config/types';
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -95,6 +95,7 @@ export type ServerInstallOptions = {
     serverPlatform: Platform;
     serverArch: Architecture;
     scriptPreventExit: boolean;
+    localServerDownload: 'auto' | 'always' | 'off';
 };
 
 export type ServerInstallResult = {
@@ -258,6 +259,7 @@ export async function installCodeServer(
             detectedPlatform,
             detectedArch,
             false,
+            'off',
             logger,
         );
 
@@ -401,7 +403,7 @@ export function parseServerInstallOutput(str: string, scriptId: string): { [k: s
     return resultMap;
 }
 
-export function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch, scriptPreventExit }: ServerInstallOptions, extensionPath: string): string {
+export function generateBashInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, serverPlatform, serverArch, scriptPreventExit, localServerDownload }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const serverDataDir = customInstallPath
         ? customInstallPath.replace(/^~(?=\/|$)/, '$HOME')
@@ -431,11 +433,12 @@ export function generateBashInstallScript({ id, quality, version, commit, releas
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
         SERVER_PLATFORM: serverPlatform,
         SERVER_ARCH: serverArch,
-        SCRIPT_PREVENT_EXIT: String(scriptPreventExit)
+        SCRIPT_PREVENT_EXIT: String(scriptPreventExit),
+        LOCAL_SERVER_DOWNLOAD: localServerDownload
     }, extensionPath);
 }
 
-export function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation }: ServerInstallOptions, extensionPath: string): string {
+export function generatePowerShellInstallScript({ id, quality, version, commit, release, extensionIds, envVariables, sendEnvVars, useSocketPath, serverApplicationName, serverDataFolderName, serverDownloadUrlTemplate, customInstallPath, serverValidation, localServerDownload }: ServerInstallOptions, extensionPath: string): string {
     const extensions = extensionIds.map(extId => '--install-extension ' + extId).join(' ');
     const downloadUrl = serverDownloadUrlTemplate
         .replace(/\$\{quality\}/g, quality)
@@ -453,7 +456,7 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
     const envVarLines = envVariables.map(envVar => `    "${envVar}==$${envVar}=="`).join('\n');
     const sendEnvVarLines = Object.entries(sendEnvVars).map(([key, value]) => `$env:${key}="${value.replace(/"/g, '`"')}"`).join('\n');
 
-    const compiledScript = compileTemplate('server-setup.ps1', {
+    let compiledScript = compileTemplate('server-setup.ps1', {
         DISTRO_VERSION: version,
         DISTRO_COMMIT: commit,
         DISTRO_QUALITY: quality,
@@ -470,7 +473,53 @@ export function generatePowerShellInstallScript({ id, quality, version, commit, 
         SEND_ENV_VAR_LINES: sendEnvVarLines,
         MODIFY_PRODUCT_JSON: serverValidation === 'force' ? '$true' : '$false',
         SERVER_CONNECTION_TOKEN: crypto.randomUUID(),
+        LOCAL_SERVER_DOWNLOAD: localServerDownload
     }, extensionPath);
+
+
+    const RENAME_MAP: [RegExp, string][] = [
+        // --- $SERVER_* (longer first) ---
+        [/\$SERVER_DATA_DIR_FLAG(?!\w)/g,       '$df'],
+        [/\$SERVER_DATA_DIR(?!\w)/g,            '$d'],
+        [/\$SERVER_DOWNLOAD_URL(?!\w)/g,        '$u'],
+        [/\$SERVER_VALIDATION_FLAG(?!\w)/g,     '$vf'],
+        [/\$SERVER_CONNECTION_TOKEN(?!\w)/g,    '$ct'],
+        [/\$SERVER_INITIAL_EXTENSIONS(?!\w)/g,  '$ei'],
+        [/\$SERVER_LISTEN_FLAG(?!\w)/g,         '$lf'],
+        [/\$SERVER_TOKENFILE(?!\w)/g,           '$tf'],
+        [/\$SERVER_LOGFILE(?!\w)/g,             '$l'],
+        [/\$SERVER_PIDFILE(?!\w)/g,             '$p'],
+        [/\$SERVER_APP_NAME(?!\w)/g,            '$a'],
+        [/\$SERVER_SCRIPT(?!\w)/g,              '$sc'],
+        [/\$SERVER_ARCH(?!\w)/g,                '$ar'],
+        [/\$SERVER_ID(?!\w)/g,                  '$id'],
+        [/\$SERVER_DIR(?!\w)/g,                 '$s'],
+
+        // --- function names ---
+        [/\bGet-Content\b/gi,                   'gc'],
+        [/\bSet-Content\b/gi,                   'sc'],   // Windows PowerShell 5.1 only
+        [/\bRemove-Item\b/gi,                   'ri'],
+        [/\bStart-Sleep\b/gi,                   'sleep'],
+        [/\bSelect-String\b/gi,                 'sls'],
+        [/\bGet-Process\b/gi,                   'gps'],
+        [/\bInvoke-WebRequest\b/gi,             'iwr'],
+        [/\bStart-Process\b/gi,                 'saps'],
+        [/\bNew-Item\b/gi,                      'ni'],
+        [/\bWrite-Output\b/gi,                  'echo'],
+
+        [/\bPrint-LocalDownloadRequest\b/g,     'pld'],
+        [/\bRequest-LocalDownload\b/g,          'rld'],
+        [/\bAwait-LocalDownload\b/g,            'ald'],
+        [/\bTest-InstalledCommit\b/g,           'tic'],
+        [/\bGet-InstalledCommit\b/g,            'gic'],
+        [/\bRemove-IfExists\b/g,                'rif'],
+        [/\bprintInstallResults\b/g,            'pir'],
+        [/\bFailAndExit\b/g,                    'fae'],
+    ];
+
+    for (const [re, rep] of RENAME_MAP) {
+        compiledScript = compiledScript.replace(re, rep);
+    }
 
     return compiledScript
             // remove comments
@@ -493,10 +542,11 @@ export async function buildServerInstallOptions(
     detectedPlatform: Platform,
     detectedArch: Architecture,
     scriptPreventExit: boolean,
+    localServerDownload: 'auto' | 'always' | 'off',
     logger: ILogger,
 ): Promise<{
     options: ServerInstallOptions;
-    vscodeServerConfig: Awaited<ReturnType<typeof getServerConfig>>;
+    vscodeServerConfig: IServerConfig;
 }> {
     const vscodeServerConfig = await getServerConfig();
 
@@ -531,8 +581,57 @@ export async function buildServerInstallOptions(
             serverValidation: vscodeServerConfig.serverValidation,
             serverPlatform: detectedPlatform,
             serverArch: detectedArch,
-            scriptPreventExit
+            scriptPreventExit,
+            localServerDownload
         },
         vscodeServerConfig,
     };
+}
+
+export interface LocalDownloadRequest {
+    serverPlatform: string;
+    serverArch: string;
+    serverDir: string;
+}
+
+export function parseLocalDownloadMarker(str: string, scriptId: string): LocalDownloadRequest | undefined {
+    const startResultStr = `${scriptId}: local-download-request`;
+    const endResultStr = `${scriptId}: local-download-request-end`;
+
+    const startResultIdx = str.indexOf(startResultStr);
+    if (startResultIdx < 0) {
+        return undefined;
+    }
+
+    const endResultIdx = str.indexOf(endResultStr, startResultIdx + startResultStr.length);
+    if (endResultIdx < 0) {
+        return undefined;
+    }
+
+    const installResult = str.substring(startResultIdx + startResultStr.length, endResultIdx);
+
+    const resultMap: { [k: string]: string } = {};
+    const resultArr = installResult.split(/\r?\n/);
+    for (const line of resultArr) {
+        const [key, value] = line.split('==');
+        resultMap[key] = value;
+    }
+
+    const platform = resultMap['platform'];
+    const serverArch = resultMap['serverArch'];
+    const serverDir = resultMap['serverDir'];
+    if (!platform || !serverArch || !serverDir) {
+        return undefined;
+    }
+    return { serverPlatform: platform, serverArch, serverDir };
+}
+
+export async function resolveServerDownloadUrl(options: ServerInstallOptions, request: LocalDownloadRequest): Promise<string> {
+    return options.serverDownloadUrlTemplate
+        .replace(/\$\{quality\}/g, options.quality)
+        .replace(/\$\{version\}/g, options.version)
+        .replace(/\$\{commit\}/g, options.commit)
+        .replace(/\$\{os\}/g, request.serverPlatform)
+        .replace(/\$\{arch\}/g, request.serverArch)
+        .replace(/\$\{release\}/g, options.release || '');
 }

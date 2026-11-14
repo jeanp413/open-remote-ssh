@@ -5,6 +5,7 @@ import {
     LineParser,
     CommandRunner,
 } from '../src/native/nativeSshParser';
+import { disposableTimeout } from '../src/common/async';
 
 describe('parsePrompt', () => {
     it.each([
@@ -121,38 +122,58 @@ describe('CommandRunner', () => {
     });
 
     it('writes the command and resolves with the predicate value', async () => {
-        const promise = runner.run('ls\n', (s) => (s === 'done' ? 'ok' : undefined));
+        const ms = 10_000;
+        const controller = new AbortController();
+        const disposable = disposableTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+        const promise = runner.run('ls\n', (s) => (s === 'done' ? 'ok' : undefined), controller.signal);
         expect(write).toHaveBeenCalledWith('ls\n');
         stdout.push('done\n');
         await expect(promise).resolves.toBe('ok');
+        disposable.dispose();
     });
 
     it('rejects when write() fails', async () => {
         write.mockRejectedValueOnce(new Error('EPIPE'));
-        await expect(runner.run('cmd\n', () => undefined)).rejects.toThrow('EPIPE');
+        const ms = 10_000;
+        const controller = new AbortController();
+        const disposable = disposableTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+        await expect(runner.run('cmd\n', () => undefined, controller.signal)).rejects.toThrow('EPIPE');
+        disposable.dispose();
     });
 
     it('rejects when a parser ends before a match', async () => {
-        const promise = runner.run('cmd\n', () => undefined);
+        const ms = 10_000;
+        const controller = new AbortController();
+        const disposable = disposableTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+        const promise = runner.run('cmd\n', () => undefined, controller.signal);
         stdout.end('helper closed');
         await expect(promise).rejects.toThrow(/helper closed/);
+        disposable.dispose();
     });
 
     it('rejects after timeoutMs', async () => {
         vi.useFakeTimers();
-        const promise = runner.run('cmd\n', () => undefined, 5_000);
+        const ms = 5_000;
+        const controller = new AbortController();
+        const disposable = disposableTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+        const promise = runner.run('cmd\n', () => undefined, controller.signal);
         const settled = promise.catch((e: Error) => e);
         await vi.advanceTimersByTimeAsync(5_000);
         const err = await settled;
         expect((err as Error).message).toMatch(/timed out after 5000ms/);
+        disposable.dispose();
     });
 
     it('disposes subscriptions on resolution', async () => {
-        const promise = runner.run('cmd\n', (s) => (s === 'hit' ? true : undefined));
+        const ms = 10_000;
+        const controller = new AbortController();
+        const disposable = disposableTimeout(() => controller.abort(new Error(`timed out after ${ms}ms`)), ms);
+        const promise = runner.run('cmd\n', (s) => (s === 'hit' ? true : undefined), controller.signal);
         stdout.push('hit\n');
         await promise;
         // If the runner leaked its subscription, a subsequent end() would
         // try to reject an already-settled promise — this must not throw.
         expect(() => stdout.end()).not.toThrow();
+        disposable.dispose();
     });
 });

@@ -28,6 +28,10 @@ SERVER_CONNECTION_TOKEN=
 SERVER_DOWNLOAD_URL=
 SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
 SCRIPT_PREVENT_EXIT=%%SCRIPT_PREVENT_EXIT%%
+LOCAL_SERVER_DOWNLOAD=%%LOCAL_SERVER_DOWNLOAD%%
+
+DOWNLOAD_MARKER="$SERVER_DIR/.server-local-download.done"
+DOWNLOAD_REQUEST_SENT=0
 
 LISTENING_ON=
 OS_RELEASE_ID=
@@ -59,6 +63,23 @@ print_install_results() {
 fail_and_exit() {
   print_install_results "$1"
   exit 0
+}
+
+print_local_download_request() {
+  echo "%%SCRIPT_ID%%: local-download-request"
+  echo "platform==$SERVER_PLATFORM=="
+  echo "serverArch==$SERVER_ARCH=="
+  echo "serverDir==$SERVER_DIR=="
+  echo "%%SCRIPT_ID%%: local-download-request-end"
+}
+
+await_local_download() {
+  local deadline=$((SECONDS + 300))
+  while (( SECONDS < deadline )); do
+    [[ -f $DOWNLOAD_MARKER ]] && return 0
+    sleep 0.5 || sleep 1
+  done
+  return 1
 }
 
 # Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
@@ -168,21 +189,56 @@ if [[ ! -f $SERVER_SCRIPT ]]; then
 
   pushd "$SERVER_DIR" > /dev/null || exit
 
-  if command -v wget >/dev/null 2>&1; then
-    wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
-  elif command -v curl >/dev/null 2>&1; then
-    curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
-  elif command -v fetch >/dev/null 2>&1; then
-    fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+  DOWNLOAD_OK=0
+  if [[ "$LOCAL_SERVER_DOWNLOAD" == "always" ]]; then
+    print_local_download_request
+    DOWNLOAD_REQUEST_SENT=1
+    if ! await_local_download; then
+      echo "Error: local download transfer did not complete in time"
+      fail_and_exit 1
+    fi
+    DOWNLOAD_OK=1
   else
-    echo "Error: no tool to download server binary"
-    fail_and_exit 1
+    if command -v wget >/dev/null 2>&1; then
+      wget --tries=3 --timeout=10 --continue --no-verbose -O vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+      DOWNLOAD_OK=$?
+    elif command -v curl >/dev/null 2>&1; then
+      curl --retry 3 --connect-timeout 10 --location --show-error --silent --output vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+      DOWNLOAD_OK=$?
+    elif command -v fetch >/dev/null 2>&1; then
+      fetch --retry --timeout=10 --quiet --output=vscode-server.tar.gz "$SERVER_DOWNLOAD_URL"
+      DOWNLOAD_OK=$?
+    else
+      echo "Error: no tool to download server binary"
+      fail_and_exit 1
+    fi
+
+    if [[ $DOWNLOAD_OK -ne 0 && "$LOCAL_SERVER_DOWNLOAD" == "auto" ]]; then
+      echo "Remote download failed; requesting local download"
+      rm -f vscode-server.tar.gz
+      print_local_download_request
+      DOWNLOAD_REQUEST_SENT=1
+      if ! await_local_download; then
+        echo "Error: local download transfer did not complete in time"
+        fail_and_exit 1
+      fi
+      DOWNLOAD_OK=1
+    fi
+
+    if [[ $DOWNLOAD_OK -ne 0 ]]; then
+      echo "Error downloading server from $SERVER_DOWNLOAD_URL"
+      rm -rf vscode-server.tar.gz
+      fail_and_exit 1
+    fi
   fi
 
-  if (( $? > 0 )); then
-    echo "Error downloading server from $SERVER_DOWNLOAD_URL"
-    rm -rf vscode-server.tar.gz
-    fail_and_exit 1
+  if (( DOWNLOAD_REQUEST_SENT )); then
+    if [[ ! -f "$SERVER_DIR/vscode-server.tar.gz" ]]; then
+      echo "Error: local download reported complete but no server archive was transferred"
+      rm -f "$DOWNLOAD_MARKER"
+      fail_and_exit 1
+    fi
+    rm -f "$DOWNLOAD_MARKER"
   fi
 
   tar -xOf vscode-server.tar.gz > /dev/null 2>&1 || (

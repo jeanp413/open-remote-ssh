@@ -8,7 +8,7 @@ import * as vscode from './mocks/vscode';
 import { runDocker } from './utils/run-docker';
 import { getMappedPort } from './utils/get-mapped-port';
 import { waitForSSHReady } from './utils/wait-for-ssh-ready';
-import { sleep } from '../src/common/sleep';
+import { timeout } from '../src/common/async';
 
 const SERVER_SETUP = fse.readFile('./src/scripts/server-setup.sh', 'utf8').value!;
 
@@ -77,7 +77,7 @@ async function waitForTargetReady(timeoutMs: number) {
       return;
     }
 
-    await sleep(1000);
+    await timeout(1000);
   }
 
   throw new Error('Timed out waiting for the target container to accept SSH');

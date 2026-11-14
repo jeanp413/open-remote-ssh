@@ -16,16 +16,17 @@ import SSHDestination from './ssh/sshDestination';
 import SSHConnection, { SSHTunnelConfig } from './ssh/sshConnection';
 import { loadKnownHosts, matchHostKey, appendHostKey, replaceHostKey, removeHostFromEntry, findConflictingEntries, keyFingerprint, keyTypeOf, KnownHosts, KnownHostsEntry, KnownHostsFilesConfig } from './ssh/knownHosts';
 import type { SSHClient, SSHExecChannel } from './ssh/sshClient';
-import SSHConfiguration, { defaultSSHConfigPath, getSSHConfigPath, type HostConfiguration } from './ssh/sshConfig';
+import SSHConfiguration, { type HostConfiguration } from './ssh/sshConfig';
 import { gatherIdentityFiles, SSHKey } from './ssh/identityFiles';
 import { untildify, exists as fileExists } from './common/files';
 import { findRandomPort } from './common/ports';
 import { disposeAll } from './common/disposable';
 import { installCodeServer, ServerInstallError, findServerInstallPath } from './serverSetup';
 import { isWindows, RemotePlatform } from './common/platform';
-import { resolveNativeSshExecutable } from './native/nativeSshConnection';
-import { NativeSshConnectionOptions, NativeSshManager, NativeSshRegistry } from './native/nativeSshManager';
+import { resolveNativeScpExecutable, resolveNativeSshExecutable } from './native/nativeSshConnection';
+import { NativeSshConnectionOptions, NativeSshManager } from './native/nativeSshManager';
 import { AskPassServer } from './native/nativeSshAskpass';
+import { NativeSshRegistry } from './native/nativeSshRegistry';
 
 const PASSWORD_RETRY_COUNT = 3;
 const PASSPHRASE_RETRY_COUNT = 3;
@@ -292,6 +293,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
         const verifyUnknownHosts = remoteSSHconfig.get<HostVerificationPolicy>('verifyUnknownHosts', 'ask')!;
         const verifyKnownHosts = remoteSSHconfig.get<HostVerificationPolicy>('verifyKnownHosts', 'reject')!;
         const connectionBackend = remoteSSHconfig.get<string>('connectionBackend', 'ssh2');
+        const localServerDownload = remoteSSHconfig.get<'auto' | 'always' | 'off'>('localServerDownload', 'auto');
         const configuredSshPath = remoteSSHconfig.get<string>('path', '');
         const sshHostConfig = sshconfig.getHostConfiguration(destination.hostname);
         const sshHostName = sshHostConfig['HostName'] ? SSHConfiguration.interpolate(sshHostConfig['HostName'], { '%': '%', 'h': destination.hostname }) : destination.hostname;
@@ -306,29 +308,23 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                 }
 
                 const sshExecutable = await resolveNativeSshExecutable(configuredSshPath);
+                const scpExecutable = await resolveNativeScpExecutable(sshExecutable);
 
                 const socksPort = await findRandomPort();
                 const sshArgs: string[] = ['-v', '-T', '-D', String(socksPort), '-o', `ConnectTimeout=${connectTimeout}`];
-                const configFile = getSSHConfigPath();
-                if (configFile !== defaultSSHConfigPath) {
-                    sshArgs.push('-F', configFile);
-                }
-                if (destination.port) {
-                    sshArgs.push('-p', String(destination.port));
-                }
-                if (destination.user) {
-                    sshArgs.push('-l', destination.user);
-                }
-                sshArgs.push(destination.hostname);
+                const scpArgs: string[] = ['-o', `ConnectTimeout=${connectTimeout}`];
 
                 const marker = crypto.randomBytes(12).toString('hex');
                 const connection: NativeSshConnectionOptions = {
                     authorityKey: destination.hostname,
                     sshExecutable,
                     sshArgs,
+                    scpExecutable,
+                    scpArgs,
                     label: marker,
                     remotePlatform: remotePlatformMap[destination.hostname],
-                    socksPort
+                    socksPort,
+                    sshDestination: destination
                 };
 
                 const registry = await NativeSshRegistry.forAuthority(this.context.globalStorageUri.fsPath, connection.authorityKey, packageJSON.version);
@@ -380,6 +376,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
                     useSocketPath: remoteServerListenOnSocket,
                     customInstallPath: findServerInstallPath(destination.hostname, serverInstallPathMap),
                     extensionPath: this.context.extensionPath,
+                    localServerDownload
                 });
 
                 const tunnel = await this.openNativeTunnel(0, registryEntry.listeningOn, registryEntry.socksPort);

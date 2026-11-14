@@ -85,7 +85,7 @@ beforeAll(async () => {
 
   hostPort = getMappedPort(containerName);
 
-  await waitForSSHReady(USERNAME, PASSWORD, hostPort, 60_000);
+  await waitForSSHReady(USERNAME, PASSWORD, hostPort, 60_000, containerName);
 
   vol.fromJSON({
     '/etc/ssh/ssh_config': [

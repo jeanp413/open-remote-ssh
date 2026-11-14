@@ -26,6 +26,10 @@ $SERVER_ARCH=""
 $SERVER_CONNECTION_TOKEN=""
 $SERVER_DOWNLOAD_URL="%%SERVER_DOWNLOAD_URL%%"
 $SERVER_VALIDATION_FLAG="%%SERVER_VALIDATION_FLAG%%"
+$LOCAL_SERVER_DOWNLOAD="%%LOCAL_SERVER_DOWNLOAD%%"
+
+$DOWNLOAD_MARKER="$SERVER_DIR\.server-local-download.done"
+$DOWNLOAD_REQUEST_SENT=$False
 
 $LISTENING_ON=""
 $OS_RELEASE_ID=""
@@ -49,6 +53,12 @@ function Get-InstalledCommit() {
   return $null
 }
 
+function Remove-IfExists([string]$Path) {
+  if(Test-Path $Path) {
+    Remove-Item $Path -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function printInstallResults($code) {
   "%%SCRIPT_ID%%: start"
   "exitCode==$code=="
@@ -63,9 +73,40 @@ function printInstallResults($code) {
   "%%SCRIPT_ID%%: end"
 }
 
-function failAndExit($code) {
-  printInstallResults $code
+function FailAndExit([string]$Message) {
+  $Message
+  printInstallResults 1
   exit 0
+}
+
+function Print-LocalDownloadRequest {
+  "%%SCRIPT_ID%%: local-download-request"
+  "platform==$PLATFORM=="
+  "serverArch==$SERVER_ARCH=="
+  "serverDir==$SERVER_DIR=="
+  "%%SCRIPT_ID%%: local-download-request-end"
+}
+
+function Request-LocalDownload {
+  Print-LocalDownloadRequest
+  $script:DOWNLOAD_REQUEST_SENT = $True
+
+  if(!(Await-LocalDownload)) {
+    FailAndExit "Error: local download transfer did not complete in time"
+  }
+
+  $script:DOWNLOAD_OK = $True
+}
+
+function Await-LocalDownload {
+  $deadline = (Get-Date).AddSeconds(300)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Path $DOWNLOAD_MARKER) {
+      return $True
+    }
+    sleep 1
+  }
+  return $False
 }
 
 # Test the commit of the installed server against the expected one (DISTRO_COMMIT)
@@ -97,8 +138,7 @@ if(($ARCH -eq "AMD64") -or ($ARCH -eq "IA64") -or ($ARCH -eq "ARM64")) {
   $SERVER_ARCH="x64"
 }
 else {
-  "Error architecture not supported: $ARCH"
-  failAndExit 1
+  FailAndExit "Error architecture not supported: $ARCH"
 }
 
 # Validate the commit of the installed server against the expected one (DISTRO_COMMIT)
@@ -111,15 +151,13 @@ if(!(Test-InstalledCommit)) {
 # Create installation folder
 if(!(Test-Path $SERVER_DIR)) {
   try {
-    ni -it d $SERVER_DIR -f -ea si
+    New-Item -it d $SERVER_DIR -f -ea si
   } catch {
-    "Error creating server install directory - $($_.ToString())"
-    failAndExit 1
+    FailAndExit "Error creating server install directory - $($_.ToString())"
   }
 
   if(!(Test-Path $SERVER_DIR)) {
-    "Error creating server install directory"
-    failAndExit 1
+    FailAndExit "Error creating server install directory"
   }
 }
 
@@ -127,54 +165,80 @@ cd $SERVER_DIR
 
 # Check if server script is already installed
 if(!(Test-Path $SERVER_SCRIPT)) {
-  if(Test-Path vscode-server.tar.gz) {
-    del vscode-server.tar.gz
+  Remove-IfExists "vscode-server.tar.gz"
+
+  $DOWNLOAD_OK=$False
+
+  if($LOCAL_SERVER_DOWNLOAD -eq "always") {
+    Request-LocalDownload
+  }
+  else {
+    try {
+      $REQUEST_ARGUMENTS = @{
+        Uri="$SERVER_DOWNLOAD_URL"
+        TimeoutSec=20
+        OutFile="vscode-server.tar.gz"
+        UseBasicParsing=$True
+        ErrorAction= "Stop"
+      }
+
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      Invoke-WebRequest @REQUEST_ARGUMENTS
+      $DOWNLOAD_OK=$True
+    }
+    catch {
+      $DOWNLOAD_OK=$False
+    }
+
+    if(!$DOWNLOAD_OK -and $LOCAL_SERVER_DOWNLOAD -eq "auto") {
+      "Remote download failed; requesting local download"
+      Remove-IfExists "vscode-server.tar.gz"
+      Request-LocalDownload
+    }
+
+    if(!$DOWNLOAD_OK) {
+      Remove-IfExists "vscode-server.tar.gz"
+      FailAndExit "Error downloading server from $SERVER_DOWNLOAD_URL"
+    }
   }
 
-  $REQUEST_ARGUMENTS = @{
-    Uri="$SERVER_DOWNLOAD_URL"
-    TimeoutSec=20
-    OutFile="vscode-server.tar.gz"
-    UseBasicParsing=$True
-    ErrorAction= "Stop"
+  if($DOWNLOAD_REQUEST_SENT) {
+    if(!(Test-Path "vscode-server.tar.gz")) {
+      Remove-IfExists $DOWNLOAD_MARKER
+      FailAndExit "Error: local download reported complete but no server archive was transferred"
+    }
+    Remove-IfExists $DOWNLOAD_MARKER
   }
-
-  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-  Invoke-WebRequest @REQUEST_ARGUMENTS
 
   if(Test-Path "vscode-server.tar.gz") {
     tar -xOf vscode-server.tar.gz | Out-Null
 
     if($LastExitCode -ne 0) {
-      del vscode-server.tar.gz
-      "Error downloaded tarball is corrupt or incomplete"
-      failAndExit 1
+      Remove-IfExists "vscode-server.tar.gz"
+      FailAndExit "Error downloaded tarball is corrupt or incomplete"
     }
 
     tar -xf vscode-server.tar.gz --strip-components 1
 
     if($LastExitCode -ne 0) {
-      del vscode-server.tar.gz
-      "Error while extracting server contents"
-      failAndExit 1
+      Remove-IfExists "vscode-server.tar.gz"
+      FailAndExit "Error while extracting server contents"
     }
 
-    del vscode-server.tar.gz
+    Remove-IfExists "vscode-server.tar.gz"
   }
 
   if(!(Test-Path $SERVER_SCRIPT)) {
-    "Error while installing the server binary"
-    failAndExit 1
+    FailAndExit "Error while installing the server binary"
   }
 
   if(!(Test-InstalledCommit)) {
-    "Error: downloaded server commit $(Get-InstalledCommit) does not match $DISTRO_COMMIT"
-    "Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a `${commit} keyed URL cannot be ambiguous"
-
+    $badCommit = Get-InstalledCommit
     Remove-Item -Recurse -Force "$SERVER_DIR\*"
-
-    failAndExit 1
+    FailAndExit @"
+Error: downloaded server commit $badCommit does not match $DISTRO_COMMIT
+Check that remote.SSH.serverDownloadUrlTemplate resolves to the server for this build; a `${commit} keyed URL cannot be ambiguous
+"@
   }
 }
 else {
@@ -193,15 +257,9 @@ if(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -Like "$SE
   echo "Server script is already running $SERVER_SCRIPT"
 }
 else {
-  if(Test-Path $SERVER_LOGFILE) {
-    del $SERVER_LOGFILE
-  }
-  if(Test-Path $SERVER_PIDFILE) {
-    del $SERVER_PIDFILE
-  }
-  if(Test-Path $SERVER_TOKENFILE) {
-    del $SERVER_TOKENFILE
-  }
+  Remove-IfExists $SERVER_LOGFILE
+  Remove-IfExists $SERVER_PIDFILE
+  Remove-IfExists $SERVER_TOKENFILE
 
   $SERVER_CONNECTION_TOKEN="%%SERVER_CONNECTION_TOKEN%%"
   [System.IO.File]::WriteAllLines($SERVER_TOKENFILE, $SERVER_CONNECTION_TOKEN)
@@ -228,8 +286,7 @@ if(Test-Path $SERVER_TOKENFILE) {
   $SERVER_CONNECTION_TOKEN="$(cat $SERVER_TOKENFILE)"
 }
 else {
-  "Error server token file not found $SERVER_TOKENFILE"
-  failAndExit 1
+  FailAndExit "Error server token file not found $SERVER_TOKENFILE"
 }
 
 sleep -Milliseconds 500
@@ -253,8 +310,7 @@ for($I = 1; $I -le 5; $I++) {
 }
 
 if(!(Test-Path $SERVER_LOGFILE)) {
-  "Error server log file not found $SERVER_LOGFILE"
-  failAndExit 1
+  FailAndExit "Error server log file not found $SERVER_LOGFILE"
 }
 
 # Finish server setup
